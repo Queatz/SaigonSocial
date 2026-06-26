@@ -1,0 +1,49 @@
+package social.saigon.identity
+
+import social.saigon.ai.IdentityGenerator
+import social.saigon.domain.RoomIdentity
+import social.saigon.repository.RoomIdentityRepository
+
+/**
+ * Room-scoped, user-controlled identity management (TASKS Phase 2, DESIGN §5).
+ *
+ * Each (user, room) pair has its own anonymous name + abstract avatar, generated on the user's
+ * first join to that room via the [IdentityGenerator] (Qwen AI in production). The identity is
+ * stable and independent across rooms; it changes only when the user explicitly refreshes it.
+ * There are no time-based or forced resets — the user is always in control.
+ */
+class IdentityService(
+    private val identities: RoomIdentityRepository,
+    private val generator: IdentityGenerator,
+) {
+
+    /**
+     * The caller's identity in [roomId], generating and persisting one on first join.
+     *
+     * Idempotent: repeated calls return the same stored identity until [refresh] is invoked, so a
+     * user keeps a stable name/avatar within a room across reconnects (DESIGN §5, "No time-based
+     * reset").
+     */
+    suspend fun getOrCreate(userId: String, roomId: String): RoomIdentity =
+        identities.get(userId, roomId) ?: generateAndStore(userId, roomId)
+
+    /**
+     * Instantly regenerate the caller's name + avatar in [roomId] — the "Refresh my name & avatar
+     * in this room" action (DESIGN §5). Always produces a fresh identity and replaces the stored
+     * one. User-controlled only.
+     */
+    suspend fun refresh(userId: String, roomId: String): RoomIdentity =
+        generateAndStore(userId, roomId)
+
+    private suspend fun generateAndStore(userId: String, roomId: String): RoomIdentity {
+        val generated = generator.generate("$userId@$roomId")
+        return identities.put(
+            RoomIdentity(
+                userId = userId,
+                roomId = roomId,
+                name = generated.name,
+                avatarUrl = generated.avatarUrl,
+            ),
+        )
+    }
+}
