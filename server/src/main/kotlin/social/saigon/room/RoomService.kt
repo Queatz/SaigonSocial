@@ -3,6 +3,7 @@ package social.saigon.room
 import java.util.UUID
 import social.saigon.domain.Room
 import social.saigon.domain.RoomCreate
+import social.saigon.domain.RoomUpdate
 import social.saigon.repository.RoomRepository
 
 /**
@@ -35,6 +36,27 @@ class RoomService(private val rooms: RoomRepository) {
             ),
         )
     }
+
+    /**
+     * Apply a founder edit (rename/emoji/atmosphere) to an existing room after validating fields.
+     *
+     * @throws IllegalArgumentException if the room is unknown or a provided field is invalid.
+     */
+    fun update(roomId: String, request: RoomUpdate): Room {
+        val room = rooms.get(roomId) ?: throw IllegalArgumentException("Unknown room")
+        val name = request.name?.trim()?.also {
+            require(it.isNotEmpty()) { "Room name required" }
+            require(!it.startsWith("#")) { "Room name must not start with '#'" }
+        } ?: room.name
+        val emoji = request.emoji?.trim()?.also {
+            require(it.isNotEmpty()) { "Room emoji required" }
+        } ?: room.emoji
+        val atmosphere = request.atmosphere?.trim() ?: room.atmosphere
+        return rooms.create(room.copy(name = name, emoji = emoji, atmosphere = atmosphere))
+    }
+
+    /** Delete a room. Idempotent: deleting an unknown room is a no-op. */
+    fun delete(roomId: String) = rooms.delete(roomId)
 
     /** Resolve a room by id, or null when it does not exist. */
     fun get(roomId: String): Room? = rooms.get(roomId)

@@ -50,14 +50,14 @@ class Phase1Test {
             "u1",
             ProfileUpdate(
                 interests = listOf("guitar", " coffee ", "guitar"),
-                intent = Intent.DEEP_TALK,
+                intents = listOf(Intent.DEEP_TALK),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("Mon-Fri 7-9 PM"),
             ),
         )
         // Trimmed + de-duplicated.
         assertEquals(listOf("guitar", "coffee"), updated.interests)
-        assertEquals(Intent.DEEP_TALK, updated.intent)
+        assertEquals(listOf(Intent.DEEP_TALK), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("Mon-Fri 7-9 PM"), updated.offlineSchedule)
     }
@@ -66,10 +66,10 @@ class Phase1Test {
     fun nullFieldsLeaveExistingValuesUntouched() {
         val (svc, repo) = service()
         sharer(repo)
-        svc.update("u1", ProfileUpdate(interests = listOf("books"), intent = Intent.CASUAL))
+        svc.update("u1", ProfileUpdate(interests = listOf("books"), intents = listOf(Intent.CASUAL)))
         val updated = svc.update("u1", ProfileUpdate(languages = listOf("ko")))
         assertEquals(listOf("books"), updated.interests)
-        assertEquals(Intent.CASUAL, updated.intent)
+        assertEquals(listOf(Intent.CASUAL), updated.intents)
         assertEquals(listOf("ko"), updated.languages)
     }
 

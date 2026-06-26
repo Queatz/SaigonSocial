@@ -8,6 +8,7 @@ import io.ktor.server.auth.principal
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
@@ -41,6 +42,7 @@ import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.ReportTarget
 import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
+import social.saigon.domain.RoomUpdate
 import social.saigon.domain.Tier
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
@@ -78,6 +80,22 @@ data class OnboardResponse(val userId: String, val token: String)
 /** Sign in with the durable password credential (PASSWORD_AUTH.md §2C). */
 @Serializable
 data class LoginRequest(val identifier: String, val password: String)
+
+/** Founder request to mint a single-use invite code for a new member. */
+@Serializable
+data class InviteCreateRequest(val role: Role = Role.SHARER)
+
+/** A minted invite code handed to a prospective member. */
+@Serializable
+data class InviteCodeResponse(val code: String, val role: Role)
+
+/** Redeem an invite code to create an account by choosing a username + password. */
+@Serializable
+data class RedeemRequest(val code: String, val username: String, val password: String)
+
+/** Change the caller's login username (handle). */
+@Serializable
+data class ChangeUsernameRequest(val username: String)
 
 /**
  * Set or change the caller's password (PASSWORD_AUTH.md §2B). [currentPassword] is required only
@@ -152,6 +170,40 @@ fun Application.registerRoutes(
             call.respond(OnboardResponse(user.id, tokenService.issueMemberToken(user.id, user.role)))
         }
 
+        // Redeem a founder-issued invite code to create an account (replaces sharing a raw access
+        // token). The recipient chooses a username + password; the code is single-use.
+        post("/auth/redeem") {
+            val req = call.receive<RedeemRequest>()
+            val code = req.code.trim()
+            val username = req.username.trim()
+            require(code.isNotBlank()) { "An invite code is required." }
+            require(username.isNotBlank()) { "A username is required." }
+            require(req.password.length >= social.saigon.auth.PasswordHasher.MIN_LENGTH) {
+                "Password must be at least ${social.saigon.auth.PasswordHasher.MIN_LENGTH} characters."
+            }
+            val invite = repositories.invites.get(code)
+                ?: throw IllegalArgumentException("That invite code is invalid.")
+            require(!invite.redeemed) { "That invite code has already been used." }
+            require(repositories.users.findByHandle(username) == null) {
+                "That username is taken. Please choose another."
+            }
+            val user = repositories.users.create(
+                User(
+                    id = UUID.randomUUID().toString(),
+                    role = invite.role,
+                    displayName = username,
+                    handle = username,
+                ),
+            )
+            passwordService.setPassword(user.id, req.password, null)
+            economicsService.paySharerFee(user.id)
+            if (invite.role == Role.SUPPORTER) economicsService.paySupporterSubscription(user.id)
+            repositories.invites.update(
+                invite.copy(redeemedBy = user.id, redeemedAt = System.currentTimeMillis()),
+            )
+            call.respond(OnboardResponse(user.id, tokenService.issueMemberToken(user.id, user.role)))
+        }
+
         // Public pricing table (DESIGN §3, §11). Open so a Seeker can see the cost of joining before
         // committing. The platform takes no cut of user-to-user transactions.
         get("/economics/pricing") {
@@ -173,6 +225,7 @@ fun Application.registerRoutes(
 
         // Public room list with live occupant counts (DESIGN §6). Open to all roles for viewing.
         get("/rooms") {
+            // Sorted by most people active, descending (DESIGN §6).
             val rooms = roomService.list().map { room ->
                 RoomSummary(
                     id = room.id,
@@ -181,7 +234,7 @@ fun Application.registerRoutes(
                     atmosphere = room.atmosphere,
                     occupants = chatHub.occupants(room.id),
                 )
-            }
+            }.sortedByDescending { it.occupants }
             call.respond(rooms)
         }
 
@@ -189,11 +242,15 @@ fun Application.registerRoutes(
         // Each message carries its live reply-count for the "↳ N replies" indicator (DESIGN §9).
         get("/rooms/{roomId}/messages") {
             val roomId = call.requireRoomId()
-            val feed = repositories.messages.byRoom(roomId).map { message ->
+            // Infinite scroll: page by 20, paging upward through history with the `before` cursor.
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 100) ?: 20
+            val before = call.request.queryParameters["before"]?.toLongOrNull()
+            val feed = repositories.messages.page(roomId, before, limit).map { message ->
                 FeedMessage(
                     id = message.id,
                     roomId = message.roomId,
                     authorId = message.authorId,
+                    authorName = authorName(message.authorId, roomId, repositories, identities),
                     text = message.text,
                     createdAt = message.createdAt,
                     replyCount = threadService.replyCount(message.id),
@@ -204,10 +261,21 @@ fun Application.registerRoutes(
 
         // Open viewing for all roles (incl. Seekers): read a message's ephemeral thread (DESIGN §9, §11).
         get("/rooms/{roomId}/messages/{messageId}/thread") {
-            call.requireRoomId()
+            val roomId = call.requireRoomId()
             val messageId = call.parameters["messageId"].orEmpty()
             require(messageId.isNotBlank()) { "messageId required" }
-            call.respond(threadService.thread(messageId))
+            val replies = threadService.thread(messageId).map { reply ->
+                ThreadReplyView(
+                    id = reply.id,
+                    parentMessageId = reply.parentMessageId,
+                    replyToId = reply.replyToId,
+                    authorId = reply.authorId,
+                    authorName = authorName(reply.authorId, roomId, repositories, identities),
+                    text = reply.text,
+                    createdAt = reply.createdAt,
+                )
+            }
+            call.respond(replies)
         }
 
         // Who's in the room, with their intents + languages and room-scoped identity (DESIGN §6).
@@ -223,7 +291,7 @@ fun Application.registerRoutes(
                         name = identity.name,
                         avatarUrl = identity.avatarUrl,
                         role = user.role,
-                        intent = user.intent,
+                        intents = user.intents,
                         languages = user.languages,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
@@ -246,6 +314,20 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val update = call.receive<ProfileUpdate>()
                 call.respond(profiles.update(userId, update).toProfileResponse())
+            }
+
+            // Change the caller's login username (handle), rejecting one already taken.
+            put("/profile/username") {
+                val userId = requireMember(call.caller())
+                val req = call.receive<ChangeUsernameRequest>()
+                val username = req.username.trim()
+                require(username.isNotBlank()) { "A username is required." }
+                val existing = repositories.users.findByHandle(username)
+                require(existing == null || existing.id == userId) {
+                    "That username is taken. Please choose another."
+                }
+                val user = profiles.get(userId)
+                call.respond(repositories.users.update(user.copy(handle = username)).toProfileResponse())
             }
 
             // Set or change the durable sign-in password (PASSWORD_AUTH.md §2B). Gated by the JWT
@@ -297,10 +379,31 @@ fun Application.registerRoutes(
             // Founder-only room creation/management (DESIGN §6).
             post("/rooms") {
                 val caller = call.caller()
-                require(caller.role.isAdmin) { "Founder only" }
-                val founderId = caller.userId ?: throw IllegalArgumentException("Founder only")
+                // Supporters and the Founder may create rooms (DESIGN §6).
+                require(caller.role.isAdmin || caller.role == Role.SUPPORTER) {
+                    "Only Supporters and the Founder can create rooms"
+                }
+                val creatorId = caller.userId ?: throw IllegalArgumentException("Members only")
                 val req = call.receive<RoomCreate>()
-                call.respond(roomService.create(founderId, req))
+                call.respond(roomService.create(creatorId, req))
+            }
+
+            // Founder-only room rename/edit (DESIGN §6).
+            put("/rooms/{roomId}") {
+                val caller = call.caller()
+                require(caller.role.isAdmin) { "Founder only" }
+                val roomId = call.requireRoomId()
+                val req = call.receive<RoomUpdate>()
+                call.respond(roomService.update(roomId, req))
+            }
+
+            // Founder-only room deletion (DESIGN §6).
+            delete("/rooms/{roomId}") {
+                val caller = call.caller()
+                require(caller.role.isAdmin) { "Founder only" }
+                val roomId = call.requireRoomId()
+                roomService.delete(roomId)
+                call.respond(mapOf("deleted" to roomId))
             }
 
             // Founder-only onboarding: no open sign-up, no OTP (DESIGN §2, §3).
@@ -339,14 +442,34 @@ fun Application.registerRoutes(
                 call.respond(members)
             }
 
+            // Founder-only: mint a single-use invite code for a new member (replaces sharing a raw
+            // access token). The recipient redeems it via POST /auth/redeem to create their account.
+            post("/founder/invites") {
+                val founderId = requireFounder(call.caller())
+                val req = call.receive<InviteCreateRequest>()
+                require(req.role != Role.SEEKER) { "Cannot invite a Seeker" }
+                require(req.role != Role.FOUNDER) { "Cannot invite a Founder" }
+                val code = generateInviteCode(repositories)
+                repositories.invites.create(
+                    social.saigon.domain.InviteCode(
+                        code = code,
+                        role = req.role,
+                        createdBy = founderId,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                call.respond(InviteCodeResponse(code, req.role))
+            }
+
             // Founder-only manual tier change (MEMBER_MANAGEMENT.md B): comp a member up to Supporter,
             // downgrade to Sharer, or demote to Seeker — no payment is recorded. Because the JWT
             // carries the role, a fresh token reflecting the new tier is returned so the member can
-            // re-authenticate (a non-member Seeker gets no token).
+            // re-authenticate (a non-member Seeker gets no token). The Founder's own role is fixed.
             patch("/founder/members/{id}/role") {
-                requireFounder(call.caller())
+                val founderId = requireFounder(call.caller())
                 val userId = call.parameters["id"].orEmpty()
                 require(userId.isNotBlank()) { "id required" }
+                require(userId != founderId) { "The Founder's role cannot be changed." }
                 val req = call.receive<SetTierRequest>()
                 val outcome = economicsService.setTier(userId, req.role)
                 val token = outcome.user.role
@@ -513,7 +636,7 @@ data class OccupantView(
     val name: String,
     val avatarUrl: String,
     val role: Role,
-    val intent: Intent?,
+    val intents: List<Intent> = emptyList(),
     val languages: List<String>,
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
@@ -526,7 +649,7 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String>,
-    val intent: Intent?,
+    val intents: List<Intent> = emptyList(),
     val languages: List<String>,
     val offlineSchedule: List<String>,
     val supporterUntil: Long?,
@@ -546,9 +669,23 @@ data class FeedMessage(
     val id: String,
     val roomId: String,
     val authorId: String,
+    /** The author's room-scoped display name (DESIGN §5), so the feed never shows a raw id. */
+    val authorName: String,
     val text: String,
     val createdAt: Long,
     val replyCount: Int,
+)
+
+/** A thread reply enriched with the author's room-scoped display name (DESIGN §5, §9). */
+@Serializable
+data class ThreadReplyView(
+    val id: String,
+    val parentMessageId: String,
+    val replyToId: String? = null,
+    val authorId: String,
+    val authorName: String,
+    val text: String,
+    val createdAt: Long,
 )
 
 /** Public pricing table for the economics screen (DESIGN §3, §11). */
@@ -628,6 +765,14 @@ data class MemberView(
     val sharerPaidAt: Long?,
     val supporterUntil: Long?,
     val status: EconomicStatus,
+    /** The member's login username (handle), for the founder's reference. */
+    val handle: String? = null,
+    /** The member's chosen intents (DESIGN §4). */
+    val intents: List<Intent> = emptyList(),
+    /** Language codes the member speaks. */
+    val languages: List<String> = emptyList(),
+    /** The member's free-text introduction (formerly "interests"). */
+    val introduction: List<String> = emptyList(),
 )
 
 /** Body for a founder-only manual tier change (MEMBER_MANAGEMENT.md B). */
@@ -669,6 +814,10 @@ private fun User.toMemberView(economics: EconomicsService): MemberView = MemberV
     sharerPaidAt = sharerPaidAt,
     supporterUntil = supporterUntil,
     status = economics.status(id),
+    handle = handle,
+    intents = intents,
+    languages = languages,
+    introduction = interests,
 )
 
 private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
@@ -676,7 +825,7 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     role = role,
     displayName = displayName,
     interests = interests,
-    intent = intent,
+    intents = intents,
     languages = languages,
     offlineSchedule = offlineSchedule,
     supporterUntil = supporterUntil,
@@ -685,6 +834,34 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     // Never expose the hash itself — only whether a password exists (PASSWORD_AUTH.md §2E).
     passwordSet = passwordHash != null,
 )
+
+/**
+ * Resolve a message/reply author's room-scoped display name (DESIGN §5) so the public feed and
+ * thread sheets never surface a raw user id. Anonymous (non-member) authors keep their id.
+ */
+private suspend fun authorName(
+    authorId: String,
+    roomId: String,
+    repositories: Repositories,
+    identities: IdentityService,
+): String =
+    if (repositories.users.get(authorId) != null) {
+        identities.getOrCreate(authorId, roomId).name
+    } else {
+        authorId
+    }
+
+/**
+ * Generate a short, human-friendly, single-use invite code (e.g. "K7P2QM9X"). Uses an
+ * ambiguity-free alphabet (no 0/O/1/I/L) and retries until the code is free.
+ */
+private fun generateInviteCode(repositories: Repositories): String {
+    val alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    fun once(): String = (1..8).map { alphabet.random() }.joinToString("")
+    var code = once()
+    while (repositories.invites.get(code) != null) code = once()
+    return code
+}
 
 /**
  * Derive a unique, login-only handle from a display name (PASSWORD_AUTH.md §2C). Slugs the name to

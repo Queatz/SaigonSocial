@@ -47,7 +47,7 @@ data class OccupantView(
     val name: String,
     val avatarUrl: String = "",
     val role: Role,
-    val intent: Intent? = null,
+    val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
@@ -59,10 +59,15 @@ data class FeedMessage(
     val id: String,
     val roomId: String,
     val authorId: String,
+    /** The author's room-scoped display name (DESIGN §5). Falls back to the id for legacy rows. */
+    val authorName: String = "",
     val text: String,
     val createdAt: Long,
     val replyCount: Int = 0,
-)
+) {
+    /** The name to render in the feed — the room-scoped name when present, else the raw id. */
+    val displayAuthor: String get() = authorName.ifBlank { authorId }
+}
 
 /** A reply inside a message's ephemeral thread (`GET .../thread`, DESIGN §9). */
 @Serializable
@@ -71,9 +76,14 @@ data class ThreadReply(
     val parentMessageId: String,
     val replyToId: String? = null,
     val authorId: String,
+    /** The author's room-scoped display name (DESIGN §5). Falls back to the id for legacy rows. */
+    val authorName: String = "",
     val text: String,
     val createdAt: Long,
-)
+) {
+    /** The name to render in the thread — the room-scoped name when present, else the raw id. */
+    val displayAuthor: String get() = authorName.ifBlank { authorId }
+}
 
 /** The caller's room-scoped anonymous identity (`GET /rooms/{id}/identity`, DESIGN §5). */
 @Serializable
@@ -91,7 +101,7 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String> = emptyList(),
-    val intent: Intent? = null,
+    val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
     val offlineSchedule: List<String> = emptyList(),
     val supporterUntil: Long? = null,
@@ -106,9 +116,25 @@ data class ProfileResponse(
 @Serializable
 data class ProfileUpdate(
     val interests: List<String>? = null,
-    val intent: Intent? = null,
+    val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+)
+
+/** Founder/Supporter request to create a new room (`POST /rooms`, DESIGN §6). */
+@Serializable
+data class RoomCreate(
+    val name: String,
+    val emoji: String,
+    val atmosphere: String = "",
+)
+
+/** Founder request to rename/edit a room (`PUT /rooms/{id}`, DESIGN §6). Null fields unchanged. */
+@Serializable
+data class RoomUpdate(
+    val name: String? = null,
+    val emoji: String? = null,
+    val atmosphere: String? = null,
 )
 
 /** Sign in with a previously-set password (`POST /auth/login`, PASSWORD_AUTH.md §2C). */
@@ -148,7 +174,31 @@ data class MemberView(
     val sharerPaidAt: Long? = null,
     /** Epoch millis the Supporter subscription expires; null for non-Supporters. */
     val supporterUntil: Long? = null,
+    /** The member's login username (handle). */
+    val handle: String? = null,
+    /** The member's chosen intents (DESIGN §4). */
+    val intents: List<Intent> = emptyList(),
+    /** Language codes the member speaks. */
+    val languages: List<String> = emptyList(),
+    /** The member's free-text introduction (formerly "interests"). */
+    val introduction: List<String> = emptyList(),
 )
+
+/** Founder request to mint a single-use invite code for a new member. */
+@Serializable
+data class InviteCreateRequest(val role: Role = Role.SHARER)
+
+/** A minted invite code handed to a prospective member. */
+@Serializable
+data class InviteCodeResponse(val code: String, val role: Role)
+
+/** Redeem an invite code to create an account by choosing a username + password. */
+@Serializable
+data class RedeemRequest(val code: String, val username: String, val password: String)
+
+/** Change the caller's login username (handle). */
+@Serializable
+data class ChangeUsernameRequest(val username: String)
 
 /** Founder-only request to change a member's tier (`PATCH /founder/members/{id}/role`). */
 @Serializable
@@ -178,4 +228,17 @@ object UiConstants {
 
     /** Supported language codes (DESIGN §4). */
     val supportedLanguages: List<String> = listOf("vi", "en", "ko", "zh", "ja", "fr")
+
+    /** Full name + flag emoji for each supported language code, for selectable language buttons. */
+    val languageNames: Map<String, String> = mapOf(
+        "vi" to "🇻🇳 Tiếng Việt",
+        "en" to "🇬🇧 English",
+        "ko" to "🇰🇷 한국어",
+        "zh" to "🇨🇳 中文",
+        "ja" to "🇯🇵 日本語",
+        "fr" to "🇫🇷 Français",
+    )
+
+    /** The full name + flag for [code], falling back to the bare code if unknown. */
+    fun languageLabel(code: String): String = languageNames[code] ?: code
 }

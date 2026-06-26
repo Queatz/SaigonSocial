@@ -101,7 +101,7 @@ object Languages {
 @Serializable
 data class ProfileUpdate(
     val interests: List<String>? = null,
-    val intent: Intent? = null,
+    val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )

@@ -32,14 +32,14 @@ class ProfileService(private val users: UserRepository) {
         val interests = update.interests?.let(::normalizeInterests) ?: user.interests
         val languages = update.languages?.let(::normalizeLanguages) ?: user.languages
         val schedule = update.offlineSchedule?.let(::normalizeSchedule) ?: user.offlineSchedule
-        val intent = update.intent ?: user.intent
+        val intents = update.intents?.distinct() ?: user.intents
 
         return users.update(
             user.copy(
                 interests = interests,
                 languages = languages,
                 offlineSchedule = schedule,
-                intent = intent,
+                intents = intents,
             ),
         )
     }

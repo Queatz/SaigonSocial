@@ -149,7 +149,7 @@ class Phase3Test {
                 id = "u1",
                 role = Role.SHARER,
                 displayName = "Real Name",
-                intent = Intent.DEEP_TALK,
+                intents = listOf(Intent.DEEP_TALK),
                 languages = listOf("vi", "en"),
             ),
         )

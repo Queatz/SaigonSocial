@@ -5,6 +5,7 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
@@ -84,9 +85,37 @@ class SaigonApi(
     suspend fun rooms(): List<RoomSummary> =
         client.get("$baseUrl/rooms") { HttpRequestAuth(this) }.body()
 
-    /** A room's public chat feed, each message carrying its reply-count (DESIGN §6, §9). */
-    suspend fun messages(roomId: String): List<FeedMessage> =
-        client.get("$baseUrl/rooms/$roomId/messages") { HttpRequestAuth(this) }.body()
+    /**
+     * A page of a room's public chat feed, each message carrying its reply-count (DESIGN §6, §9).
+     * Infinite scroll pages by 20 — pass [before] (the oldest loaded message's createdAt) to fetch
+     * the previous page of older messages. Results are ordered oldest→newest.
+     */
+    suspend fun messages(roomId: String, before: Long? = null, limit: Int = 20): List<FeedMessage> =
+        client.get("$baseUrl/rooms/$roomId/messages") {
+            HttpRequestAuth(this)
+            url.parameters.append("limit", limit.toString())
+            before?.let { url.parameters.append("before", it.toString()) }
+        }.body()
+
+    /** Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. */
+    suspend fun createRoom(name: String, emoji: String, atmosphere: String): Unit =
+        client.post("$baseUrl/rooms") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(RoomCreate(name, emoji, atmosphere))
+        }.let { }
+
+    /** Founder-only: rename/edit a room (DESIGN §6). */
+    suspend fun updateRoom(roomId: String, name: String, emoji: String, atmosphere: String): Unit =
+        client.put("$baseUrl/rooms/$roomId") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(RoomUpdate(name, emoji, atmosphere))
+        }.let { }
+
+    /** Founder-only: delete a room (DESIGN §6). */
+    suspend fun deleteRoom(roomId: String): Unit =
+        client.delete("$baseUrl/rooms/$roomId") { HttpRequestAuth(this) }.let { }
 
     /** Who is currently in a room, with intents + languages (DESIGN §6). */
     suspend fun occupants(roomId: String): List<OccupantView> =
@@ -124,11 +153,66 @@ class SaigonApi(
      * member JWT, so this also renews an expired token. Bad credentials surface as a friendly
      * [InvalidTokenException].
      */
-    suspend fun login(identifier: String, password: String): OnboardResponse =
-        client.post("$baseUrl/auth/login") {
+    suspend fun login(identifier: String, password: String): OnboardResponse {
+        val response = client.post("$baseUrl/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(identifier, password))
+        }
+        // A failed password sign-in is a credentials problem, not a bad access token — surface the
+        // right message instead of the generic "that token is invalid" copy.
+        when {
+            response.status == HttpStatusCode.Unauthorized ->
+                throw InvalidTokenException("Invalid username and password.")
+            !response.status.isSuccess() ->
+                throw InvalidTokenException(
+                    response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                        ?: "Could not sign in. Please try again.",
+                )
+        }
+        return response.body()
+    }
+
+    /**
+     * Create an account by redeeming a founder-issued invite code, choosing a username + password
+     * (replaces pasting a raw access token). The server mints a member JWT on success.
+     */
+    suspend fun redeemInvite(code: String, username: String, password: String): OnboardResponse {
+        val response = client.post("$baseUrl/auth/redeem") {
+            contentType(ContentType.Application.Json)
+            setBody(RedeemRequest(code, username, password))
+        }
+        if (!response.status.isSuccess()) {
+            throw InvalidTokenException(
+                response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                    ?: "Could not create your account. Check your invite code and try again.",
+            )
+        }
+        return response.body()
+    }
+
+    /** Founder-only: mint a single-use invite code for a new member of the given [role]. */
+    suspend fun createInvite(role: Role): InviteCodeResponse =
+        client.post("$baseUrl/founder/invites") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(InviteCreateRequest(role))
         }.decodeMember()
+
+    /** Change the caller's login username to [username], rejecting one already taken. */
+    suspend fun changeUsername(username: String): ProfileResponse {
+        val response = client.put("$baseUrl/profile/username") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(ChangeUsernameRequest(username))
+        }
+        if (!response.status.isSuccess()) {
+            throw InvalidTokenException(
+                response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                    ?: "Could not change your username. Please try again.",
+            )
+        }
+        return response.body()
+    }
 
     /** The caller's room-scoped identity, generated on first join (DESIGN §5). Requires a token. */
     suspend fun identity(roomId: String): RoomIdentity =
@@ -208,6 +292,7 @@ class SaigonApi(
         const val SAY_TYPE = "social.saigon.realtime.Incoming.Say"
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"
         const val SAID_TYPE = "social.saigon.realtime.Outgoing.Said"
+        const val REPLIED_TYPE = "social.saigon.realtime.Outgoing.Replied"
     }
 }
 
@@ -216,6 +301,14 @@ class SaigonApi(
  * friendly, already-localized message suitable for display, instead of the raw server status text.
  */
 class InvalidTokenException(message: String) : Exception(message)
+
+/** A live thread-reply broadcast over the WebSocket (`Outgoing.Replied`), carrying the parent's
+ * fresh reply-count so the feed can update its "↳ N replies" indicator (DESIGN §9). */
+data class ReplyEvent(
+    val parentMessageId: String,
+    val replyId: String,
+    val replyCount: Int,
+)
 
 /** A live, room-scoped chat message broadcast over the WebSocket (`Outgoing.Said`). */
 data class ChatMessage(
@@ -236,18 +329,28 @@ class RoomChannel internal constructor(
     private val roomId: String,
     private val json: Json,
 ) {
-    /** Consume incoming frames, surfacing each broadcast public message to [onMessage]. */
-    suspend fun start(onMessage: (ChatMessage) -> Unit) {
+    /**
+     * Consume incoming frames, surfacing each broadcast public message to [onMessage] and each
+     * thread reply to [onReply] (so the feed's "↳ N replies" indicator updates live, DESIGN §9).
+     */
+    suspend fun start(onMessage: (ChatMessage) -> Unit, onReply: (ReplyEvent) -> Unit = {}) {
         session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
             val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
-            if (obj["type"]?.jsonPrimitive?.contentOrNull == SaigonApi.SAID_TYPE) {
-                onMessage(
+            when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                SaigonApi.SAID_TYPE -> onMessage(
                     ChatMessage(
                         messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         authorId = obj["authorId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         authorName = obj["authorName"]?.jsonPrimitive?.contentOrNull,
                         text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    ),
+                )
+                SaigonApi.REPLIED_TYPE -> onReply(
+                    ReplyEvent(
+                        parentMessageId = obj["parentMessageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        replyId = obj["replyId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        replyCount = obj["replyCount"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                     ),
                 )
             }

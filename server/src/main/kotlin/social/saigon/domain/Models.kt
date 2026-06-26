@@ -34,7 +34,7 @@ enum class Role {
 }
 
 /**
- * Primary intent badge (DESIGN §4). Exactly one is selected per profile.
+ * Primary intent badge (DESIGN §4). Multiple may be selected per profile.
  */
 @Serializable
 enum class Intent(val badge: String) {
@@ -67,7 +67,8 @@ data class User(
     val passwordSetAt: Long? = null,
     /** Free-text interest tags. Max 5. */
     val interests: List<String> = emptyList(),
-    val intent: Intent? = null,
+    /** Primary intent badges the user selected (DESIGN §4). Multiple choice. */
+    val intents: List<Intent> = emptyList(),
     /** Language codes the user speaks (e.g. "vi", "en", "ko", "zh"). */
     val languages: List<String> = emptyList(),
     /** Optional availability windows. */

@@ -111,7 +111,7 @@ fun Application.module(
     routing {
         get("/") {
             call.respondText(
-                "Saigon.Social — a digital room for the city. Real people, real conversations, zero pressure.",
+                "Real people, real conversations, zero pressure. What do you want to talk about?",
             )
         }
     }

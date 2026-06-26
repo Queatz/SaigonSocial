@@ -176,6 +176,7 @@ internal class ArangoRoomRepository(db: ArangoDatabase) : RoomRepository {
     override fun create(room: Room): Room = store.put(room)
     override fun get(id: String): Room? = store.get(id)
     override fun all(): List<Room> = store.all()
+    override fun delete(id: String) = store.delete(id)
 }
 
 internal class ArangoRoomIdentityRepository(db: ArangoDatabase) : RoomIdentityRepository {
@@ -196,6 +197,23 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
             "FOR d IN ${ArangoSchema.MESSAGES} FILTER d.roomId == @roomId SORT d.createdAt RETURN d",
             mapOf("roomId" to roomId),
         )
+    override fun page(roomId: String, before: Long?, limit: Int): List<Message> {
+        // Fetch the newest [limit] messages older than [before] (descending), then flip to
+        // oldest→newest for display.
+        val aql = if (before == null) {
+            "FOR d IN ${ArangoSchema.MESSAGES} FILTER d.roomId == @roomId " +
+                "SORT d.createdAt DESC LIMIT @limit RETURN d"
+        } else {
+            "FOR d IN ${ArangoSchema.MESSAGES} FILTER d.roomId == @roomId AND d.createdAt < @before " +
+                "SORT d.createdAt DESC LIMIT @limit RETURN d"
+        }
+        val bindVars = if (before == null) {
+            mapOf("roomId" to roomId, "limit" to limit)
+        } else {
+            mapOf("roomId" to roomId, "before" to before, "limit" to limit)
+        }
+        return store.query(aql, bindVars).reversed()
+    }
 }
 
 internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {

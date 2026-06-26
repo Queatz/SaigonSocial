@@ -18,6 +18,17 @@ data class RoomCreate(
 )
 
 /**
+ * Founder-supplied fields for renaming/editing an existing room (DESIGN §6). Null fields are left
+ * unchanged.
+ */
+@Serializable
+data class RoomUpdate(
+    val name: String? = null,
+    val emoji: String? = null,
+    val atmosphere: String? = null,
+)
+
+/**
  * Plain-text-only enforcement for public chat and threads (DESIGN §2, §6).
  *
  * The platform is deliberately text-first: no images, voice notes, or video. Since the transport

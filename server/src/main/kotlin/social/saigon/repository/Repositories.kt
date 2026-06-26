@@ -3,6 +3,7 @@ package social.saigon.repository
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import social.saigon.domain.FinalEmojiSession
+import social.saigon.domain.InviteCode
 import social.saigon.domain.Message
 import social.saigon.domain.MetricEvent
 import social.saigon.domain.Payment
@@ -48,6 +49,19 @@ interface RoomRepository {
     fun create(room: Room): Room
     fun get(id: String): Room?
     fun all(): List<Room>
+    /** Delete a room by id. Idempotent. */
+    fun delete(id: String)
+}
+
+/**
+ * Founder-issued invite codes (single-use account-creation credentials). The founder mints a code;
+ * the recipient redeems it once to create their account.
+ */
+interface InviteCodeRepository {
+    fun create(invite: InviteCode): InviteCode
+    fun get(code: String): InviteCode?
+    fun update(invite: InviteCode): InviteCode
+    fun all(): List<InviteCode>
 }
 
 interface RoomIdentityRepository {
@@ -59,6 +73,13 @@ interface MessageRepository {
     fun add(message: Message): Message
     fun get(id: String): Message?
     fun byRoom(roomId: String): List<Message>
+
+    /**
+     * A single page of a room's messages for infinite scroll (20 per page). Returns up to [limit]
+     * messages ordered oldest→newest; when [before] is non-null only messages strictly older than
+     * that createdAt are considered (so the client can page upward through history).
+     */
+    fun page(roomId: String, before: Long?, limit: Int): List<Message>
 }
 
 /**
@@ -157,6 +178,16 @@ class InMemoryRoomRepository : RoomRepository {
     override fun create(room: Room): Room = room.also { store[it.id] = it }
     override fun get(id: String): Room? = store[id]
     override fun all(): List<Room> = store.values.toList()
+    override fun delete(id: String) { store.remove(id) }
+}
+
+class InMemoryInviteCodeRepository : InviteCodeRepository {
+    private val store = ConcurrentHashMap<String, InviteCode>()
+    private fun key(code: String) = code.uppercase()
+    override fun create(invite: InviteCode): InviteCode = invite.also { store[key(it.code)] = it }
+    override fun get(code: String): InviteCode? = store[key(code)]
+    override fun update(invite: InviteCode): InviteCode = invite.also { store[key(it.code)] = it }
+    override fun all(): List<InviteCode> = store.values.toList()
 }
 
 class InMemoryRoomIdentityRepository : RoomIdentityRepository {
@@ -177,6 +208,11 @@ class InMemoryMessageRepository : MessageRepository {
     }
     override fun get(id: String): Message? = byId[id]
     override fun byRoom(roomId: String): List<Message> = store[roomId]?.toList() ?: emptyList()
+    override fun page(roomId: String, before: Long?, limit: Int): List<Message> {
+        val all = (store[roomId]?.toList() ?: emptyList()).sortedBy { it.createdAt }
+        val older = if (before == null) all else all.filter { it.createdAt < before }
+        return older.takeLast(limit)
+    }
 }
 
 class InMemoryPrivateChatRepository : PrivateChatRepository {
@@ -292,4 +328,5 @@ class Repositories(
     val moderation: ModerationRepository = InMemoryModerationRepository(),
     val payments: PaymentRepository = InMemoryPaymentRepository(),
     val metrics: MetricRepository = InMemoryMetricRepository(),
+    val invites: InviteCodeRepository = InMemoryInviteCodeRepository(),
 )
