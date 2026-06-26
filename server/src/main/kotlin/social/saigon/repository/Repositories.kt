@@ -62,6 +62,7 @@ interface InviteCodeRepository {
     fun get(code: String): InviteCode?
     fun update(invite: InviteCode): InviteCode
     fun all(): List<InviteCode>
+    fun delete(code: String)
 }
 
 interface RoomIdentityRepository {
@@ -188,6 +189,7 @@ class InMemoryInviteCodeRepository : InviteCodeRepository {
     override fun get(code: String): InviteCode? = store[key(code)]
     override fun update(invite: InviteCode): InviteCode = invite.also { store[key(it.code)] = it }
     override fun all(): List<InviteCode> = store.values.toList()
+    override fun delete(code: String) { store.remove(key(code)) }
 }
 
 class InMemoryRoomIdentityRepository : RoomIdentityRepository {

@@ -27,6 +27,7 @@ import io.ktor.websocket.send
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -125,9 +126,20 @@ class SaigonApi(
     suspend fun thread(roomId: String, messageId: String): List<ThreadReply> =
         client.get("$baseUrl/rooms/$roomId/messages/$messageId/thread") { HttpRequestAuth(this) }.body()
 
-    /** The caller's persistent profile (DESIGN §4). Requires a member token. */
-    suspend fun profile(): ProfileResponse =
-        client.get("$baseUrl/profile/me") { HttpRequestAuth(this) }.decodeMember()
+    /**
+     * The caller's persistent profile (DESIGN §4). Requires a member token. A 401 or 400 from this
+     * route means the saved token is no longer usable (expired/revoked, or no longer maps to a
+     * member), so we clear it locally and surface a [SessionExpiredException] telling the UI to sign
+     * the user out. Any other failure is surfaced as-is and must NOT clear the token.
+     */
+    suspend fun profile(): ProfileResponse {
+        val response = client.get("$baseUrl/profile/me") { HttpRequestAuth(this) }
+        if (response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.BadRequest) {
+            token = null
+            throw SessionExpiredException("Your session has expired. Please sign in again.")
+        }
+        return response.decodeMember()
+    }
 
     /** Update editable profile fields (DESIGN §4). Requires a member token. */
     suspend fun updateProfile(update: ProfileUpdate): ProfileResponse =
@@ -238,6 +250,24 @@ class SaigonApi(
         client.post("$baseUrl/auth/bootstrap").decodeMember()
 
     /**
+     * Whether the one-time Founder bootstrap is still available (no member account exists yet). The
+     * onboarding screen uses this to show the "Claim the Founder account" affordance only when it
+     * would actually succeed. Any failure is treated as "not available" so the button stays hidden.
+     */
+    suspend fun bootstrapAvailable(): Boolean =
+        runCatching {
+            client.get("$baseUrl/auth/bootstrap").body<BootstrapStatusResponse>().available
+        }.getOrDefault(false)
+
+    /** Founder-only: every minted invite code, newest first, flagged as redeemed or not. */
+    suspend fun invites(): List<InviteCodeView> =
+        client.get("$baseUrl/founder/invites") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Founder-only: delete an unused invite code. */
+    suspend fun deleteInvite(code: String): Unit =
+        client.delete("$baseUrl/founder/invites/$code") { HttpRequestAuth(this) }.let { }
+
+    /**
      * Founder-only: onboard a new member, minting the access token they will sign in with
      * (DESIGN §2, §3). Requires the caller's token to be the founder's.
      */
@@ -282,6 +312,28 @@ class SaigonApi(
         return RoomChannel(session, roomId, json)
     }
 
+    /**
+     * Open a live one-on-one private chat with [targetUserId] by tapping their name in [roomId]
+     * (DESIGN §7). The caller drives the session via [PrivateChatChannel.start] (a long-running
+     * suspend) and must close it when done. The returned channel also carries the closing-emoji
+     * ritual (DESIGN §8) once the chat ends.
+     */
+    suspend fun openPrivateChat(roomId: String, targetUserId: String): PrivateChatChannel {
+        val wsUrl = buildString {
+            append(baseUrl.replaceFirst("http", "ws"))
+            append("/ws")
+            token?.let { append("?token=$it") }
+        }
+        val session = client.webSocketSession(wsUrl)
+        // The hub routes private frames by user id, so we still need to join the room first so the
+        // server has a live session for this connection.
+        session.send(Frame.Text(json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("type", JOIN_TYPE)
+            put("roomId", roomId)
+        })))
+        return PrivateChatChannel(session, roomId, targetUserId, json)
+    }
+
     fun close() {
         client.close()
     }
@@ -293,6 +345,18 @@ class SaigonApi(
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"
         const val SAID_TYPE = "social.saigon.realtime.Outgoing.Said"
         const val REPLIED_TYPE = "social.saigon.realtime.Outgoing.Replied"
+
+        // Private-chat + final-emoji protocol (DESIGN §7, §8).
+        const val START_PRIVATE_TYPE = "social.saigon.realtime.Incoming.StartPrivateChat"
+        const val SAY_PRIVATE_TYPE = "social.saigon.realtime.Incoming.SayPrivate"
+        const val END_PRIVATE_TYPE = "social.saigon.realtime.Incoming.EndPrivateChat"
+        const val SELECT_FINAL_EMOJI_TYPE = "social.saigon.realtime.Incoming.SelectFinalEmoji"
+        const val PRIVATE_STARTED_TYPE = "social.saigon.realtime.Outgoing.PrivateChatStarted"
+        const val PRIVATE_SAID_TYPE = "social.saigon.realtime.Outgoing.PrivateMessageSaid"
+        const val PRIVATE_ENDED_TYPE = "social.saigon.realtime.Outgoing.PrivateChatEnded"
+        const val FINAL_EMOJI_PROMPT_TYPE = "social.saigon.realtime.Outgoing.FinalEmojiPrompt"
+        const val FINAL_EMOJI_REVEALED_TYPE = "social.saigon.realtime.Outgoing.FinalEmojiRevealed"
+        const val ERROR_TYPE = "social.saigon.realtime.Outgoing.Error"
     }
 }
 
@@ -301,6 +365,12 @@ class SaigonApi(
  * friendly, already-localized message suitable for display, instead of the raw server status text.
  */
 class InvalidTokenException(message: String) : Exception(message)
+
+/**
+ * The saved access token was rejected by `/profile/me` (401/400), so the session can no longer be
+ * trusted. Callers should clear any persisted token and route the user back to the sign-in screen.
+ */
+class SessionExpiredException(message: String) : Exception(message)
 
 /** A live thread-reply broadcast over the WebSocket (`Outgoing.Replied`), carrying the parent's
  * fresh reply-count so the feed can update its "↳ N replies" indicator (DESIGN §9). */
@@ -373,6 +443,122 @@ class RoomChannel internal constructor(
             put("roomId", roomId)
             put("parentMessageId", parentMessageId)
             put("text", text)
+        })))
+    }
+
+    suspend fun close() {
+        session.close()
+    }
+}
+
+/** A plain-text private message delivered over the WebSocket (`Outgoing.PrivateMessageSaid`). */
+data class PrivateChatMessage(
+    val chatId: String,
+    val authorId: String,
+    val text: String,
+    val createdAt: Long,
+)
+
+/**
+ * A live one-on-one private chat WebSocket (DESIGN §7) that also carries the closing-emoji ritual
+ * (DESIGN §8). Opening it sends `StartPrivateChat`; the server answers with `PrivateChatStarted`
+ * (delivering the real chat id + peer name), then relays each side's `PrivateMessageSaid`. Ending
+ * the chat triggers the shared final-emoji prompt and, once both sides pick, the reveal.
+ *
+ * All peer data is real — nothing is fabricated client-side. Nothing is revealed until the peer
+ * actually selects an emoji.
+ */
+class PrivateChatChannel internal constructor(
+    private val session: io.ktor.client.plugins.websocket.DefaultClientWebSocketSession,
+    private val roomId: String,
+    private val targetUserId: String,
+    private val json: Json,
+) {
+    /** The server-assigned chat id, known once [Callbacks.onStarted] fires. */
+    var chatId: String? = null
+        private set
+
+    /** Live event sinks for the private-chat + final-emoji flow. */
+    class Callbacks(
+        val onStarted: (chatId: String, peerName: String?) -> Unit = { _, _ -> },
+        val onMessage: (PrivateChatMessage) -> Unit = {},
+        val onEnded: (endedBy: String) -> Unit = {},
+        val onFinalPrompt: (options: List<String>) -> Unit = {},
+        val onRevealed: (youSent: String, theySent: String) -> Unit = { _, _ -> },
+        val onError: (reason: String) -> Unit = {},
+    )
+
+    /**
+     * Send the initial `StartPrivateChat` and then consume server frames, dispatching each to the
+     * matching [callbacks] sink. Suspends until the socket closes.
+     */
+    suspend fun start(callbacks: Callbacks) {
+        session.send(Frame.Text(json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("type", SaigonApi.START_PRIVATE_TYPE)
+            put("roomId", roomId)
+            put("targetUserId", targetUserId)
+        })))
+        session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
+            val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
+            when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                SaigonApi.PRIVATE_STARTED_TYPE -> {
+                    chatId = obj["chatId"]?.jsonPrimitive?.contentOrNull
+                    callbacks.onStarted(
+                        chatId.orEmpty(),
+                        obj["peerName"]?.jsonPrimitive?.contentOrNull,
+                    )
+                }
+                SaigonApi.PRIVATE_SAID_TYPE -> callbacks.onMessage(
+                    PrivateChatMessage(
+                        chatId = obj["chatId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        authorId = obj["authorId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    ),
+                )
+                SaigonApi.PRIVATE_ENDED_TYPE -> callbacks.onEnded(
+                    obj["endedBy"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+                SaigonApi.FINAL_EMOJI_PROMPT_TYPE -> callbacks.onFinalPrompt(
+                    (obj["options"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                )
+                SaigonApi.FINAL_EMOJI_REVEALED_TYPE -> callbacks.onRevealed(
+                    obj["youSent"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    obj["theySent"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+                SaigonApi.ERROR_TYPE -> callbacks.onError(
+                    obj["reason"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
+        }
+    }
+
+    /** Send a plain-text private message (DESIGN §7). No-op until the chat has started. */
+    suspend fun say(text: String) {
+        val id = chatId ?: return
+        session.send(Frame.Text(json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("type", SaigonApi.SAY_PRIVATE_TYPE)
+            put("chatId", id)
+            put("text", text)
+        })))
+    }
+
+    /** End the private chat instantly (DESIGN §7); the server then opens the final-emoji prompt. */
+    suspend fun end() {
+        val id = chatId ?: return
+        session.send(Frame.Text(json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("type", SaigonApi.END_PRIVATE_TYPE)
+            put("chatId", id)
+        })))
+    }
+
+    /** Privately choose the closing emoji (DESIGN §8); stays hidden until the peer also picks. */
+    suspend fun selectFinalEmoji(emoji: String) {
+        val id = chatId ?: return
+        session.send(Frame.Text(json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("type", SaigonApi.SELECT_FINAL_EMOJI_TYPE)
+            put("chatId", id)
+            put("emoji", emoji)
         })))
     }
 

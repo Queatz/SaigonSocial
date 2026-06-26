@@ -50,6 +50,13 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** Human-friendly occupant count for room cards: "No people", "1 person", or "N people". */
+internal fun peopleCount(count: Int): String = when (count) {
+    0 -> "No people"
+    1 -> "1 person"
+    else -> "$count people"
+}
+
 // --- Room list (DESIGN §6) ---
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,7 +100,7 @@ internal fun RoomListScreen(
         ) {
             item {
                 Text(
-                    "Real people, real conversations, zero pressure. What do you want to talk about?",
+                    "Welcome to Saigon's trusted chat room. We're all real people, and we're into real conversation! What do you want to talk about?",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -123,7 +130,7 @@ internal fun RoomListScreen(
                                 )
                             }
                             Text(
-                                "${room.occupants} people",
+                                peopleCount(room.occupants),
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.secondary,
                                 fontWeight = FontWeight.Medium,
@@ -245,7 +252,8 @@ internal fun RoomChatScreen(
     api: SaigonApi,
     room: RoomSummary,
     hasToken: Boolean,
-    onStartPrivate: (String) -> Unit,
+    selfUserId: String?,
+    onStartPrivate: (OccupantView) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -348,14 +356,21 @@ internal fun RoomChatScreen(
             }
             Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
                 if (!wide) {
-                    OccupantScroller(occupants = occupants, selfName = identity?.name, onTapAvailable = onStartPrivate)
+                    OccupantScroller(occupants = occupants, selfUserId = selfUserId, onTapAvailable = onStartPrivate)
                     Spacer(Modifier.height(12.dp))
                 }
                 if (hasToken) {
                     IdentityBar(
                         identity = identity,
                         onRefresh = {
-                            scope.launch { identity = runCatching { api.refreshIdentity(room.id) }.getOrNull() }
+                            scope.launch {
+                                identity = runCatching { api.refreshIdentity(room.id) }.getOrNull()
+                                // The occupant "In the room" list caches the old name, so reload it
+                                // too — otherwise the user's own entry keeps showing the prior name.
+                                runCatching { api.occupants(room.id) }.getOrNull()?.let {
+                                    occupants.clear(); occupants.addAll(it)
+                                }
+                            }
                         },
                     )
                     Spacer(Modifier.height(12.dp))
@@ -409,7 +424,7 @@ internal fun RoomChatScreen(
             }
 
             if (wide) {
-                OccupantList(occupants = occupants, selfName = identity?.name, onTapAvailable = onStartPrivate)
+                OccupantList(occupants = occupants, selfUserId = selfUserId, onTapAvailable = onStartPrivate)
             }
         }
 
@@ -463,7 +478,7 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
                 if (msg.replyCount > 0) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "↳ ${msg.replyCount} replies (tap to open)",
+                        "⤷ ${msg.replyCount} replies (tap to open)",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -475,7 +490,7 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OccupantList(occupants: List<OccupantView>, selfName: String?, onTapAvailable: (String) -> Unit) {
+private fun OccupantList(occupants: List<OccupantView>, selfUserId: String?, onTapAvailable: (OccupantView) -> Unit) {
     Surface(
         modifier = Modifier.width(260.dp).fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -492,10 +507,13 @@ private fun OccupantList(occupants: List<OccupantView>, selfName: String?, onTap
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(occupants) { person ->
-                    val isSelf = selfName != null && person.name == selfName
+                    // Identify yourself by your persistent user id, not your room-scoped name
+                    // (names can collide and change). Never dim the card — just don't let a tap on
+                    // yourself (or an unavailable person) open a chat.
+                    val isSelf = selfUserId != null && person.userId == selfUserId
+                    val tappable = person.available && !isSelf
                     Card(
-                        onClick = { onTapAvailable(person.name) },
-                        enabled = person.available && !isSelf,
+                        onClick = { if (tappable) onTapAvailable(person) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
@@ -564,7 +582,7 @@ private fun RoomNavPanel(
                                     else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    "${r.occupants} people",
+                                    peopleCount(r.occupants),
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -580,7 +598,7 @@ private fun RoomNavPanel(
 /** Portrait/mobile: the room's people in a horizontal scroller pinned to the top (DESIGN §6). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OccupantScroller(occupants: List<OccupantView>, selfName: String?, onTapAvailable: (String) -> Unit) {
+private fun OccupantScroller(occupants: List<OccupantView>, selfUserId: String?, onTapAvailable: (OccupantView) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("In the room", fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
@@ -593,10 +611,12 @@ private fun OccupantScroller(occupants: List<OccupantView>, selfName: String?, o
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(occupants) { person ->
-                    val isSelf = selfName != null && person.name == selfName
+                    // Match yourself by user id (not name), and keep the card fully visible — only
+                    // gate the tap so you can't start a chat with yourself or an unavailable person.
+                    val isSelf = selfUserId != null && person.userId == selfUserId
+                    val tappable = person.available && !isSelf
                     Card(
-                        onClick = { onTapAvailable(person.name) },
-                        enabled = person.available && !isSelf,
+                        onClick = { if (tappable) onTapAvailable(person) },
                         modifier = Modifier.width(180.dp),
                     ) {
                         Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
@@ -612,12 +632,12 @@ private fun OccupantScroller(occupants: List<OccupantView>, selfName: String?, o
                                     )
                                 }
                             }
-                            person.intents.forEach { Text(it.badge, fontSize = 12.sp) }
                             Text(
                                 person.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            person.intents.forEach { Text(it.badge, fontSize = 12.sp) }
                         }
                     }
                 }

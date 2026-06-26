@@ -11,3 +11,13 @@ import saigonsocial.app.shared.generated.resources.Res
  * (see `WithEmojiFallback`).
  */
 suspend fun emojiFontBytes(): ByteArray = Res.readBytes("font/noto_color_emoji.ttf")
+
+/**
+ * Raw bytes of the bundled CJK font (Noto Sans CJK, subset to the common CJK/Hangul/Latin ranges).
+ *
+ * Like the emoji font, the Compose Web/Skiko renderer ships no CJK-capable font, so Chinese,
+ * Japanese, and Korean text renders as "tofu" boxes unless this font is registered as a fallback.
+ * The web entry point reads these bytes and preloads them into the font resolver (see
+ * `WithEmojiFallback`).
+ */
+suspend fun cjkFontBytes(): ByteArray = Res.readBytes("font/noto_sans_cjk.otf")

@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,13 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
+    // The Founder seat can be claimed only until the first member exists (DESIGN §2). Probe the
+    // server once so the claim affordance is shown only when it would actually succeed.
+    var founderClaimable by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        founderClaimable = api.bootstrapAvailable()
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -53,9 +61,11 @@ internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
 
         SignInSection(api = api, onToken = onToken)
 
-        HorizontalDivider()
+        if (founderClaimable) {
+            HorizontalDivider()
 
-        FounderClaimSection(api = api, onToken = onToken)
+            FounderClaimSection(api = api, onToken = onToken)
+        }
     }
 }
 

@@ -9,16 +9,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Font
+import social.saigon.ui.cjkFontBytes
 import social.saigon.ui.emojiFontBytes
 
 /**
- * Registers a bundled emoji font as a global fallback so emojis stop rendering as "tofu" boxes on
- * the Compose Web/Skiko renderer (which ships no emoji-capable font).
+ * Registers bundled emoji + CJK fonts as global fallbacks so emojis and Chinese/Japanese/Korean
+ * text stop rendering as "tofu" boxes on the Compose Web/Skiko renderer (which ships neither an
+ * emoji- nor a CJK-capable font).
  *
- * The font is preloaded into the active [FontFamily.Resolver]: Skia first looks up glyphs in the
+ * The fonts are preloaded into the active [FontFamily.Resolver]: Skia first looks up glyphs in the
  * fonts referenced by a `Text`/theme, then in the bundled default (Roboto), and finally in the
- * preloaded fallback collection — which is where the emoji glyphs now come from. [content] is shown
- * only once the fallback font is ready, so the first frame never renders boxes.
+ * preloaded fallback collection — which is where the emoji and CJK glyphs now come from. [content]
+ * is shown only once the fallback fonts are ready, so the first frame never renders boxes.
  */
 @Composable
 fun WithEmojiFallback(content: @Composable () -> Unit) {
@@ -29,6 +31,10 @@ fun WithEmojiFallback(content: @Composable () -> Unit) {
         runCatching {
             val emojiFamily = FontFamily(Font(identity = "NotoColorEmoji", data = emojiFontBytes()))
             fontFamilyResolver.preload(emojiFamily)
+        }
+        runCatching {
+            val cjkFamily = FontFamily(Font(identity = "NotoSansCJK", data = cjkFontBytes()))
+            fontFamilyResolver.preload(cjkFamily)
         }
         fontsLoaded = true
     }

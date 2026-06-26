@@ -1,6 +1,5 @@
 package social.saigon.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,10 +22,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,30 +35,122 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 // --- Private chat window (DESIGN §7) — ephemeral session, nothing persisted ---
 
+/**
+ * A live one-on-one private chat (DESIGN §7) over a real WebSocket, flowing straight into the
+ * closing-emoji ritual (DESIGN §8) when the chat ends. Every message and emoji is real peer
+ * transport — nothing is fabricated locally, and the closing emojis are revealed only once the
+ * peer actually picks one too.
+ */
 @Composable
-internal fun PrivateChatScreen(peer: String, onEnd: () -> Unit) {
-    val messages = remember { mutableStateListOf<PrivateMessage>() }
-    var draft by remember { mutableStateOf("") }
+internal fun PrivateChatScreen(
+    api: SaigonApi,
+    roomId: String,
+    targetUserId: String,
+    peerName: String,
+    selfUserId: String?,
+    onClose: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val messages = remember(targetUserId) { mutableStateListOf<PrivateMessage>() }
+    var draft by remember(targetUserId) { mutableStateOf("") }
+    var peer by remember(targetUserId) { mutableStateOf(peerName) }
+    var channel by remember(targetUserId) { mutableStateOf<PrivateChatChannel?>(null) }
+    var connected by remember(targetUserId) { mutableStateOf(false) }
+    var error by remember(targetUserId) { mutableStateOf<String?>(null) }
+
+    // The closing-emoji ritual (DESIGN §8). `ended` flips once the chat closes; `mine` holds our
+    // locked-in pick (kept hidden), and `theirs` arrives only on the server's reveal.
+    var ended by remember(targetUserId) { mutableStateOf(false) }
+    var mine by remember(targetUserId) { mutableStateOf<String?>(null) }
+    var theirs by remember(targetUserId) { mutableStateOf<String?>(null) }
+
+    // Open the live channel, send StartPrivateChat, and stream peer events for this screen's life.
+    DisposableEffect(targetUserId) {
+        val job = scope.launch {
+            runCatching {
+                val ch = api.openPrivateChat(roomId, targetUserId)
+                channel = ch
+                ch.start(
+                    PrivateChatChannel.Callbacks(
+                        onStarted = { _, name ->
+                            connected = true
+                            name?.let { peer = it }
+                        },
+                        onMessage = { msg ->
+                            messages.add(
+                                PrivateMessage(
+                                    author = if (msg.authorId == selfUserId) "You" else peer,
+                                    text = msg.text,
+                                    mine = msg.authorId == selfUserId,
+                                ),
+                            )
+                        },
+                        onEnded = { ended = true },
+                        // The server opens the prompt for both parties; `ended` already drives the UI.
+                        onFinalPrompt = { ended = true },
+                        onRevealed = { youSent, theySent ->
+                            mine = youSent
+                            theirs = theySent
+                        },
+                        onError = { reason -> error = reason },
+                    ),
+                )
+            }.onFailure { error = it.message ?: "Lost connection" }
+        }
+        onDispose {
+            job.cancel()
+            scope.launch { runCatching { channel?.close() } }
+        }
+    }
+
+    if (ended) {
+        FinalEmojiScreen(
+            peer = peer,
+            mine = mine,
+            theirs = theirs,
+            onPick = { emoji ->
+                mine = emoji
+                scope.launch { runCatching { channel?.selectFinalEmoji(emoji) } }
+            },
+            onClose = onClose,
+        )
+        return
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(messages) { m ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
-                ) {
-                    Surface(
-                        color = if (m.mine) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
+        if (error != null) {
+            Text(error!!, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(8.dp))
+        }
+        if (!connected) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("Connecting to $peer…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(messages) { m ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
                     ) {
-                        Text(m.text, modifier = Modifier.padding(10.dp), fontSize = 15.sp)
+                        Surface(
+                            color = if (m.mine) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text(m.text, modifier = Modifier.padding(10.dp), fontSize = 15.sp)
+                        }
                     }
                 }
             }
@@ -68,28 +161,39 @@ internal fun PrivateChatScreen(peer: String, onEnd: () -> Unit) {
             onValueChange = { draft = it },
             onSend = {
                 val text = draft.trim()
-                if (text.isNotEmpty()) {
-                    messages.add(PrivateMessage("You", text, mine = true))
+                if (text.isNotEmpty() && connected) {
+                    scope.launch { runCatching { channel?.say(text) } }
                     draft = ""
                 }
             },
             sendLabel = "Send",
             placeholder = "Message $peer",
+            enabled = connected,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onEnd, modifier = Modifier.fillMaxWidth()) { Text("End chat") }
+        OutlinedButton(
+            onClick = { scope.launch { runCatching { channel?.end() } } },
+            enabled = connected,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("End chat") }
     }
 }
 
 // --- Final emoji selection + reveal (DESIGN §8) ---
 
+/**
+ * The closing-emoji ritual (DESIGN §8). [mine] is our locked-in pick (kept hidden until the
+ * reveal); [theirs] is non-null only once the server reports the peer has also chosen, at which
+ * point both are shown side-by-side. Nothing is revealed before the peer actually picks.
+ */
 @Composable
-internal fun FinalEmojiScreen(peer: String, onClose: () -> Unit) {
-    var mine by remember { mutableStateOf<String?>(null) }
-    // The peer's pick arrives over the WebSocket once they choose; null until then. Nothing is
-    // revealed before that — we wait for the other person to send one (DESIGN §8).
-    var theirs by remember { mutableStateOf<String?>(null) }
-
+internal fun FinalEmojiScreen(
+    peer: String,
+    mine: String?,
+    theirs: String?,
+    onPick: (String) -> Unit,
+    onClose: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -98,7 +202,7 @@ internal fun FinalEmojiScreen(peer: String, onClose: () -> Unit) {
             mine == null -> {
                 Text("One last emoji to sum it up?", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(20.dp))
-                EmojiGrid(onPick = { mine = it })
+                EmojiGrid(onPick = onPick)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Your pick stays hidden until $peer also chooses.",
@@ -124,8 +228,8 @@ internal fun FinalEmojiScreen(peer: String, onClose: () -> Unit) {
                 Text("How you summed each other up", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(24.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                    RevealColumn("You sent", mine!!)
-                    RevealColumn("$peer sent", theirs!!)
+                    RevealColumn("You sent", mine)
+                    RevealColumn("$peer sent", theirs)
                 }
                 Spacer(Modifier.height(28.dp))
                 Button(onClick = onClose) { Text("Close") }

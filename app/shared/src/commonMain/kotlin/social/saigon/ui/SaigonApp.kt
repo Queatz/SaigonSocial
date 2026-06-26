@@ -9,14 +9,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -55,8 +64,7 @@ import androidx.compose.ui.unit.sp
 private sealed interface Screen {
     data object RoomList : Screen
     data class Room(val room: RoomSummary) : Screen
-    data class Private(val peer: String) : Screen
-    data class FinalEmoji(val peer: String) : Screen
+    data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
     data object Profile : Screen
 }
 
@@ -77,20 +85,41 @@ fun SaigonApp() {
         // The signed-in user's profile, used for top-bar identity and room permissions.
         var profile by remember { mutableStateOf<ProfileResponse?>(null) }
         LaunchedEffect(token, screen) {
-            profile = if (token != null) runCatching { api.profile() }.getOrNull() else null
+            if (token != null) {
+                try {
+                    profile = api.profile()
+                } catch (e: SessionExpiredException) {
+                    // /profile/me rejected the token (401/400): clear it so the user is signed out.
+                    // Nulling `token` also persists TokenStore.save(null), wiping local storage.
+                    token = null
+                    profile = null
+                } catch (e: Throwable) {
+                    // A transient profile fetch failure (network blip) must NOT sign the user out:
+                    // keep the token and just leave `profile` null until the next successful load.
+                    profile = null
+                }
+            } else {
+                profile = null
+            }
         }
         val role = profile?.role
         val canCreateRooms = role == Role.SUPPORTER || role == Role.FOUNDER
         val canManageRooms = role == Role.FOUNDER
 
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                // Keep content clear of the status/navigation bars on edge-to-edge Android; a no-op
+                // on web/desktop where these vertical insets are zero.
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)),
+            color = MaterialTheme.colorScheme.background,
+        ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 TopBar(
                     title = when (val s = screen) {
                         Screen.RoomList -> "Saigon.Social"
                         is Screen.Room -> "${s.room.emoji} ${s.room.name}"
-                        is Screen.Private -> "Private chat · ${s.peer}"
-                        is Screen.FinalEmoji -> "One last emoji"
+                        is Screen.Private -> "Chat with ${s.peerName}"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                     },
                     canGoBack = screen != Screen.RoomList,
@@ -114,15 +143,18 @@ fun SaigonApp() {
                             api = api,
                             room = s.room,
                             hasToken = token != null,
-                            onStartPrivate = { screen = Screen.Private(it) },
+                            selfUserId = profile?.id,
+                            onStartPrivate = { occupant ->
+                                screen = Screen.Private(s.room.id, occupant.userId, occupant.name)
+                            },
                             onOpenRoom = { screen = Screen.Room(it) },
                         )
                         is Screen.Private -> PrivateChatScreen(
-                            peer = s.peer,
-                            onEnd = { screen = Screen.FinalEmoji(s.peer) },
-                        )
-                        is Screen.FinalEmoji -> FinalEmojiScreen(
-                            peer = s.peer,
+                            api = api,
+                            roomId = s.roomId,
+                            targetUserId = s.targetUserId,
+                            peerName = s.peerName,
+                            selfUserId = profile?.id,
                             onClose = { screen = Screen.RoomList },
                         )
                         Screen.Profile -> MaxWidthContainer { ProfileScreen(api, token, onToken = { token = it }) }
@@ -148,9 +180,47 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (canGoBack) {
-                // A back-arrow icon only, no "Back" label.
+                // A back-arrow icon only, no "Back" label. Drawn with Canvas (rather than a "\u2190"
+                // glyph or a Material icon dependency) so it renders regardless of which fonts the
+                // Skiko renderer has loaded.
                 IconButton(onClick = onBack) {
-                    Text("\u2190", color = MaterialTheme.colorScheme.onPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    val arrowColor = MaterialTheme.colorScheme.onPrimary
+                    Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        val midY = h / 2f
+                        val strokeWidth = h * 0.12f
+                        // Horizontal shaft.
+                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.9f, midY), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        // Upper and lower barbs of the arrowhead.
+                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.42f, midY - h * 0.32f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.42f, midY + h * 0.32f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+            } else {
+                // Home icon. Drawn with Canvas (rather than a glyph or a Material icon dependency)
+                // so it renders regardless of which fonts the Skiko renderer has loaded. Wrapped in
+                // a Box sized to match the back-arrow's IconButton (48.dp default touch target) so
+                // the top bar keeps the same height whether or not the back arrow is shown.
+                val homeColor = MaterialTheme.colorScheme.onPrimary
+                Box(
+                    modifier = Modifier.width(48.dp).height(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        val strokeWidth = h * 0.12f
+                        // Roof: two lines from the apex down to each eave.
+                        drawLine(homeColor, Offset(w * 0.5f, h * 0.1f), Offset(w * 0.1f, h * 0.45f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(homeColor, Offset(w * 0.5f, h * 0.1f), Offset(w * 0.9f, h * 0.45f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        // Walls.
+                        drawLine(homeColor, Offset(w * 0.2f, h * 0.4f), Offset(w * 0.2f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(homeColor, Offset(w * 0.8f, h * 0.4f), Offset(w * 0.8f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        // Floor.
+                        drawLine(homeColor, Offset(w * 0.2f, h * 0.9f), Offset(w * 0.8f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
             }
@@ -162,8 +232,13 @@ private fun TopBar(
                 modifier = Modifier.weight(1f),
             )
             if (signedIn) {
-                // The user's profile icon doubles as the entry to the profile screen.
-                Box(modifier = Modifier.clickable(onClick = onProfile)) {
+                // The user's profile icon doubles as the entry to the profile screen. Clip to a
+                // circle *before* the clickable so the ripple stays inside the icon's bounds.
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onProfile),
+                ) {
                     ProfileIcon(name = profileName ?: "?", size = 36.dp)
                 }
             } else {

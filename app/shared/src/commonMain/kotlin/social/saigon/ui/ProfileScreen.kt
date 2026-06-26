@@ -8,13 +8,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +48,9 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
         error = null
         try {
             profile = api.profile()
+        } catch (e: SessionExpiredException) {
+            // The token was rejected by /profile/me (401/400): clear it and drop back to sign-in.
+            onToken(null)
         } catch (e: Throwable) {
             error = e.message ?: "Could not load your profile"
         }
@@ -117,7 +121,7 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     value = availability,
                     onValueChange = { availability = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("General availability (optional, ';'-separated)") },
+                    label = { Text("Times during the day/week you're often available") },
                     shape = InputFieldShape,
                 )
 
@@ -144,7 +148,9 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     },
                 ) { Text("Save profile") }
 
-                UsernameSection(api = api, profile = p, onUpdated = { profile = it })
+                Accordion(title = "Your username") {
+                    UsernameSection(api = api, profile = p, onUpdated = { profile = it })
+                }
 
                 Accordion(title = if (p.passwordSet) "Change your password" else "Set a password") {
                     PasswordSection(api = api, profile = p, onUpdated = { profile = it })
@@ -157,8 +163,25 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     FounderMembersSection(api)
                 }
 
-                OutlinedButton(onClick = { onToken(null) }, modifier = Modifier.fillMaxWidth()) {
+                var confirmSignOut by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Sign out")
+                }
+                if (confirmSignOut) {
+                    AlertDialog(
+                        onDismissRequest = { confirmSignOut = false },
+                        title = { Text("Sign out?") },
+                        text = { Text("You'll need your username and password to sign back in.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmSignOut = false
+                                onToken(null)
+                            }) { Text("Sign out") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") }
+                        },
+                    )
                 }
             }
         }
@@ -174,8 +197,6 @@ private fun UsernameSection(api: SaigonApi, profile: ProfileResponse, onUpdated:
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    HorizontalDivider()
-    Text("Your username", fontWeight = FontWeight.Bold)
     Text(
         "This is the username you sign in with. You can change it to any name that isn't already taken.",
         fontSize = 12.sp,

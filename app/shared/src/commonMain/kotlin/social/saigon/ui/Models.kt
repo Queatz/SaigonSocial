@@ -44,6 +44,8 @@ data class RoomSummary(
 /** A person currently in a room with intent + languages (`GET /rooms/{id}/occupants`, DESIGN §6). */
 @Serializable
 data class OccupantView(
+    /** The occupant's persistent user id, used to start a private chat (DESIGN §7). */
+    val userId: String = "",
     val name: String,
     val avatarUrl: String = "",
     val role: Role,
@@ -191,6 +193,19 @@ data class InviteCreateRequest(val role: Role = Role.SHARER)
 /** A minted invite code handed to a prospective member. */
 @Serializable
 data class InviteCodeResponse(val code: String, val role: Role)
+
+/** Whether the one-time Founder bootstrap is still available (no member account exists yet). */
+@Serializable
+data class BootstrapStatusResponse(val available: Boolean)
+
+/** A founder-visible invite code, including whether it has already been redeemed. */
+@Serializable
+data class InviteCodeView(
+    val code: String,
+    val role: Role,
+    val createdAt: Long,
+    val redeemed: Boolean,
+)
 
 /** Redeem an invite code to create an account by choosing a username + password. */
 @Serializable

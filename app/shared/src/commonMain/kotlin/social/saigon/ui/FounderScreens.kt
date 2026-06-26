@@ -45,6 +45,16 @@ internal fun FounderInviteSection(api: SaigonApi) {
     var code by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val invites = remember { mutableStateListOf<InviteCodeView>() }
+
+    suspend fun reloadInvites() {
+        runCatching { api.invites() }.onSuccess {
+            invites.clear()
+            invites.addAll(it)
+        }
+    }
+
+    LaunchedEffect(Unit) { reloadInvites() }
 
     Text(
         "Mint a short invite code, pick the new member's tier, and share the code. They use it to " +
@@ -77,6 +87,7 @@ internal fun FounderInviteSection(api: SaigonApi) {
             scope.launch {
                 try {
                     code = api.createInvite(role).code
+                    reloadInvites()
                     // Reload the directory so any account created from a code is reflected.
                     MembersReloadBus.requestReload()
                 } catch (e: Throwable) {
@@ -87,6 +98,47 @@ internal fun FounderInviteSection(api: SaigonApi) {
             }
         },
     ) { Text("Generate invite code") }
+
+    // Active (unused) invite codes are listed so the founder can re-share or delete them; used
+    // codes are kept as an audit trail and shown as already redeemed.
+    if (invites.isNotEmpty()) {
+        Text("Active invite codes", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        invites.forEach { invite ->
+            InviteRow(
+                invite = invite,
+                onDelete = {
+                    scope.launch {
+                        runCatching { api.deleteInvite(invite.code) }
+                            .onSuccess { reloadInvites() }
+                            .onFailure { error = it.message ?: "Could not delete that invite code." }
+                    }
+                },
+            )
+        }
+    }
+}
+
+/** A single founder-visible invite code, with a delete control for codes that haven't been used. */
+@Composable
+private fun InviteRow(invite: InviteCodeView, onDelete: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                SelectionContainer { Text(invite.code, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                Text(
+                    invite.role.label + if (invite.redeemed) " · used" else " · unused",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!invite.redeemed) {
+                TextButton(onClick = onDelete) { Text("Delete") }
+            }
+        }
+    }
 }
 
 /**

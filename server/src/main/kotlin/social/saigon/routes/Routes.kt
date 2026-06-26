@@ -89,6 +89,19 @@ data class InviteCreateRequest(val role: Role = Role.SHARER)
 @Serializable
 data class InviteCodeResponse(val code: String, val role: Role)
 
+/** Whether the one-time Founder bootstrap is still available (no member account exists yet). */
+@Serializable
+data class BootstrapStatusResponse(val available: Boolean)
+
+/** A founder-visible invite code, including whether it has already been redeemed. */
+@Serializable
+data class InviteCodeView(
+    val code: String,
+    val role: Role,
+    val createdAt: Long,
+    val redeemed: Boolean,
+)
+
 /** Redeem an invite code to create an account by choosing a username + password. */
 @Serializable
 data class RedeemRequest(val code: String, val username: String, val password: String)
@@ -159,6 +172,14 @@ fun Application.registerRoutes(
             call.respond(
                 OnboardResponse(founder.id, tokenService.issueMemberToken(founder.id, founder.role)),
             )
+        }
+
+        // Public probe for the onboarding screen: is the Founder seat still unclaimed? The
+        // "Claim the Founder account" affordance is shown only when no member account exists yet,
+        // mirroring the gate POST /auth/bootstrap enforces.
+        get("/auth/bootstrap") {
+            val hasMembers = repositories.users.all().any { it.role != Role.SEEKER }
+            call.respond(BootstrapStatusResponse(available = !hasMembers))
         }
 
         // Password sign-in (PASSWORD_AUTH.md §2C): re-enter with a handle + password the member set
@@ -250,7 +271,9 @@ fun Application.registerRoutes(
                     id = message.id,
                     roomId = message.roomId,
                     authorId = message.authorId,
-                    authorName = authorName(message.authorId, roomId, repositories, identities),
+                    authorName = message.authorName.ifBlank {
+                        authorName(message.authorId, roomId, repositories, identities)
+                    },
                     text = message.text,
                     createdAt = message.createdAt,
                     replyCount = threadService.replyCount(message.id),
@@ -270,7 +293,9 @@ fun Application.registerRoutes(
                     parentMessageId = reply.parentMessageId,
                     replyToId = reply.replyToId,
                     authorId = reply.authorId,
-                    authorName = authorName(reply.authorId, roomId, repositories, identities),
+                    authorName = reply.authorName.ifBlank {
+                        authorName(reply.authorId, roomId, repositories, identities)
+                    },
                     text = reply.text,
                     createdAt = reply.createdAt,
                 )
@@ -288,6 +313,7 @@ fun Application.registerRoutes(
                     val user = repositories.users.get(userId) ?: return@mapNotNull null
                     val identity = identities.getOrCreate(userId, roomId)
                     OccupantView(
+                        userId = userId,
                         name = identity.name,
                         avatarUrl = identity.avatarUrl,
                         role = user.role,
@@ -459,6 +485,29 @@ fun Application.registerRoutes(
                     ),
                 )
                 call.respond(InviteCodeResponse(code, req.role))
+            }
+
+            // Founder-only: list every invite code that has been minted, newest first, flagging
+            // which have already been redeemed so the UI can offer to delete the unused ones.
+            get("/founder/invites") {
+                requireFounder(call.caller())
+                val invites = repositories.invites.all()
+                    .sortedByDescending { it.createdAt }
+                    .map { InviteCodeView(it.code, it.role, it.createdAt, it.redeemed) }
+                call.respond(invites)
+            }
+
+            // Founder-only: delete an invite code that has *not* yet been used. Already-redeemed
+            // codes are kept as an audit trail of who joined with which code.
+            delete("/founder/invites/{code}") {
+                requireFounder(call.caller())
+                val code = call.parameters["code"].orEmpty().trim()
+                require(code.isNotBlank()) { "code required" }
+                val invite = repositories.invites.get(code)
+                    ?: throw IllegalArgumentException("That invite code does not exist.")
+                require(!invite.redeemed) { "That invite code has already been used." }
+                repositories.invites.delete(invite.code)
+                call.respond(mapOf("deleted" to invite.code))
             }
 
             // Founder-only manual tier change (MEMBER_MANAGEMENT.md B): comp a member up to Supporter,
@@ -633,6 +682,8 @@ data class RoomSummary(
 /** A person currently in a room, with intents + languages shown next to them (DESIGN §6). */
 @Serializable
 data class OccupantView(
+    /** The occupant's persistent user id, used to start a private chat (DESIGN §7). */
+    val userId: String = "",
     val name: String,
     val avatarUrl: String,
     val role: Role,
@@ -929,6 +980,7 @@ private suspend fun handleIncoming(
                     authorId = authorId,
                     text = frame.text,
                     replyToId = frame.replyToId,
+                    authorName = authorName ?: authorId,
                 )
             } catch (e: IllegalArgumentException) {
                 session.send(Outgoing.Error(e.message ?: "Invalid reply"))
@@ -975,6 +1027,7 @@ private suspend fun handleIncoming(
                     id = UUID.randomUUID().toString(),
                     roomId = frame.roomId,
                     authorId = authorId,
+                    authorName = authorName ?: authorId,
                     text = text,
                     createdAt = System.currentTimeMillis(),
                 ),

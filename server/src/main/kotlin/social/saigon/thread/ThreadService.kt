@@ -40,6 +40,7 @@ class ThreadService(
         authorId: String,
         text: String,
         replyToId: String? = null,
+        authorName: String = "",
     ): ThreadReply {
         val parent = messages.get(parentMessageId)
             ?: throw IllegalArgumentException("Unknown message")
@@ -56,6 +57,7 @@ class ThreadService(
                 parentMessageId = parent.id,
                 replyToId = replyToId,
                 authorId = authorId,
+                authorName = authorName,
                 text = body,
                 createdAt = clock(),
             ),

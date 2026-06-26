@@ -90,6 +90,7 @@ fun Application.module(
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
         allowMethod(HttpMethod.Patch)
+        allowMethod(HttpMethod.Delete)
         allowCredentials = true
     }
     install(StatusPages) {
@@ -111,7 +112,7 @@ fun Application.module(
     routing {
         get("/") {
             call.respondText(
-                "Real people, real conversations, zero pressure. What do you want to talk about?",
+                "Welcome to Saigon's trusted chat room. We're all real people, and we're into real conversation! What do you want to talk about?",
             )
         }
     }

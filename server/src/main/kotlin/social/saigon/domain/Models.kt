@@ -125,6 +125,12 @@ data class Message(
     val authorId: String,
     val text: String,
     val createdAt: Long,
+    /**
+     * The author's room-scoped display name captured at post time (DESIGN §5). Stored on the
+     * message so a later identity refresh never rewrites the names on past posts. Empty for legacy
+     * rows, in which case the name is resolved live.
+     */
+    val authorName: String = "",
 )
 
 /**
@@ -140,4 +146,10 @@ data class ThreadReply(
     val authorId: String,
     val text: String,
     val createdAt: Long,
+    /**
+     * The author's room-scoped display name captured at post time (DESIGN §5). Stored on the
+     * reply so a later identity refresh never rewrites the names on past replies. Empty for legacy
+     * rows, in which case the name is resolved live.
+     */
+    val authorName: String = "",
 )
