@@ -7,6 +7,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -107,6 +108,28 @@ class SaigonApi(
             setBody(update)
         }.decodeMember()
 
+    /**
+     * Set or change the durable sign-in password (PASSWORD_AUTH.md §2B). Requires a member token;
+     * [currentPassword] is required only when one is already set. Returns the refreshed profile.
+     */
+    suspend fun setPassword(newPassword: String, currentPassword: String?): ProfileResponse =
+        client.post("$baseUrl/profile/password") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(SetPasswordRequest(newPassword, currentPassword))
+        }.decodeMember()
+
+    /**
+     * Sign in with a handle + password set earlier (PASSWORD_AUTH.md §2C). The server mints a fresh
+     * member JWT, so this also renews an expired token. Bad credentials surface as a friendly
+     * [InvalidTokenException].
+     */
+    suspend fun login(identifier: String, password: String): OnboardResponse =
+        client.post("$baseUrl/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest(identifier, password))
+        }.decodeMember()
+
     /** The caller's room-scoped identity, generated on first join (DESIGN §5). Requires a token. */
     suspend fun identity(roomId: String): RoomIdentity =
         client.get("$baseUrl/rooms/$roomId/identity") { HttpRequestAuth(this) }.decodeMember()
@@ -139,6 +162,21 @@ class SaigonApi(
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
             setBody(OnboardRequest(displayName, role))
+        }.decodeMember()
+
+    /** Founder-only: the member directory with each member's tier and subscription expiry. */
+    suspend fun members(): List<MemberView> =
+        client.get("$baseUrl/founder/members") { HttpRequestAuth(this) }.decodeMember()
+
+    /**
+     * Founder-only: change a member's tier (comp to Supporter, downgrade to Sharer, or demote to
+     * Seeker). Returns the refreshed member and a fresh token they can re-authenticate with.
+     */
+    suspend fun setMemberRole(userId: String, role: Role): MemberTierChangeResponse =
+        client.patch("$baseUrl/founder/members/$userId/role") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(SetTierRequest(role))
         }.decodeMember()
 
     /**

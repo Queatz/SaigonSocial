@@ -42,6 +42,12 @@ class EconomicsService(
         val status: EconomicStatus,
     )
 
+    /** Result of a Founder-initiated tier change: the updated member plus their refreshed standing. */
+    data class TierChangeOutcome(
+        val user: User,
+        val status: EconomicStatus,
+    )
+
     /**
      * Settle the one-time Sharer join fee for [userId] (DESIGN §3, §11).
      *
@@ -112,6 +118,52 @@ class EconomicsService(
             ),
         )
         return PaymentOutcome(payment, updated, statusOf(updated))
+    }
+
+    /**
+     * Founder-initiated manual tier change for [userId] (MEMBER_MANAGEMENT.md B).
+     *
+     * Unlike [paySharerFee] / [paySupporterSubscription], this records **no [Payment]** — it is an
+     * administrative comp/downgrade, not a settled transaction:
+     * - **Supporter:** comps a fresh [Pricing.SUPPORTER_PERIOD_MILLIS] period (also settling the
+     *   one-time Sharer fee if it was never paid), so [effectiveRole] resolves to Supporter.
+     * - **Sharer:** clears [User.supporterUntil] (settling the Sharer fee if needed) so an active
+     *   Supporter drops to Sharer.
+     * - **Seeker:** clears both [User.sharerPaidAt] and [User.supporterUntil] for a soft removal.
+     *
+     * Every change is audited as a [MetricType.TIER_CHANGE] event so the founder-only `/metrics`
+     * view reflects manual adjustments.
+     *
+     * @throws IllegalArgumentException if the user is unknown, is the Founder, or [role] is
+     *   [Role.FOUNDER] (the Founder's role is never assignable here).
+     */
+    fun setTier(userId: String, role: Role): TierChangeOutcome {
+        val user = requireUser(userId)
+        require(user.role != Role.FOUNDER) { "Cannot change the Founder's own tier" }
+        require(role != Role.FOUNDER) { "Cannot promote a member to Founder" }
+        val now = clock()
+        val updated = when (role) {
+            Role.SUPPORTER -> users.update(
+                user.copy(
+                    role = Role.SUPPORTER,
+                    sharerPaidAt = user.sharerPaidAt ?: now,
+                    supporterUntil = now + Pricing.SUPPORTER_PERIOD_MILLIS,
+                ),
+            )
+            Role.SHARER -> users.update(
+                user.copy(
+                    role = Role.SHARER,
+                    sharerPaidAt = user.sharerPaidAt ?: now,
+                    supporterUntil = null,
+                ),
+            )
+            Role.SEEKER -> users.update(
+                user.copy(role = Role.SEEKER, sharerPaidAt = null, supporterUntil = null),
+            )
+            Role.FOUNDER -> error("unreachable")
+        }
+        metrics.record(MetricType.TIER_CHANGE, userId = userId)
+        return TierChangeOutcome(user = updated, status = statusOf(updated))
     }
 
     /** The member's aggregated economic standing (DESIGN §3, §11). */

@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,8 +82,13 @@ private sealed interface Screen {
 fun SaigonApp() {
     SaigonTheme {
         val api = remember { SaigonApi() }
-        var token by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(token) { api.token = token }
+        // Restore a previously-saved access token so a page reload doesn't sign the user out
+        // (DESIGN §2): the token is the only credential, persisted via TokenStore (localStorage on web).
+        var token by remember { mutableStateOf(TokenStore.load()) }
+        LaunchedEffect(token) {
+            api.token = token
+            TokenStore.save(token)
+        }
 
         var screen by remember { mutableStateOf<Screen>(Screen.RoomList) }
 
@@ -94,9 +100,10 @@ fun SaigonApp() {
                         is Screen.Room -> "${s.room.emoji} ${s.room.name}"
                         is Screen.Private -> "Private chat · ${s.peer}"
                         is Screen.FinalEmoji -> "One last emoji"
-                        Screen.Profile -> "Your profile"
+                        Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                     },
                     canGoBack = screen != Screen.RoomList,
+                    signedIn = token != null,
                     onBack = { screen = Screen.RoomList },
                     onProfile = { screen = Screen.Profile },
                 )
@@ -131,6 +138,7 @@ fun SaigonApp() {
 private fun TopBar(
     title: String,
     canGoBack: Boolean,
+    signedIn: Boolean,
     onBack: () -> Unit,
     onProfile: () -> Unit,
 ) {
@@ -150,7 +158,9 @@ private fun TopBar(
                 fontSize = 18.sp,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onProfile) { Text("Profile", color = MaterialTheme.colorScheme.onPrimary) }
+            TextButton(onClick = onProfile) {
+                Text(if (signedIn) "Profile" else "Sign in", color = MaterialTheme.colorScheme.onPrimary)
+            }
         }
     }
 }
@@ -167,7 +177,7 @@ private fun Centered(content: @Composable () -> Unit) {
 @Composable
 private fun MaxWidthContainer(content: @Composable () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Box(modifier = Modifier.fillMaxSize().widthIn(max = 800.dp)) { content() }
+        Box(modifier = Modifier.widthIn(max = 800.dp).fillMaxSize()) { content() }
     }
 }
 
@@ -961,8 +971,11 @@ private fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) -> 
                     },
                 ) { Text("Save profile") }
 
+                PasswordSection(api = api, profile = p, onUpdated = { profile = it })
+
                 if (p.role == Role.FOUNDER) {
                     FounderTokenSection(api)
+                    FounderMembersSection(api)
                 }
 
                 OutlinedButton(onClick = { onToken(null) }, modifier = Modifier.fillMaxWidth()) {
@@ -971,6 +984,95 @@ private fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) -> 
             }
         }
     }
+}
+
+/**
+ * "Set a password" / "Change password" section on the profile (PASSWORD_AUTH.md §2B).
+ *
+ * After signing in with their token, a member can set a durable password — paired with their
+ * login-only [ProfileResponse.handle] — to sign back in later without re-pasting a token. Changing
+ * an existing password requires the current one. The returned profile is surfaced so the section
+ * flips between "set" and "change" wording immediately.
+ */
+@Composable
+private fun PasswordSection(api: SaigonApi, profile: ProfileResponse, onUpdated: (ProfileResponse) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var current by remember(profile.passwordSet) { mutableStateOf("") }
+    var next by remember(profile.passwordSet) { mutableStateOf("") }
+    var confirm by remember(profile.passwordSet) { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    HorizontalDivider()
+    Text(if (profile.passwordSet) "Change your password" else "Set a password", fontWeight = FontWeight.Bold)
+    Text(
+        buildString {
+            append("Set a password to sign back in later without re-pasting your access token")
+            profile.handle?.let { append(" — your sign-in username is \"$it\"") }
+            append(".")
+        },
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    if (profile.passwordSet) {
+        OutlinedTextField(
+            value = current,
+            onValueChange = { current = it; error = null },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Current password") },
+            singleLine = true,
+            shape = InputFieldShape,
+            enabled = !busy,
+        )
+    }
+    OutlinedTextField(
+        value = next,
+        onValueChange = { next = it; error = null },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("New password (min 8 characters)") },
+        singleLine = true,
+        shape = InputFieldShape,
+        enabled = !busy,
+    )
+    OutlinedTextField(
+        value = confirm,
+        onValueChange = { confirm = it; error = null },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Confirm new password") },
+        singleLine = true,
+        shape = InputFieldShape,
+        enabled = !busy,
+    )
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+    status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
+    Button(
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !busy,
+        onClick = {
+            error = null
+            status = null
+            when {
+                next.length < 8 -> error = "Password must be at least 8 characters."
+                next != confirm -> error = "Passwords don't match."
+                else -> {
+                    busy = true
+                    scope.launch {
+                        try {
+                            val updated = api.setPassword(next, current.ifBlank { null })
+                            onUpdated(updated)
+                            status = "Password saved."
+                        } catch (e: Throwable) {
+                            error = e.message ?: "Could not save your password."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                }
+            }
+        },
+    ) { Text(if (profile.passwordSet) "Update password" else "Save password") }
 }
 
 /**
@@ -1039,6 +1141,121 @@ private fun FounderTokenSection(api: SaigonApi) {
     ) { Text("Generate token") }
 }
 
+/**
+ * Founder-only member directory (MEMBER_MANAGEMENT.md A & B). Lists everyone the founder has
+ * onboarded with their tier, and offers per-member controls to comp them up to Supporter, downgrade
+ * to Sharer, or demote to Seeker — each behind a confirmation dialog. A tier change mints a fresh
+ * token for the affected member (they re-authenticate), surfaced so the founder can hand it over.
+ */
+@Composable
+private fun FounderMembersSection(api: SaigonApi) {
+    val scope = rememberCoroutineScope()
+    val members = remember { mutableStateListOf<MemberView>() }
+    var loaded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var pending by remember { mutableStateOf<Pair<MemberView, Role>?>(null) }
+
+    suspend fun reload() {
+        error = null
+        try {
+            val list = api.members()
+            members.clear()
+            members.addAll(list)
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load members"
+        } finally {
+            loaded = true
+        }
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    HorizontalDivider()
+    Text("Members", fontWeight = FontWeight.Bold)
+    Text(
+        "Everyone you've onboarded, with their tier. Promote, downgrade, or remove a member; a " +
+            "tier change issues them a fresh token to sign back in with.",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+    notice?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
+
+    when {
+        !loaded -> CircularProgressIndicator()
+        members.isEmpty() -> Text(
+            "No members yet.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        else -> members.forEach { member ->
+            MemberRow(member = member, onChange = { role -> pending = member to role })
+        }
+    }
+
+    pending?.let { (member, role) ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("Change tier") },
+            text = {
+                Text(
+                    "Set ${member.displayName} to ${role.label}? They'll need to sign back in with " +
+                        "a new token.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    notice = null
+                    scope.launch {
+                        notice = try {
+                            val res = api.setMemberRole(member.id, role)
+                            reload()
+                            val handover = res.token?.let { " New token: $it" } ?: ""
+                            "Updated ${res.member.displayName} to ${res.member.role.label}.$handover"
+                        } catch (e: Throwable) {
+                            e.message ?: "Could not change tier"
+                        }
+                    }
+                }) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/** A single member in the founder directory, with tier controls (MEMBER_MANAGEMENT.md A & B). */
+@Composable
+private fun MemberRow(member: MemberView, onChange: (Role) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(member.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            val tier = member.effectiveRole.label +
+                if (member.effectiveRole != member.role) " (on record: ${member.role.label})" else ""
+            Text(tier, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(Role.SUPPORTER, Role.SHARER, Role.SEEKER).forEach { option ->
+                    val current = option == member.effectiveRole
+                    OutlinedButton(
+                        onClick = { onChange(option) },
+                        enabled = !current,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(option.label, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -1072,20 +1289,26 @@ private fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
             enabled = !busy,
             onClick = {
                 val trimmed = entry.trim()
-                if (trimmed.isNotEmpty()) {
-                    onToken(trimmed)
-                } else {
-                    // Blank token: the first person to arrive claims the Founder account (DESIGN §2).
-                    error = null
-                    busy = true
-                    scope.launch {
-                        try {
+                error = null
+                busy = true
+                scope.launch {
+                    try {
+                        if (trimmed.isNotEmpty()) {
+                            // Validate the token before accepting it, so a bad/expired token shows a
+                            // friendly error here instead of a broken profile after navigating away.
+                            api.token = trimmed
+                            api.profile()
+                            onToken(trimmed)
+                        } else {
+                            // Blank token: the first person to arrive claims the Founder account (DESIGN §2).
                             onToken(api.bootstrapFounder().token)
-                        } catch (e: Throwable) {
-                            error = e.message ?: "Could not start a founder account."
-                        } finally {
-                            busy = false
                         }
+                    } catch (e: Throwable) {
+                        api.token = null
+                        error = e.message
+                            ?: if (trimmed.isEmpty()) "Could not start a founder account." else "Could not sign in."
+                    } finally {
+                        busy = false
                     }
                 }
             },
@@ -1096,5 +1319,68 @@ private fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        PasswordLoginSection(api = api, onToken = onToken)
     }
+}
+
+/**
+ * "Sign in with password" option alongside the paste-token field (PASSWORD_AUTH.md §2C). Members
+ * who set a password earlier re-enter with their handle + password instead of re-pasting a token;
+ * the server mints a fresh token (renewing an expired one), which is then persisted exactly like a
+ * pasted one. Bad credentials show a generic inline error (no user enumeration).
+ */
+@Composable
+private fun PasswordLoginSection(api: SaigonApi, onToken: (String?) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var identifier by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    HorizontalDivider()
+    Text("Already set a password?", fontWeight = FontWeight.Bold)
+    Text(
+        "Sign back in with the username and password you set on your profile — handy if your " +
+            "token expired or you're on a new device.",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = identifier,
+        onValueChange = { identifier = it; error = null },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Username") },
+        singleLine = true,
+        shape = InputFieldShape,
+        enabled = !busy,
+    )
+    OutlinedTextField(
+        value = password,
+        onValueChange = { password = it; error = null },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Password") },
+        singleLine = true,
+        shape = InputFieldShape,
+        enabled = !busy,
+    )
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+    OutlinedButton(
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !busy,
+        onClick = {
+            error = null
+            busy = true
+            scope.launch {
+                try {
+                    val res = api.login(identifier.trim(), password)
+                    onToken(res.token)
+                } catch (e: Throwable) {
+                    error = e.message ?: "Invalid credentials."
+                } finally {
+                    busy = false
+                }
+            }
+        },
+    ) { Text("Sign in with password") }
 }

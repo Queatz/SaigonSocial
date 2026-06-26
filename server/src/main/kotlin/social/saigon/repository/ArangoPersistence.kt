@@ -164,6 +164,11 @@ internal class ArangoUserRepository(db: ArangoDatabase) : UserRepository {
     override fun get(id: String): User? = store.get(id)
     override fun update(user: User): User = store.put(user)
     override fun all(): List<User> = store.all()
+    override fun findByHandle(handle: String): User? =
+        store.query(
+            "FOR d IN ${ArangoSchema.USERS} FILTER LOWER(d.handle) == LOWER(@h) LIMIT 1 RETURN d",
+            mapOf("h" to handle),
+        ).firstOrNull()
 }
 
 internal class ArangoRoomRepository(db: ArangoDatabase) : RoomRepository {

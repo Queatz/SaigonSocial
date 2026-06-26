@@ -31,6 +31,9 @@ enum class MetricType {
 
     /** An abuse report was filed (feeds the report rate, target < 1%). */
     REPORT_FILED,
+
+    /** The Founder manually changed a member's tier (comp upgrade, downgrade, or demotion). */
+    TIER_CHANGE,
 }
 
 /**
@@ -85,4 +88,6 @@ data class MetricsSnapshot(
     val totalReports: Int,
     /** Reports filed ÷ distinct active members, in `[0, 1]`. Target < 0.01 (DESIGN §14). */
     val reportRate: Double,
+    /** Founder-initiated manual tier changes (comps, downgrades, demotions). */
+    val founderTierChanges: Int = 0,
 )

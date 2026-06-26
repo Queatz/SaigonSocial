@@ -4,13 +4,13 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
+import kotlin.test.assertNotNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import social.saigon.auth.AuthConfig
 import social.saigon.domain.Role
 import social.saigon.domain.User
-import social.saigon.repository.FOUNDER_ID
 import social.saigon.repository.Repositories
 
 /**
@@ -27,12 +27,13 @@ class BootstrapTest {
         val response = client.post("/auth/bootstrap")
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains(FOUNDER_ID))
         assertTrue(body.contains("\"token\""))
 
-        // The founder account is now persisted.
-        val founder = repositories.users.get(FOUNDER_ID)
-        assertEquals(Role.FOUNDER, founder?.role)
+        // The founder account is now persisted with a data-store-assigned id (not hand-picked).
+        val founder = repositories.users.all().single { it.role == Role.FOUNDER }
+        assertNotNull(founder)
+        assertTrue(founder.id.isNotBlank())
+        assertTrue(body.contains(founder.id))
     }
 
     @Test

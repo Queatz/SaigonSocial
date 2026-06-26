@@ -72,6 +72,9 @@ class MetricsService(
         val totalReports = all.count { it.type == MetricType.REPORT_FILED }
         val reportRate = if (activeUsers == 0) 0.0 else totalReports.toDouble() / activeUsers
 
+        // Founder-initiated manual tier changes (comps, downgrades, demotions).
+        val founderTierChanges = all.count { it.type == MetricType.TIER_CHANGE }
+
         return MetricsSnapshot(
             seekerToSharerConversions = sharerConversions,
             sharerToSupporterConversions = supporterConversions,
@@ -83,6 +86,7 @@ class MetricsService(
             emojiSelectionRate = emojiRate,
             totalReports = totalReports,
             reportRate = reportRate,
+            founderTierChanges = founderTierChanges,
         )
     }
 

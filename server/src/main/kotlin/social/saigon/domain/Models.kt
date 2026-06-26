@@ -55,6 +55,16 @@ data class User(
     val role: Role,
     /** Real display name — for founder reference only, never shown publicly. */
     val displayName: String,
+    /**
+     * Unique, login-only handle used purely as the username for password sign-in
+     * (PASSWORD_AUTH.md §2C). Distinct from [displayName], which stays free-text and private.
+     * Null only for legacy rows created before handles existed.
+     */
+    val handle: String? = null,
+    /** Argon2/bcrypt/PBKDF2 hash of the chosen password; null until the member sets one. */
+    val passwordHash: String? = null,
+    /** Unix epoch millis the password was last set/changed (for audit + "rotate password" UX). */
+    val passwordSetAt: Long? = null,
     /** Free-text interest tags. Max 5. */
     val interests: List<String> = emptyList(),
     val intent: Intent? = null,

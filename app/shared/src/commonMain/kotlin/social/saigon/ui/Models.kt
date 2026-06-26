@@ -96,6 +96,10 @@ data class ProfileResponse(
     val offlineSchedule: List<String> = emptyList(),
     val supporterUntil: Long? = null,
     val capabilities: List<String> = emptyList(),
+    /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
+    val handle: String? = null,
+    /** True once the member has set a durable sign-in password (PASSWORD_AUTH.md §2B). */
+    val passwordSet: Boolean = false,
 )
 
 /** Editable profile fields (`PUT /profile/me`, DESIGN §4). Null fields are left unchanged. */
@@ -106,6 +110,17 @@ data class ProfileUpdate(
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
+
+/** Sign in with a previously-set password (`POST /auth/login`, PASSWORD_AUTH.md §2C). */
+@Serializable
+data class LoginRequest(val identifier: String, val password: String)
+
+/**
+ * Set or change the durable sign-in password (`POST /profile/password`, PASSWORD_AUTH.md §2B).
+ * [currentPassword] is required only when one is already set.
+ */
+@Serializable
+data class SetPasswordRequest(val newPassword: String, val currentPassword: String? = null)
 
 @Serializable
 data class SeekerTokenRequest(val deviceId: String)
@@ -120,6 +135,28 @@ data class OnboardRequest(val displayName: String, val role: Role = Role.SHARER)
 /** The new member's id and the access token they sign in with (`POST /founder/onboard`). */
 @Serializable
 data class OnboardResponse(val userId: String, val token: String)
+
+/** A member in the Founder's directory (`GET /founder/members`). */
+@Serializable
+data class MemberView(
+    val id: String,
+    val displayName: String,
+    /** The account's nominal role on record. */
+    val role: Role,
+    /** The role actually in force once payment status is applied. */
+    val effectiveRole: Role = role,
+    val sharerPaidAt: Long? = null,
+    /** Epoch millis the Supporter subscription expires; null for non-Supporters. */
+    val supporterUntil: Long? = null,
+)
+
+/** Founder-only request to change a member's tier (`PATCH /founder/members/{id}/role`). */
+@Serializable
+data class SetTierRequest(val role: Role)
+
+/** Result of a tier change: the refreshed member plus a fresh token (null when demoted to Seeker). */
+@Serializable
+data class MemberTierChangeResponse(val member: MemberView, val token: String? = null)
 
 /** A single private-chat message in the current session (DESIGN §7). Ephemeral; never persisted. */
 data class PrivateMessage(

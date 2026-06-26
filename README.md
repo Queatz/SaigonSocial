@@ -40,8 +40,14 @@ This is only possible until the first member exists — afterwards it is closed 
 Once signed in, the founder mints access tokens for everyone else from *Profile → Create an access
 token* (name the member, pick their tier; `POST /founder/onboard` returns the token to hand over).
 Members paste their token into the same *Sign in* screen to chat, edit their profile, and refresh
-their per-room identity; an invalid token shows a friendly message rather than a raw error. Without
-a token you browse rooms and read public chat as a Seeker.
+their per-room identity; an invalid token is rejected with a friendly message at sign-in (the token
+is validated against `/profile/me` before it's accepted) rather than a raw error. Without a token
+you browse rooms and read public chat as a Seeker.
+
+Your access token is the only credential — there is no separate password — and the web client
+**persists it in the browser (`localStorage`)**, so a page reload keeps you signed in instead of
+silently logging you out. *Sign out* (Profile → Sign out) clears the stored token. The top-bar
+action reads *Sign in* when you're signed out and *Profile* once you're signed in.
 
 The web client talks to the backend at `http://localhost:9091` by default
 (`SaigonApi.DEFAULT_BASE_URL`); CORS is enabled on the server so the dev client can reach it.

@@ -9,6 +9,7 @@ import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
@@ -22,6 +23,7 @@ import social.saigon.ai.IdentityGenerator
 import social.saigon.auth.AUTH_JWT
 import social.saigon.auth.CallerPrincipal
 import social.saigon.auth.Claims
+import social.saigon.auth.PasswordService
 import social.saigon.auth.TokenService
 import social.saigon.auth.toCaller
 import social.saigon.domain.Capability
@@ -54,7 +56,6 @@ import social.saigon.realtime.ChatHub
 import social.saigon.realtime.ClientSession
 import social.saigon.realtime.Incoming
 import social.saigon.realtime.Outgoing
-import social.saigon.repository.FOUNDER_ID
 import social.saigon.repository.Repositories
 import social.saigon.room.RoomService
 import social.saigon.thread.ThreadService
@@ -73,6 +74,17 @@ data class OnboardRequest(
 
 @Serializable
 data class OnboardResponse(val userId: String, val token: String)
+
+/** Sign in with the durable password credential (PASSWORD_AUTH.md §2C). */
+@Serializable
+data class LoginRequest(val identifier: String, val password: String)
+
+/**
+ * Set or change the caller's password (PASSWORD_AUTH.md §2B). [currentPassword] is required only
+ * when one is already set.
+ */
+@Serializable
+data class SetPasswordRequest(val newPassword: String, val currentPassword: String? = null)
 
 /**
  * Phase 0 HTTP + WebSocket surface. Higher phases hang their routes off this same wiring.
@@ -93,6 +105,7 @@ fun Application.registerRoutes(
     val metricsService = MetricsService(repositories.metrics)
     val moderationService = ModerationService(repositories.moderation, repositories.users, metrics = metricsService)
     val economicsService = EconomicsService(repositories.users, repositories.payments, metrics = metricsService)
+    val passwordService = PasswordService(repositories.users)
 
     routing {
         // Seeker access: no persistence, token bound to a device id (DESIGN §3, TASKS Phase 0).
@@ -114,12 +127,29 @@ fun Application.registerRoutes(
                     "Saigon.Social already has a founder. Ask them for an access token to join.",
                 )
             }
+            // Let the data store assign the id (DESIGN §12): we never hand-pick the founder's id,
+            // just like every onboarded member gets a DB-assigned id. A login-only handle is set so
+            // the founder can later set a password and sign back in with it (PASSWORD_AUTH.md §2D).
             val founder = repositories.users.create(
-                User(id = FOUNDER_ID, role = Role.FOUNDER, displayName = "Founder"),
+                User(
+                    id = UUID.randomUUID().toString(),
+                    role = Role.FOUNDER,
+                    displayName = "Founder",
+                    handle = uniqueHandle(repositories, "founder"),
+                ),
             )
             call.respond(
                 OnboardResponse(founder.id, tokenService.issueMemberToken(founder.id, founder.role)),
             )
+        }
+
+        // Password sign-in (PASSWORD_AUTH.md §2C): re-enter with a handle + password the member set
+        // earlier, instead of re-pasting a token. On success the server mints a *fresh* member JWT,
+        // neatly renewing an expired token. Failures return a generic 401 (no user enumeration).
+        post("/auth/login") {
+            val req = call.receive<LoginRequest>()
+            val user = passwordService.authenticate(req.identifier, req.password)
+            call.respond(OnboardResponse(user.id, tokenService.issueMemberToken(user.id, user.role)))
         }
 
         // Public pricing table (DESIGN §3, §11). Open so a Seeker can see the cost of joining before
@@ -218,6 +248,16 @@ fun Application.registerRoutes(
                 call.respond(profiles.update(userId, update).toProfileResponse())
             }
 
+            // Set or change the durable sign-in password (PASSWORD_AUTH.md §2B). Gated by the JWT
+            // auth: the caller must already be signed in with a valid token. The returned profile
+            // reflects the now-set password without ever exposing the hash.
+            post("/profile/password") {
+                val userId = requireMember(call.caller())
+                val req = call.receive<SetPasswordRequest>()
+                val updated = passwordService.setPassword(userId, req.newPassword, req.currentPassword)
+                call.respond(updated.toProfileResponse())
+            }
+
             // Private emoji tally — visible only to the user themself (DESIGN §4, §8).
             get("/profile/me/emoji-stats") {
                 val userId = requireMember(call.caller())
@@ -274,6 +314,9 @@ fun Application.registerRoutes(
                         id = UUID.randomUUID().toString(),
                         role = req.role,
                         displayName = req.displayName,
+                        // A login-only handle the member can pair with a password later
+                        // (PASSWORD_AUTH.md §2C); derived from their display name, kept unique.
+                        handle = uniqueHandle(repositories, req.displayName),
                     ),
                 )
                 // The founder collects the fee in person, so onboarding settles the tier's payment
@@ -282,6 +325,39 @@ fun Application.registerRoutes(
                 economicsService.paySharerFee(user.id)
                 if (req.role == Role.SUPPORTER) economicsService.paySupporterSubscription(user.id)
                 call.respond(OnboardResponse(user.id, tokenService.issueMemberToken(user.id, user.role)))
+            }
+
+            // Founder-only member directory (MEMBER_MANAGEMENT.md A): who has been onboarded, each
+            // member's tier, payment status, and subscription expiry. Reuses UserRepository.all();
+            // Seekers are excluded since they have no persistent account.
+            get("/founder/members") {
+                requireFounder(call.caller())
+                val members = repositories.users.all()
+                    .filter { it.role != Role.SEEKER }
+                    .sortedBy { it.displayName.lowercase() }
+                    .map { it.toMemberView(economicsService) }
+                call.respond(members)
+            }
+
+            // Founder-only manual tier change (MEMBER_MANAGEMENT.md B): comp a member up to Supporter,
+            // downgrade to Sharer, or demote to Seeker — no payment is recorded. Because the JWT
+            // carries the role, a fresh token reflecting the new tier is returned so the member can
+            // re-authenticate (a non-member Seeker gets no token).
+            patch("/founder/members/{id}/role") {
+                requireFounder(call.caller())
+                val userId = call.parameters["id"].orEmpty()
+                require(userId.isNotBlank()) { "id required" }
+                val req = call.receive<SetTierRequest>()
+                val outcome = economicsService.setTier(userId, req.role)
+                val token = outcome.user.role
+                    .takeIf { it != Role.SEEKER }
+                    ?.let { tokenService.issueMemberToken(outcome.user.id, it) }
+                call.respond(
+                    MemberTierChangeResponse(
+                        member = outcome.user.toMemberView(economicsService),
+                        token = token,
+                    ),
+                )
             }
 
             // --- Phase 8: Economics & Onboarding (DESIGN §3, §11) ---
@@ -455,6 +531,10 @@ data class ProfileResponse(
     val offlineSchedule: List<String>,
     val supporterUntil: Long?,
     val capabilities: List<Capability>,
+    /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
+    val handle: String? = null,
+    /** True once the member has set a durable sign-in password (PASSWORD_AUTH.md §2B). */
+    val passwordSet: Boolean = false,
 )
 
 /**
@@ -536,6 +616,31 @@ data class WarnResponse(
 @Serializable
 data class VerifyRequest(val userId: String)
 
+/** A member as shown in the Founder's directory (MEMBER_MANAGEMENT.md A). */
+@Serializable
+data class MemberView(
+    val id: String,
+    val displayName: String,
+    /** The account's nominal role on record. */
+    val role: Role,
+    /** The role actually in force once payment status is applied. */
+    val effectiveRole: Role,
+    val sharerPaidAt: Long?,
+    val supporterUntil: Long?,
+    val status: EconomicStatus,
+)
+
+/** Body for a founder-only manual tier change (MEMBER_MANAGEMENT.md B). */
+@Serializable
+data class SetTierRequest(val role: Role)
+
+/**
+ * Result of a founder-initiated tier change: the member's refreshed directory view plus a fresh
+ * access token carrying the new role (null when the member was demoted to Seeker).
+ */
+@Serializable
+data class MemberTierChangeResponse(val member: MemberView, val token: String? = null)
+
 private fun ApplicationCall.caller(): CallerPrincipal =
     principal<JWTPrincipal>()!!.toCaller()
 
@@ -556,6 +661,16 @@ private fun requireFounder(caller: CallerPrincipal): String {
     return caller.userId ?: throw ForbiddenException("Founder only")
 }
 
+private fun User.toMemberView(economics: EconomicsService): MemberView = MemberView(
+    id = id,
+    displayName = displayName,
+    role = role,
+    effectiveRole = economics.effectiveRole(this),
+    sharerPaidAt = sharerPaidAt,
+    supporterUntil = supporterUntil,
+    status = economics.status(id),
+)
+
 private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     id = id,
     role = role,
@@ -566,7 +681,28 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     offlineSchedule = offlineSchedule,
     supporterUntil = supporterUntil,
     capabilities = CapabilityMatrix.capabilities(role).toList(),
+    handle = handle,
+    // Never expose the hash itself — only whether a password exists (PASSWORD_AUTH.md §2E).
+    passwordSet = passwordHash != null,
 )
+
+/**
+ * Derive a unique, login-only handle from a display name (PASSWORD_AUTH.md §2C). Slugs the name to
+ * lowercase ASCII alphanumerics, falling back to "member", then appends a numeric suffix until the
+ * handle is free across all persisted users.
+ */
+private fun uniqueHandle(repositories: Repositories, displayName: String): String {
+    val base = displayName.lowercase()
+        .map { if (it in 'a'..'z' || it in '0'..'9') it else ' ' }
+        .joinToString("")
+        .trim()
+        .replace(Regex("\\s+"), "-")
+        .ifBlank { "member" }
+    if (repositories.users.findByHandle(base) == null) return base
+    var suffix = 2
+    while (repositories.users.findByHandle("$base$suffix") != null) suffix++
+    return "$base$suffix"
+}
 
 private suspend fun handleIncoming(
     frame: Incoming,

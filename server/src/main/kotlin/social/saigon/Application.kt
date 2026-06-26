@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import social.saigon.ai.IdentityGenerator
 import social.saigon.ai.QwenIdentityGenerator
 import social.saigon.auth.AuthConfig
+import social.saigon.auth.PasswordService
 import social.saigon.auth.TokenService
 import social.saigon.auth.configureAuth
 import social.saigon.domain.ForbiddenException
@@ -88,6 +89,7 @@ fun Application.module(
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Patch)
         allowCredentials = true
     }
     install(StatusPages) {
@@ -96,6 +98,11 @@ fun Application.module(
         }
         exception<IllegalArgumentException> { call, cause ->
             call.respondText(cause.message ?: "Bad request", status = HttpStatusCode.BadRequest)
+        }
+        // A bad password sign-in is always a generic 401 — never reveal whether the user/handle
+        // exists (PASSWORD_AUTH.md §2E, no user enumeration).
+        exception<PasswordService.InvalidCredentials> { call, _ ->
+            call.respondText("Invalid credentials", status = HttpStatusCode.Unauthorized)
         }
     }
 

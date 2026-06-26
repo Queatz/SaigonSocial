@@ -40,6 +40,8 @@ interface UserRepository {
     fun get(id: String): User?
     fun update(user: User): User
     fun all(): List<User>
+    /** Look up a member by their unique, login-only handle (PASSWORD_AUTH.md §2C); null if none. */
+    fun findByHandle(handle: String): User?
 }
 
 interface RoomRepository {
@@ -146,6 +148,8 @@ class InMemoryUserRepository : UserRepository {
     override fun get(id: String): User? = store[id]
     override fun update(user: User): User = user.also { store[it.id] = it }
     override fun all(): List<User> = store.values.toList()
+    override fun findByHandle(handle: String): User? =
+        store.values.firstOrNull { it.handle != null && it.handle.equals(handle, ignoreCase = true) }
 }
 
 class InMemoryRoomRepository : RoomRepository {
