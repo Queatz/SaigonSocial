@@ -9,6 +9,7 @@ package social.saigon.ui
  *  - `/`                        → the room list (home)
  *  - `/room/{id}`               → a room / public chat
  *  - `/room/{id}/thread/{id}`   → that room with the thread sheet open
+ *  - `/chat/{roomId}/{userId}`  → a one-on-one private chat (DESIGN §7)
  *
  * On the web this is backed by `window.location` + `window.history`; other targets (Android) fall
  * back to a no-op router since there is no browser history to drive.

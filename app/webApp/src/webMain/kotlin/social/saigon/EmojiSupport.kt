@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Font
+import social.saigon.ui.ThemedLoadingBackground
 import social.saigon.ui.cjkFontBytes
 import social.saigon.ui.emojiFontBytes
 
@@ -41,5 +42,12 @@ fun WithEmojiFallback(content: @Composable () -> Unit) {
 
     if (fontsLoaded) {
         content()
+    } else {
+        // While the fallback fonts download, `content()` (and therefore the whole app UI) isn't
+        // composed yet, so the Compose canvas would otherwise paint its default opaque white —
+        // a visible white flash on top of the dark loader when the OS is in dark mode. Fill the
+        // canvas with the theme background (which follows the OS light/dark scheme) so this gap
+        // matches both the pre-app loader and the app itself.
+        ThemedLoadingBackground()
     }
 }

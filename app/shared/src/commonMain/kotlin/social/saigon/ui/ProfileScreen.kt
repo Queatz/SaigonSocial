@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -59,7 +58,7 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
     val p = profile
     when {
         error != null -> Centered { Text(error!!, color = MaterialTheme.colorScheme.error) }
-        p == null -> Centered { CircularProgressIndicator() }
+        p == null -> Centered { LoadingSpinner() }
         else -> {
             var introduction by remember(p.id) { mutableStateOf(p.interests.joinToString(", ")) }
             val intents = remember(p.id) { p.intents.toMutableStateList() }
@@ -203,7 +202,7 @@ private fun EmojiStatsSection(api: SaigonApi, profileId: String) {
     Accordion(title = "Your emoji stats") {
         val current = stats
         when {
-            current == null -> CircularProgressIndicator()
+            current == null -> LoadingSpinner()
             current.isEmpty() -> Text(
                 "No emojis yet. They'll appear here after your private chats wrap up.",
                 fontSize = 13.sp,

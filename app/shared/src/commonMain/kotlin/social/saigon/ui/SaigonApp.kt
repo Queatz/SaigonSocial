@@ -22,6 +22,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.geometry.Offset
@@ -77,15 +78,20 @@ private sealed interface Screen {
 
 /**
  * The URL path that mirrors [screen] in the browser's address bar (DESIGN §12), or null for screens
- * that aren't deep-linkable (ephemeral private chats, the session-only direct-chats list, and the
- * profile/sign-in editor) — those leave the current URL untouched.
+ * that aren't deep-linkable (the session-only direct-chats list and the profile/sign-in editor) —
+ * those leave the current URL untouched.
+ *
+ * A private chat (DESIGN §7) is deep-linkable as "/chat/{roomId}/{userId}" so it survives a reload
+ * and takes part in Back/Forward navigation. The room it was started from is kept in the path so the
+ * peer's room-scoped identity name (DESIGN §5) resolves consistently when the chat is reopened.
  */
 private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.RoomList -> "/"
     is Screen.Room ->
         if (screen.threadId != null) "/room/${screen.room.id}/thread/${screen.threadId}"
         else "/room/${screen.room.id}"
-    is Screen.Private -> null
+
+    is Screen.Private -> "/chat/${screen.roomId}/${screen.targetUserId}"
     Screen.DirectChats -> null
     Screen.Profile -> null
 }
@@ -106,14 +112,34 @@ fun SaigonApp() {
 
         // Mirror the current screen into the browser URL + history so links are shareable and the
         // Back/Forward buttons walk the in-app navigation (DESIGN §12). The supported routes are
-        // "/", "/room/{id}", and "/room/{id}/thread/{id}" (see [screenToPath]).
+        // "/", "/room/{id}", "/room/{id}/thread/{id}", and "/chat/{roomId}/{userId}" (see
+        // [screenToPath]).
         val scope = rememberCoroutineScope()
         val router = remember { UrlRouter() }
+
+        // Open one-on-one chats the user can return to (DESIGN §7). Private chats are ephemeral and
+        // never persisted, so this list lives only for the current session — it powers the "Direct
+        // chats" screen and the in-room "someone started a chat with you" notification. Declared here
+        // (ahead of the router wiring) so a deep-linked "/chat/..." path can recover the peer's
+        // display name from it when restoring a chat by URL.
+        val directChats = remember { mutableStateListOf<DirectChat>() }
 
         // Resolve a URL path to a screen. Rooms are matched by id from the live room list, since the
         // room screen needs the full RoomSummary; an unknown path falls back to the home screen.
         suspend fun screenForPath(path: String): Screen {
             val segments = path.trim('/').split('/').filter { it.isNotEmpty() }
+            // A private chat (DESIGN §7) is "/chat/{roomId}/{userId}". It keeps the room it started
+            // from so the peer's room-scoped identity name (DESIGN §5) resolves the same way after a
+            // reload; the peer's display name isn't in the URL, so recover it from the open direct-
+            // chats list when present and otherwise let the server reveal it once the socket opens.
+            if (segments.firstOrNull() == "chat" && segments.size >= 3) {
+                val roomId = segments[1]
+                val targetUserId = segments[2]
+                val peerName = directChats.firstOrNull {
+                    it.roomId == roomId && it.targetUserId == targetUserId
+                }?.peerName ?: "…"
+                return Screen.Private(roomId, targetUserId, peerName)
+            }
             if (segments.firstOrNull() != "room" || segments.size < 2) return Screen.RoomList
             val roomId = segments[1]
             val room = runCatching { api.rooms() }.getOrNull()?.firstOrNull { it.id == roomId }
@@ -144,11 +170,6 @@ fun SaigonApp() {
             val dispose = router.onPopState { path -> scope.launch { screen = screenForPath(path) } }
             onDispose { dispose() }
         }
-
-        // Open one-on-one chats the user can return to (DESIGN §7). Private chats are ephemeral and
-        // never persisted, so this list lives only for the current session — it powers the "Direct
-        // chats" screen and the in-room "someone started a chat with you" notification.
-        val directChats = remember { mutableStateListOf<DirectChat>() }
 
         // Record a direct chat (newest first, de-duplicated by peer) so it shows in the list.
         fun recordDirectChat(chat: DirectChat) {
@@ -276,6 +297,7 @@ fun SaigonApp() {
                                 onOpenDirectChats = { screen = Screen.DirectChats },
                             )
                         }
+
                         is Screen.Room -> RoomChatScreen(
                             api = api,
                             room = s.room,
@@ -295,6 +317,7 @@ fun SaigonApp() {
                                 if (current is Screen.Room) screen = current.copy(threadId = threadId)
                             },
                         )
+
                         is Screen.Private -> PrivateChatScreen(
                             api = api,
                             roomId = s.roomId,
@@ -303,13 +326,27 @@ fun SaigonApp() {
                             selfUserId = profile?.id,
                             onClose = { screen = Screen.RoomList },
                             onEnded = { removeDirectChat(s.roomId, s.targetUserId) },
+                            // When restored from a "/chat/..." deep link the peer's display name is
+                            // not in the URL, so adopt the name the server reveals: it fixes the
+                            // top-bar title and lists the chat under "Direct chats" after a reload.
+                            onPeerName = { name ->
+                                val current = screen
+                                if (current is Screen.Private && current.peerName != name) {
+                                    screen = current.copy(peerName = name)
+                                    recordDirectChat(
+                                        DirectChat(current.roomId, current.targetUserId, name),
+                                    )
+                                }
+                            },
                         )
+
                         Screen.DirectChats -> MaxWidthContainer {
                             DirectChatsScreen(
                                 chats = directChats,
                                 onOpen = { openDirectChat(it) },
                             )
                         }
+
                         Screen.Profile -> MaxWidthContainer { ProfileScreen(api, token, onToken = { token = it }) }
                     }
                 }
@@ -346,10 +383,28 @@ private fun TopBar(
                         val midY = h / 2f
                         val strokeWidth = h * 0.12f
                         // Horizontal shaft.
-                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.9f, midY), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(
+                            arrowColor,
+                            Offset(w * 0.1f, midY),
+                            Offset(w * 0.9f, midY),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
                         // Upper and lower barbs of the arrowhead.
-                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.42f, midY - h * 0.32f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-                        drawLine(arrowColor, Offset(w * 0.1f, midY), Offset(w * 0.42f, midY + h * 0.32f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(
+                            arrowColor,
+                            Offset(w * 0.1f, midY),
+                            Offset(w * 0.42f, midY - h * 0.32f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            arrowColor,
+                            Offset(w * 0.1f, midY),
+                            Offset(w * 0.42f, midY + h * 0.32f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -368,13 +423,43 @@ private fun TopBar(
                         val h = size.height
                         val strokeWidth = h * 0.12f
                         // Roof: two lines from the apex down to each eave.
-                        drawLine(homeColor, Offset(w * 0.5f, h * 0.1f), Offset(w * 0.1f, h * 0.45f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-                        drawLine(homeColor, Offset(w * 0.5f, h * 0.1f), Offset(w * 0.9f, h * 0.45f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(
+                            homeColor,
+                            Offset(w * 0.5f, h * 0.1f),
+                            Offset(w * 0.1f, h * 0.45f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            homeColor,
+                            Offset(w * 0.5f, h * 0.1f),
+                            Offset(w * 0.9f, h * 0.45f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
                         // Walls.
-                        drawLine(homeColor, Offset(w * 0.2f, h * 0.4f), Offset(w * 0.2f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-                        drawLine(homeColor, Offset(w * 0.8f, h * 0.4f), Offset(w * 0.8f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(
+                            homeColor,
+                            Offset(w * 0.2f, h * 0.4f),
+                            Offset(w * 0.2f, h * 0.9f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            homeColor,
+                            Offset(w * 0.8f, h * 0.4f),
+                            Offset(w * 0.8f, h * 0.9f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
                         // Floor.
-                        drawLine(homeColor, Offset(w * 0.2f, h * 0.9f), Offset(w * 0.8f, h * 0.9f), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+                        drawLine(
+                            homeColor,
+                            Offset(w * 0.2f, h * 0.9f),
+                            Offset(w * 0.8f, h * 0.9f),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -442,42 +527,45 @@ internal fun MessageComposer(
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
-                modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
-                    if (
-                        enabled &&
-                        event.type == KeyEventType.KeyDown &&
-                        event.key == Key.Enter &&
-                        !event.isShiftPressed
-                    ) {
-                        onSend()
-                        true
-                    } else {
-                        false
-                    }
-                },
+                modifier = Modifier.weight(1f)
+                    .onPreviewKeyEvent { event ->
+                        if (
+                            enabled &&
+                            event.type == KeyEventType.KeyDown &&
+                            event.key == Key.Enter &&
+                            !event.isShiftPressed
+                        ) {
+                            onSend()
+                            true
+                        } else {
+                            false
+                        }
+                    },
                 label = { Text(placeholder) },
                 shape = InputFieldShape,
                 maxLines = 5,
                 enabled = enabled,
             )
-            Spacer(Modifier.width(8.dp))
-            // Match the input field's height exactly so the action button never towers over it.
-            Button(
+            IconButton(
                 enabled = enabled,
                 onClick = onSend,
-                modifier = Modifier.height(56.dp),
-            ) { Text(sendLabel) }
+                modifier = Modifier.padding(top = 8.dp),
+            ) { Text("➡️") }
         }
         // When disabled (e.g. "Sign in to send"/"Sign in to reply"), the field and button can't be
         // tapped, so overlay a transparent clickable that takes the user to the sign-in screen.
         if (!enabled && onDisabledClick != null) {
+            // Clip to the input field's corner radius *before* the clickable so the hover/ripple
+            // highlight follows the rounded shape instead of spilling into ugly square corners.
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .clip(InputFieldShape)
                     .clickable(onClick = onDisabledClick),
             )
         }

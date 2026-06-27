@@ -1,7 +1,10 @@
 package social.saigon.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -103,6 +106,19 @@ fun SaigonTheme(
         shapes = SaigonShapes,
         content = content,
     )
+}
+
+/**
+ * A full-screen fill painted with the theme background colour, themed to follow the OS light/dark
+ * scheme. Used as the placeholder for the brief window after the Compose canvas mounts but before
+ * the real UI is composed (e.g. while web fallback fonts are still loading): without it the canvas
+ * would paint its default opaque white and flash white over the dark loader in dark mode.
+ */
+@Composable
+fun ThemedLoadingBackground() {
+    SaigonTheme {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+    }
 }
 
 /**

@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -188,7 +187,7 @@ internal fun FounderMembersSection(api: SaigonApi) {
     notice?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
 
     when {
-        !loaded -> CircularProgressIndicator()
+        !loaded -> LoadingSpinner()
         members.isEmpty() -> Text(
             "No members yet.",
             fontSize = 12.sp,

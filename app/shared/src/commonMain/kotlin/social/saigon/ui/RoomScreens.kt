@@ -1,5 +1,6 @@
 package social.saigon.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -20,10 +22,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -45,10 +46,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
+import saigonsocial.app.shared.generated.resources.Res
+import saigonsocial.app.shared.generated.resources.icon
 
 /** Human-friendly occupant count for room cards: "No people", "1 person", or "N people". */
 internal fun peopleCount(count: Int): String = when (count) {
@@ -96,103 +101,131 @@ internal fun RoomListScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it },
-            label = { Text("Search rooms") },
-            singleLine = true,
-            shape = InputFieldShape,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        )
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-    when {
-        error != null -> Centered {
-            Text(
-                "Couldn't reach Saigon.Social.\n$error",
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        rooms == null -> Centered { CircularProgressIndicator() }
-        else -> LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Text(
-                    "Welcome to Saigon's trusted chat room. We're all real people, and we're into real conversation! What do you want to talk about?",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            }
-            // Entry to the open direct chats (DESIGN §7). Shown once at least one chat exists so the
-            // user can see their open conversations and find chats others started with them.
-            if (directChatCount > 0) {
-                item {
-                    Card(onClick = onOpenDirectChats, modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("\uD83D\uDCAC", fontSize = 24.sp)
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                "Direct chats",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                modifier = Modifier.weight(1f),
+            when {
+                error != null -> Centered {
+                    Text(
+                        "Couldn't reach Saigon.Social.\n$error",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                rooms == null -> Centered { LoadingSpinner() }
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // App logo, centered above the search field and room list on the home screen.
+                            Image(
+                                painter = painterResource(Res.drawable.icon),
+                                contentDescription = "Saigon.Social",
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(top = 24.dp, bottom = 8.dp)
+                                    .size(128.dp),
                             )
                             Text(
-                                "$directChatCount open",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Medium,
+                                text = "Welcome to Saigon's trusted chat room. Real people, real talk! What's on your mind?",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                textAlign = TextAlign.Center
                             )
-                        }
-                    }
-                }
-            }
-            if (canCreateRooms) {
-                item {
-                    Button(onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("➕ New room")
-                    }
-                }
-            }
-            items(rooms!!) { room ->
-                Column {
-                    Card(onClick = { onOpen(room) }, modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(room.emoji, fontSize = 28.sp)
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(room.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                Text(
-                                    room.atmosphere,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedTextField(
+                                    value = search,
+                                    onValueChange = { search = it },
+                                    label = { Text("Search rooms") },
+                                    singleLine = true,
+                                    shape = InputFieldShape,
+                                    modifier = Modifier.weight(1f),
                                 )
+                                if (canCreateRooms) {
+                                    IconButton(
+                                        onClick = { showCreate = true },
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    ) {
+                                        Text("➕")
+                                    }
+                                }
                             }
-                            Text(
-                                peopleCount(room.occupants),
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Medium,
-                            )
                         }
                     }
-                    if (canManageRooms) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { editing = room }) { Text("✏️ Rename") }
-                            TextButton(onClick = { deleting = room }) { Text("🗑 Delete") }
+                    // Entry to the open direct chats (DESIGN §7). Shown once at least one chat exists so the
+                    // user can see their open conversations and find chats others started with them.
+                    if (directChatCount > 0) {
+                        item {
+                            Card(onClick = onOpenDirectChats, modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("\uD83D\uDCAC", fontSize = 24.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = "Direct chats",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        "$directChatCount open",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Text(
+                            text = "Popular rooms",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                    }
+                    items(rooms!!) { room ->
+                        Column {
+                            Card(onClick = { onOpen(room) }, modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(room.emoji, fontSize = 28.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(room.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text(
+                                            room.atmosphere,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        peopleCount(room.occupants),
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
+                            if (canManageRooms) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { editing = room }) { Text("✏️ Edit") }
+                                    TextButton(onClick = { deleting = room }) { Text("🗑 Delete") }
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-    }
         }
     }
 
@@ -312,8 +345,16 @@ internal fun RoomChatScreen(
 ) {
     val scope = rememberCoroutineScope()
     val rooms = remember { mutableStateListOf<RoomSummary>() }
-    LaunchedEffect(Unit) {
-        runCatching { api.rooms() }.getOrNull()?.let { rooms.clear(); rooms.addAll(it) }
+    // Search box for the desktop left-hand rooms panel (DESIGN §6). Filtered on the backend and
+    // debounced by 500ms, mirroring the standalone room list so the founder gets the same recorded
+    // searches no matter where a member looks for a room.
+    var roomSearch by remember { mutableStateOf("") }
+    LaunchedEffect(roomSearch) {
+        val query = roomSearch.trim()
+        if (query.isNotEmpty()) delay(500)
+        runCatching { api.rooms(query.ifBlank { null }) }.getOrNull()?.let {
+            rooms.clear(); rooms.addAll(it)
+        }
     }
     val messages = remember(room.id) { mutableStateListOf<FeedMessage>() }
     val occupants = remember(room.id) { mutableStateListOf<OccupantView>() }
@@ -342,7 +383,10 @@ internal fun RoomChatScreen(
             val first = api.messages(room.id)
             messages.clear(); messages.addAll(first)
             reachedStart = first.size < 20
-            occupants.clear(); occupants.addAll(api.occupants(room.id))
+            // De-duplicate by persistent user id: a single member can hold several live
+            // connections at once (the room socket plus the private-chat socket, or a reconnect
+            // that raced the old socket's close), and we must never show one person twice (DESIGN §6).
+            occupants.clear(); occupants.addAll(api.occupants(room.id).distinctBy { it.userId })
             if (hasToken) identity = runCatching { api.identity(room.id) }.getOrNull()
         } catch (e: Throwable) {
             error = e.message ?: "Could not load this room"
@@ -431,7 +475,7 @@ internal fun RoomChatScreen(
                         // it reflects who is actually present right now, not just at room-open time.
                         scope.launch {
                             runCatching { api.occupants(room.id) }.getOrNull()?.let {
-                                occupants.clear(); occupants.addAll(it)
+                                occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
                             }
                         }
                     },
@@ -452,108 +496,124 @@ internal fun RoomChatScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val wide = maxWidth > 900.dp
         Box(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (wide) {
-                RoomNavPanel(rooms = rooms, currentRoomId = room.id, onOpenRoom = onOpenRoom)
-            }
-            Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-                if (!wide) {
-                    OccupantScroller(occupants = occupants, selfUserId = selfUserId, canStartPrivate = canStartPrivate, onTapAvailable = onStartPrivate)
-                    Spacer(Modifier.height(12.dp))
-                }
-                incomingChat?.let { chat ->
-                    IncomingChatBanner(
-                        chat = chat,
-                        onOpen = { incomingChat = null; onOpenDirectChat(chat) },
-                        onDismiss = { incomingChat = null },
+            Row(modifier = Modifier.fillMaxSize()) {
+                if (wide) {
+                    RoomNavPanel(
+                        rooms = rooms,
+                        currentRoomId = room.id,
+                        search = roomSearch,
+                        onSearchChange = { roomSearch = it },
+                        onOpenRoom = onOpenRoom,
                     )
-                    Spacer(Modifier.height(12.dp))
                 }
-                if (hasToken) {
-                    IdentityBar(
-                        identity = identity,
-                        onRefresh = {
-                            scope.launch {
-                                identity = runCatching { api.refreshIdentity(room.id) }.getOrNull()
-                                // The occupant "In the room" list caches the old name, so reload it
-                                // too — otherwise the user's own entry keeps showing the prior name.
-                                runCatching { api.occupants(room.id) }.getOrNull()?.let {
-                                    occupants.clear(); occupants.addAll(it)
+                Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                    if (!wide) {
+                        OccupantScroller(
+                            occupants = occupants,
+                            selfUserId = selfUserId,
+                            canStartPrivate = canStartPrivate,
+                            onTapAvailable = onStartPrivate
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    incomingChat?.let { chat ->
+                        IncomingChatBanner(
+                            chat = chat,
+                            onOpen = { incomingChat = null; onOpenDirectChat(chat) },
+                            onDismiss = { incomingChat = null },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (hasToken) {
+                        IdentityBar(
+                            identity = identity,
+                            onRefresh = {
+                                scope.launch {
+                                    identity = runCatching { api.refreshIdentity(room.id) }.getOrNull()
+                                    // The occupant "In the room" list caches the old name, so reload it
+                                    // too — otherwise the user's own entry keeps showing the prior name.
+                                    runCatching { api.occupants(room.id) }.getOrNull()?.let {
+                                        occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
+                                    }
                                 }
+                            },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (loading) {
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            LoadingSpinner()
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (loadingMore) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        LoadingSpinner()
+                                    }
+                                }
+                            }
+                            if (messages.isEmpty()) {
+                                item {
+                                    Text(
+                                        "No messages yet. Be the first to say hello.",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            // Messages always stay in chronological order (oldest→newest). Receiving a
+                            // reply updates a message's "↳ N replies" indicator in place and must never
+                            // change its position or sent time (DESIGN §9).
+                            items(messages, key = { it.id }) { msg ->
+                                MessageRow(msg = msg, onOpenThread = { openThread = msg; onThreadChange(msg.id) })
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    MessageComposer(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        onSend = {
+                            val text = draft.trim()
+                            if (text.isNotEmpty()) {
+                                scope.launch { runCatching { channel?.say(text) } }
+                                draft = ""
                             }
                         },
+                        sendLabel = "Send",
+                        placeholder = if (hasToken) "Message" else "Sign in to send",
+                        enabled = hasToken,
+                        onDisabledClick = onSignIn,
                     )
-                    Spacer(Modifier.height(12.dp))
                 }
-                if (loading) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        if (loadingMore) {
-                            item {
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator()
-                                }
-                            }
-                        }
-                        if (messages.isEmpty()) {
-                            item {
-                                Text(
-                                    "No messages yet. Be the first to say hello.",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        // Messages always stay in chronological order (oldest→newest). Receiving a
-                        // reply updates a message's "↳ N replies" indicator in place and must never
-                        // change its position or sent time (DESIGN §9).
-                        items(messages, key = { it.id }) { msg ->
-                            MessageRow(msg = msg, onOpenThread = { openThread = msg; onThreadChange(msg.id) })
-                        }
-                    }
+
+                if (wide) {
+                    OccupantList(
+                        occupants = occupants,
+                        selfUserId = selfUserId,
+                        canStartPrivate = canStartPrivate,
+                        onTapAvailable = onStartPrivate
+                    )
                 }
-                Spacer(Modifier.height(8.dp))
-                MessageComposer(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    onSend = {
-                        val text = draft.trim()
-                        if (text.isNotEmpty()) {
-                            scope.launch { runCatching { channel?.say(text) } }
-                            draft = ""
-                        }
-                    },
-                    sendLabel = "Send",
-                    placeholder = if (hasToken) "Message" else "Sign in to send",
-                    enabled = hasToken,
-                    onDisabledClick = onSignIn,
+            }
+
+            openThread?.let { msg ->
+                ThreadSheet(
+                    api = api,
+                    roomId = room.id,
+                    message = msg,
+                    channel = channel,
+                    hasToken = hasToken,
+                    liveReplies = liveReplies,
+                    onSignIn = onSignIn,
+                    onClose = { openThread = null; onThreadChange(null) },
                 )
             }
-
-            if (wide) {
-                OccupantList(occupants = occupants, selfUserId = selfUserId, canStartPrivate = canStartPrivate, onTapAvailable = onStartPrivate)
-            }
-        }
-
-        openThread?.let { msg ->
-            ThreadSheet(
-                api = api,
-                roomId = room.id,
-                message = msg,
-                channel = channel,
-                hasToken = hasToken,
-                liveReplies = liveReplies,
-                onSignIn = onSignIn,
-                onClose = { openThread = null; onThreadChange(null) },
-            )
-        }
         }
     }
 }
@@ -588,7 +648,12 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 // Author and, when known, how long ago the message was sent (DESIGN §9).
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(msg.displayAuthor, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        msg.displayAuthor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.weight(1f)
+                    )
                     val ago = timeAgo(msg.createdAt)
                     if (ago.isNotEmpty()) {
                         Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -637,15 +702,24 @@ internal fun IncomingChatBanner(chat: DirectChat, onOpen: () -> Unit, onDismiss:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OccupantList(occupants: List<OccupantView>, selfUserId: String?, canStartPrivate: Boolean, onTapAvailable: (OccupantView) -> Unit) {
+private fun OccupantList(
+    occupants: List<OccupantView>,
+    selfUserId: String?,
+    canStartPrivate: Boolean,
+    onTapAvailable: (OccupantView) -> Unit,
+) {
     Surface(
         modifier = Modifier.width(260.dp).fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
+        // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
+        // card per persistent user id here regardless of how the list was assembled — a member can
+        // briefly hold several live connections during join/leave churn (DESIGN §6).
+        val people = occupants.distinctBy { it.userId }
         Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
             Text("In the room", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            if (occupants.isEmpty()) {
+            if (people.isEmpty()) {
                 Text(
                     "Nobody's here right now.",
                     fontSize = 12.sp,
@@ -653,7 +727,7 @@ private fun OccupantList(occupants: List<OccupantView>, selfUserId: String?, can
                 )
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(occupants) { person ->
+                items(people, key = { it.userId }) { person ->
                     // Identify yourself by your persistent user id, not your room-scoped name
                     // (names can collide and change). Never dim the card — just don't let a tap on
                     // yourself (or an unavailable person) open a chat.
@@ -699,6 +773,8 @@ private fun OccupantList(occupants: List<OccupantView>, selfUserId: String?, can
 private fun RoomNavPanel(
     rooms: List<RoomSummary>,
     currentRoomId: String,
+    search: String,
+    onSearchChange: (String) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
 ) {
     Surface(
@@ -706,7 +782,16 @@ private fun RoomNavPanel(
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-            Text("Rooms", fontWeight = FontWeight.Bold)
+            Text("Popular rooms", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearchChange,
+                label = { Text("Search rooms") },
+                singleLine = true,
+                shape = InputFieldShape,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(rooms) { r ->
@@ -746,11 +831,20 @@ private fun RoomNavPanel(
 /** Portrait/mobile: the room's people in a horizontal scroller pinned to the top (DESIGN §6). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OccupantScroller(occupants: List<OccupantView>, selfUserId: String?, canStartPrivate: Boolean, onTapAvailable: (OccupantView) -> Unit) {
+private fun OccupantScroller(
+    occupants: List<OccupantView>,
+    selfUserId: String?,
+    canStartPrivate: Boolean,
+    onTapAvailable: (OccupantView) -> Unit,
+) {
+    // Final dedup at the render boundary: a LazyRow key must be unique, so guarantee one card per
+    // persistent user id regardless of how the list was assembled — a member can briefly hold
+    // several live connections during join/leave churn (DESIGN §6).
+    val people = occupants.distinctBy { it.userId }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("In the room", fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        if (occupants.isEmpty()) {
+        if (people.isEmpty()) {
             Text(
                 "Nobody's here right now.",
                 fontSize = 12.sp,
@@ -758,7 +852,7 @@ private fun OccupantScroller(occupants: List<OccupantView>, selfUserId: String?,
             )
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(occupants) { person ->
+                items(people, key = { it.userId }) { person ->
                     // Only members may open a chat, and never with yourself or an unavailable person.
                     val isSelf = selfUserId != null && person.userId == selfUserId
                     val tappable = canStartPrivate && person.available && !isSelf
@@ -812,6 +906,9 @@ private fun ThreadSheet(
     // the replies for a message that clearly has a thread are still being fetched (DESIGN §9).
     var loadingReplies by remember(message.id) { mutableStateOf(true) }
     val sheetState = rememberModalBottomSheetState()
+    // Scroll state for the reply list so the thread can pin to the latest reply, mirroring how the
+    // room's message list scrolls to the bottom on load and on new messages (DESIGN §6, §9).
+    val repliesScroll = rememberScrollState()
 
     suspend fun reload() {
         val fresh = runCatching { api.thread(roomId, message.id) }.getOrDefault(emptyList())
@@ -846,6 +943,14 @@ private fun ThreadSheet(
         replies.sortBy { it.createdAt }
     }
 
+    // Scroll to the bottom so the latest reply is in view: on initial load (once the replies have
+    // finished loading) and whenever a new reply arrives, mirroring the room's message list (DESIGN §9).
+    LaunchedEffect(replies.size, loadingReplies, message.id) {
+        if (!loadingReplies && replies.isNotEmpty()) {
+            runCatching { repliesScroll.animateScrollTo(repliesScroll.maxValue) }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = sheetState,
@@ -865,7 +970,12 @@ private fun ThreadSheet(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(message.displayAuthor, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(
+                                message.displayAuthor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f)
+                            )
                             val ago = timeAgo(message.createdAt)
                             if (ago.isNotEmpty()) {
                                 Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -877,12 +987,12 @@ private fun ThreadSheet(
             }
             Spacer(Modifier.height(10.dp))
             Column(
-                modifier = Modifier.fillMaxWidth().height(220.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (loadingReplies) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp))
+                        LoadingSpinner(modifier = Modifier.width(18.dp).height(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Loading replies\u2026",
@@ -903,7 +1013,12 @@ private fun ThreadSheet(
                         Spacer(Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(reply.displayAuthor, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    reply.displayAuthor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 val ago = timeAgo(reply.createdAt)
                                 if (ago.isNotEmpty()) {
                                     Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -54,6 +53,7 @@ internal fun PrivateChatScreen(
     selfUserId: String?,
     onClose: () -> Unit,
     onEnded: () -> Unit = {},
+    onPeerName: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val messages = remember(targetUserId) { mutableStateListOf<PrivateMessage>() }
@@ -79,7 +79,7 @@ internal fun PrivateChatScreen(
                     PrivateChatChannel.Callbacks(
                         onStarted = { _, name ->
                             connected = true
-                            name?.let { peer = it }
+                            name?.let { peer = it; onPeerName(it) }
                         },
                         onMessage = { msg ->
                             messages.add(
@@ -132,7 +132,7 @@ internal fun PrivateChatScreen(
         if (!connected) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
+                    LoadingSpinner()
                     Spacer(Modifier.height(12.dp))
                     Text("Connecting to $peer…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -213,11 +213,12 @@ internal fun FinalEmojiScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
             theirs == null -> {
                 // You've chosen; wait for the peer before revealing anything (no placeholder).
                 Text("Waiting for $peer to choose…", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(20.dp))
-                CircularProgressIndicator()
+                LoadingSpinner()
                 Spacer(Modifier.height(16.dp))
                 Text(
                     "Your pick is locked in. Both emojis are revealed only once $peer picks one too.",
@@ -227,6 +228,7 @@ internal fun FinalEmojiScreen(
                 Spacer(Modifier.height(20.dp))
                 OutlinedButton(onClick = onClose) { Text("Leave") }
             }
+
             else -> {
                 Text("How you summed each other up", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(24.dp))
@@ -236,12 +238,6 @@ internal fun FinalEmojiScreen(
                 }
                 Spacer(Modifier.height(28.dp))
                 Button(onClick = onClose) { Text("Close") }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "No follow-up nudges. The emojis are the closing note.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }

@@ -4,4 +4,25 @@ html, body {
     margin: 0;
     padding: 0;
     overflow: hidden;
+    color-scheme: light dark;
+    /* Light theme: white canvas with a dark spinner arc. */
+    background: #ffffff;
+    color: #333333;
+}
+
+/* The pre-app loading spinner inherits the page's `color` for its moving arc
+   (via `stroke="currentColor"`), so it stays visible in both themes. */
+.loading-spinner-track {
+    stroke: #cccccc;
+}
+
+@media (prefers-color-scheme: dark) {
+    html, body {
+        background: #121212;
+        color: #e0e0e0;
+    }
+
+    .loading-spinner-track {
+        stroke: #444444;
+    }
 }

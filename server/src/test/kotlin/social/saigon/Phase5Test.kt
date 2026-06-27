@@ -167,6 +167,34 @@ class Phase5Test {
         }
     }
 
+    // --- One member with two live connections must appear only once in the room (DESIGN §6) ---
+
+    @Test
+    fun memberWithMultipleConnectionsAppearsOnceInOccupants() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "sup", role = Role.SUPPORTER, displayName = "Sup"))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val token = TokenService(authConfig).issueMemberToken("sup", Role.SUPPORTER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        // The same member joins room1 from two connections at once (a reconnect that raced the old
+        // socket's close, or a second tab / the private-chat socket which also joins the room).
+        wsClient.webSocket("/ws?token=$token") {
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+            incoming.receive() // Joined
+
+            wsClient.webSocket("/ws?token=$token") {
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+                incoming.receive() // Joined
+
+                val body = wsClient.get("/rooms/room1/occupants").bodyAsText()
+                val entries = Regex("\"userId\"").findAll(body).count()
+                assertEquals(1, entries, "one member must appear exactly once: $body")
+            }
+        }
+    }
+
     // --- End-to-end private chat over WebSockets between two members (DESIGN §7) ---
 
     @Test
