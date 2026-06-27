@@ -82,9 +82,16 @@ class SaigonApi(
     private suspend fun HttpResponse.bodyAsTextSafe(): String =
         runCatching { bodyAsText() }.getOrDefault("")
 
-    /** Public room list with live occupant counts (DESIGN §6). */
-    suspend fun rooms(): List<RoomSummary> =
-        client.get("$baseUrl/rooms") { HttpRequestAuth(this) }.body()
+    /**
+     * Public room list with live occupant counts (DESIGN §6). An optional [query] filters the rooms
+     * on the backend (by name/atmosphere); non-blank queries are recorded server-side so the founder
+     * can see what kinds of rooms people are looking for.
+     */
+    suspend fun rooms(query: String? = null): List<RoomSummary> =
+        client.get("$baseUrl/rooms") {
+            HttpRequestAuth(this)
+            query?.takeIf { it.isNotBlank() }?.let { url.parameters.append("q", it) }
+        }.body()
 
     /**
      * A page of a room's public chat feed, each message carrying its reply-count (DESIGN §6, §9).
@@ -402,11 +409,17 @@ class InvalidTokenException(message: String) : Exception(message)
 class SessionExpiredException(message: String) : Exception(message)
 
 /** A live thread-reply broadcast over the WebSocket (`Outgoing.Replied`), carrying the parent's
- * fresh reply-count so the feed can update its "↳ N replies" indicator (DESIGN §9). */
+ * fresh reply-count so the feed can update its "↳ N replies" indicator, plus the full reply payload
+ * so an open thread sheet can append it live to every client in the room (DESIGN §9). */
 data class ReplyEvent(
     val parentMessageId: String,
     val replyId: String,
     val replyCount: Int,
+    val authorId: String = "",
+    val authorName: String? = null,
+    val text: String = "",
+    val createdAt: Long = 0L,
+    val replyToId: String? = null,
 )
 
 /** A live, room-scoped chat message broadcast over the WebSocket (`Outgoing.Said`). */
@@ -461,6 +474,11 @@ class RoomChannel internal constructor(
                         parentMessageId = obj["parentMessageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         replyId = obj["replyId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         replyCount = obj["replyCount"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                        authorId = obj["authorId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        authorName = obj["authorName"]?.jsonPrimitive?.contentOrNull,
+                        text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+                        replyToId = obj["replyToId"]?.jsonPrimitive?.contentOrNull,
                     ),
                 )
                 SaigonApi.PRIVATE_STARTED_TYPE -> onPrivateChatStarted(

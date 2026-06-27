@@ -85,6 +85,14 @@ class PrivateChatService(
     fun get(chatId: String): PrivateChat? = chats.get(chatId)
 
     /**
+     * The messages exchanged so far in the open chat [chatId], oldest→newest. Lets a participant
+     * (re)opening the chat screen load the conversation so far for the still-open session — the
+     * history is dropped only when the chat ends (DESIGN §7). Empty if the chat is unknown/ended.
+     */
+    fun messages(chatId: String): List<PrivateMessage> =
+        chats.messages(chatId).sortedBy { it.createdAt }
+
+    /**
      * Post an ephemeral, plain-text message to an open chat.
      *
      * @throws IllegalArgumentException if the chat is unknown/ended, the author is not a

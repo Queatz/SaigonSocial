@@ -121,6 +121,31 @@ class Phase5Test {
         assertFailsWith<IllegalArgumentException> { svc.post(chat.id, "a", "still there?") }
     }
 
+    // --- History of an open chat can be loaded when (re)opening the screen (DESIGN §7) ---
+
+    @Test
+    fun openChatExposesItsMessagesUntilItEnds() {
+        val users = InMemoryUserRepository()
+        users.create(User(id = "a", role = Role.SHARER, displayName = "A"))
+        users.create(User(id = "b", role = Role.SUPPORTER, displayName = "B"))
+        val repo = InMemoryPrivateChatRepository()
+        var now = 1_000L
+        val svc = PrivateChatService(repo, users, clock = { now })
+
+        val chat = svc.start("a", "b")
+        svc.post(chat.id, "a", "hello")
+        now = 2_000L
+        svc.post(chat.id, "b", "hi there")
+
+        // The conversation so far is exposed oldest -> newest so a (re)opened screen loads history.
+        val history = svc.messages(chat.id)
+        assertEquals(listOf("hello", "hi there"), history.map { it.text })
+
+        // Once the chat ends the history is discarded (ephemeral).
+        svc.end(chat.id, "a")
+        assertTrue(svc.messages(chat.id).isEmpty())
+    }
+
     // --- "Available for chat" indicator surfaces in the room occupant list (DESIGN §7) ---
 
     @Test
@@ -248,6 +273,64 @@ class Phase5Test {
                 )
                 assertTrue(rejected is Outgoing.Error)
             }
+        }
+    }
+
+    // --- (Re)opening an open chat replays its history over the socket (DESIGN §7) ---
+
+    @Test
+    fun openingAnExistingPrivateChatLoadsHistory() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "alice", role = Role.SHARER, displayName = "Alice"))
+        repositories.users.create(User(id = "bob", role = Role.SUPPORTER, displayName = "Bob"))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokens = TokenService(authConfig)
+        val aliceToken = tokens.issueMemberToken("alice", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        wsClient.webSocket("/ws?token=$aliceToken") {
+            // Alice opens a chat with Bob and sends a message into it.
+            send(
+                Frame.Text(
+                    json.encodeToString(Incoming.serializer(), Incoming.StartPrivateChat("room1", "bob")),
+                ),
+            )
+            val started = json.decodeFromString(
+                Outgoing.serializer(),
+                (incoming.receive() as Frame.Text).readText(),
+            )
+            val chatId = (started as Outgoing.PrivateChatStarted).chatId
+            send(
+                Frame.Text(
+                    json.encodeToString(Incoming.serializer(), Incoming.SayPrivate(chatId, "hello Bob")),
+                ),
+            )
+            val echo = json.decodeFromString(
+                Outgoing.serializer(),
+                (incoming.receive() as Frame.Text).readText(),
+            )
+            assertEquals("hello Bob", (echo as Outgoing.PrivateMessageSaid).text)
+
+            // Reopening the chat screen replays the conversation so far: the started notice is
+            // followed by the existing message, so the screen loads history instead of a blank.
+            send(
+                Frame.Text(
+                    json.encodeToString(Incoming.serializer(), Incoming.StartPrivateChat("room1", "bob")),
+                ),
+            )
+            val reStarted = json.decodeFromString(
+                Outgoing.serializer(),
+                (incoming.receive() as Frame.Text).readText(),
+            )
+            assertTrue(reStarted is Outgoing.PrivateChatStarted)
+            assertEquals(chatId, (reStarted as Outgoing.PrivateChatStarted).chatId)
+            val replayed = json.decodeFromString(
+                Outgoing.serializer(),
+                (incoming.receive() as Frame.Text).readText(),
+            )
+            assertTrue(replayed is Outgoing.PrivateMessageSaid)
+            assertEquals("hello Bob", (replayed as Outgoing.PrivateMessageSaid).text)
         }
     }
 

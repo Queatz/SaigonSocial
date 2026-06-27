@@ -250,9 +250,26 @@ fun Application.registerRoutes(
         }
 
         // Public room list with live occupant counts (DESIGN §6). Open to all roles for viewing.
+        // An optional `q` filters rooms by name/atmosphere on the backend; each non-blank query is
+        // recorded so the founder can understand what kinds of rooms people are looking for (§6).
         get("/rooms") {
+            val query = call.request.queryParameters["q"]?.trim().orEmpty()
+            val matches = roomService.list().filter { room ->
+                query.isBlank() ||
+                    room.name.contains(query, ignoreCase = true) ||
+                    room.atmosphere.contains(query, ignoreCase = true)
+            }
+            if (query.isNotBlank()) {
+                repositories.roomSearches.add(
+                    social.saigon.domain.RoomSearch(
+                        id = UUID.randomUUID().toString(),
+                        query = query,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
             // Sorted by most people active, descending (DESIGN §6).
-            val rooms = roomService.list().map { room ->
+            val rooms = matches.map { room ->
                 RoomSummary(
                     id = room.id,
                     name = room.name,
@@ -480,6 +497,16 @@ fun Application.registerRoutes(
                     .sortedBy { it.displayName.lowercase() }
                     .map { it.toMemberView(economicsService) }
                 call.respond(members)
+            }
+
+            // Founder-only: recent room searches (DESIGN §6), newest first, so the founder can
+            // understand what kinds of rooms people are looking for. `limit` caps the result (1–500).
+            get("/founder/room-searches") {
+                requireFounder(call.caller())
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 500) ?: 100
+                val searches = repositories.roomSearches.recent(limit)
+                    .map { RoomSearchView(it.query, it.createdAt) }
+                call.respond(searches)
             }
 
             // Founder-only: mint a single-use invite code for a new member (replaces sharing a raw
@@ -851,6 +878,10 @@ data class SetTierRequest(val role: Role)
 @Serializable
 data class MemberTierChangeResponse(val member: MemberView, val token: String? = null)
 
+/** A recorded room search, surfaced to the founder so they can see what people look for (§6). */
+@Serializable
+data class RoomSearchView(val query: String, val createdAt: Long)
+
 private fun ApplicationCall.caller(): CallerPrincipal =
     principal<JWTPrincipal>()!!.toCaller()
 
@@ -1081,6 +1112,12 @@ private suspend fun handleIncoming(
             val targetName = identities.getOrCreate(frame.targetUserId, frame.roomId).name
             chatHub.sendToUser(initiatorId, Outgoing.PrivateChatStarted(chat.id, frame.targetUserId, targetName, frame.roomId))
             chatHub.sendToUser(frame.targetUserId, Outgoing.PrivateChatStarted(chat.id, initiatorId, initiatorName, frame.roomId))
+            // Replay the conversation so far to whoever just opened the screen, so (re)opening an
+            // already-open chat shows its history rather than a blank window (DESIGN §7). The
+            // history lives only while the chat is open; it is discarded once the chat ends.
+            privateChats.messages(chat.id).forEach { message ->
+                session.send(Outgoing.PrivateMessageSaid(message.chatId, message.authorId, message.text, message.createdAt))
+            }
         }
 
         is Incoming.SayPrivate -> {

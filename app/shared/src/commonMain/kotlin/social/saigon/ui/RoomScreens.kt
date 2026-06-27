@@ -72,22 +72,39 @@ internal fun RoomListScreen(
     val scope = rememberCoroutineScope()
     var rooms by remember { mutableStateOf<List<RoomSummary>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var search by remember { mutableStateOf("") }
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RoomSummary?>(null) }
     var deleting by remember { mutableStateOf<RoomSummary?>(null) }
 
     suspend fun reload() {
-        runCatching { api.rooms() }.onSuccess { rooms = it }
+        runCatching { api.rooms(search.trim().ifBlank { null }) }.onSuccess { rooms = it }
     }
 
-    LaunchedEffect(Unit) {
+    // Search the rooms on the backend, debounced by 500ms so we don't fire a request per keystroke
+    // (DESIGN §6). Re-runs whenever the query changes; changing it cancels the pending delay, which
+    // is exactly the debounce we want. An empty query simply loads the full list.
+    LaunchedEffect(search) {
+        val query = search.trim()
+        if (query.isNotEmpty()) delay(500)
+        error = null
         try {
-            rooms = api.rooms()
+            rooms = api.rooms(query.ifBlank { null })
         } catch (e: Throwable) {
             error = e.message ?: "Could not reach the server"
         }
     }
 
+    Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            label = { Text("Search rooms") },
+            singleLine = true,
+            shape = InputFieldShape,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
     when {
         error != null -> Centered {
             Text(
@@ -174,6 +191,8 @@ internal fun RoomListScreen(
                     }
                 }
             }
+        }
+    }
         }
     }
 
@@ -304,6 +323,10 @@ internal fun RoomChatScreen(
     var identity by remember(room.id) { mutableStateOf<RoomIdentity?>(null) }
     var draft by remember(room.id) { mutableStateOf("") }
     var openThread by remember(room.id) { mutableStateOf<FeedMessage?>(null) }
+    // Live thread replies broadcast to the room, so an open thread sheet can append them in realtime
+    // for every client — not just the member who sent it. Accumulated (rather than a single latest
+    // value) so two replies arriving back-to-back are never dropped before the sheet sees them (DESIGN §9).
+    val liveReplies = remember(room.id) { mutableStateListOf<ReplyEvent>() }
     // The most recent chat another member opened with us while we're in this room (DESIGN §7), shown
     // as a dismissible banner so we notice a new direct chat without leaving the room.
     var incomingChat by remember(room.id) { mutableStateOf<DirectChat?>(null) }
@@ -388,9 +411,13 @@ internal fun RoomChatScreen(
                     },
                     onReply = { ev ->
                         // A thread reply landed: refresh the parent's "↳ N replies" count live so the
-                        // messages list shows the message now has replies (DESIGN §9).
+                        // messages list shows the message now has replies — updated in place so the
+                        // message keeps its position and sent time (DESIGN §9).
                         val idx = messages.indexOfFirst { it.id == ev.parentMessageId }
                         if (idx >= 0) messages[idx] = messages[idx].copy(replyCount = ev.replyCount)
+                        // Surface the full reply so an open thread sheet can append it in realtime for
+                        // every client in the room, not just the member who sent it (DESIGN §9).
+                        if (liveReplies.none { it.replyId == ev.replyId }) liveReplies.add(ev)
                     },
                     onPrivateChatStarted = { peerId, peerName, originRoomId ->
                         // Someone tapped us to open a private chat (DESIGN §7): notify and record it.
@@ -484,11 +511,10 @@ internal fun RoomChatScreen(
                                 )
                             }
                         }
-                        // Active threads float to the top (newest thread first), so the liveliest
-                        // conversations lead the room; the rest stay in chronological order (DESIGN §9).
-                        val withThreads = messages.filter { it.replyCount > 0 }.sortedByDescending { it.createdAt }
-                        val withoutThreads = messages.filter { it.replyCount == 0 }
-                        items(withThreads + withoutThreads, key = { it.id }) { msg ->
+                        // Messages always stay in chronological order (oldest→newest). Receiving a
+                        // reply updates a message's "↳ N replies" indicator in place and must never
+                        // change its position or sent time (DESIGN §9).
+                        items(messages, key = { it.id }) { msg ->
                             MessageRow(msg = msg, onOpenThread = { openThread = msg; onThreadChange(msg.id) })
                         }
                     }
@@ -523,6 +549,7 @@ internal fun RoomChatScreen(
                 message = msg,
                 channel = channel,
                 hasToken = hasToken,
+                liveReplies = liveReplies,
                 onSignIn = onSignIn,
                 onClose = { openThread = null; onThreadChange(null) },
             )
@@ -774,6 +801,7 @@ private fun ThreadSheet(
     message: FeedMessage,
     channel: RoomChannel?,
     hasToken: Boolean,
+    liveReplies: List<ReplyEvent>,
     onSignIn: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -793,6 +821,29 @@ private fun ThreadSheet(
         loadingReplies = true
         reload()
         loadingReplies = false
+    }
+
+    // Append live replies broadcast to the room so the open thread updates in realtime for every
+    // client — including replies sent by other members — keeping the list in time order (DESIGN §9).
+    LaunchedEffect(liveReplies.size, message.id) {
+        val newOnes = liveReplies.filter { ev ->
+            ev.parentMessageId == message.id && replies.none { it.id == ev.replyId }
+        }
+        if (newOnes.isEmpty()) return@LaunchedEffect
+        newOnes.forEach { ev ->
+            replies.add(
+                ThreadReply(
+                    id = ev.replyId,
+                    parentMessageId = ev.parentMessageId,
+                    replyToId = ev.replyToId,
+                    authorId = ev.authorId,
+                    authorName = ev.authorName.orEmpty(),
+                    text = ev.text,
+                    createdAt = ev.createdAt,
+                ),
+            )
+        }
+        replies.sortBy { it.createdAt }
     }
 
     ModalBottomSheet(
@@ -870,11 +921,10 @@ private fun ThreadSheet(
                 onSend = {
                     val text = draft.trim()
                     if (text.isNotEmpty()) {
-                        scope.launch {
-                            runCatching { channel?.reply(message.id, text) }
-                            delay(300)
-                            reload()
-                        }
+                        // Just send: the server broadcasts the reply back to the whole room, and the
+                        // live-reply effect above appends it in realtime — same path every other
+                        // client sees, so the sender's own reply stays in sync too (DESIGN §9).
+                        scope.launch { runCatching { channel?.reply(message.id, text) } }
                         draft = ""
                     }
                 },

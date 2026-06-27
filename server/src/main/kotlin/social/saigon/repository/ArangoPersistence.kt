@@ -19,6 +19,7 @@ import social.saigon.domain.Payment
 import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
+import social.saigon.domain.RoomSearch
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
@@ -164,6 +165,7 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     users = ArangoUserRepository(db),
     rooms = ArangoRoomRepository(db),
     identities = ArangoRoomIdentityRepository(db),
+    roomSearches = ArangoRoomSearchRepository(db),
     messages = ArangoMessageRepository(db),
     threads = ArangoThreadRepository(db),
     privateChats = InMemoryPrivateChatRepository(),
@@ -243,6 +245,17 @@ internal class ArangoRoomIdentityRepository(db: ArangoDatabase) : RoomIdentityRe
     private fun key(userId: String, roomId: String) = "$userId@$roomId"
     override fun get(userId: String, roomId: String): RoomIdentity? = store.get(key(userId, roomId))
     override fun put(identity: RoomIdentity): RoomIdentity = store.put(identity)
+}
+
+internal class ArangoRoomSearchRepository(db: ArangoDatabase) : RoomSearchRepository {
+    private val store = ArangoStore(db, ArangoSchema.ROOM_SEARCHES, RoomSearch.serializer()) { it.id }
+    override fun add(search: RoomSearch): RoomSearch = store.put(search)
+    override fun recent(limit: Int): List<RoomSearch> =
+        store.query(
+            "FOR d IN ${ArangoSchema.ROOM_SEARCHES} SORT d.createdAt DESC LIMIT @limit RETURN d",
+            mapOf("limit" to limit),
+        )
+    override fun all(): List<RoomSearch> = store.all()
 }
 
 internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {

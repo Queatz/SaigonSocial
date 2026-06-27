@@ -24,6 +24,7 @@ import social.saigon.auth.TokenService
 import social.saigon.domain.Intent
 import social.saigon.domain.PlainText
 import social.saigon.domain.Role
+import social.saigon.domain.Room
 import social.saigon.domain.RoomCreate
 import social.saigon.domain.User
 import social.saigon.realtime.Incoming
@@ -102,6 +103,35 @@ class Phase3Test {
         assertTrue(list.contains("Coffee Chat"))
         assertTrue(list.contains("cozy"))
         assertTrue(list.contains("\"occupants\":0"))
+    }
+
+    @Test
+    fun roomSearchFiltersOnBackendAndRecordsForFounder() = testApplication {
+        val authConfig = AuthConfig(secret = "test-secret")
+        val founder = TokenService(authConfig).issueMemberToken("f1", Role.FOUNDER)
+        val repositories = Repositories()
+        repositories.rooms.create(Room("r1", "Coffee Lovers", "☕", "cozy spot", "f1"))
+        repositories.rooms.create(Room("r2", "Tech Talk", "💻", "geeky vibes", "f1"))
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // The backend filters by name, case-insensitively.
+        val byName = client.get("/rooms?q=coffee").bodyAsText()
+        assertTrue(byName.contains("Coffee Lovers"))
+        assertFalse(byName.contains("Tech Talk"))
+
+        // …and by atmosphere.
+        val byAtmosphere = client.get("/rooms?q=geeky").bodyAsText()
+        assertTrue(byAtmosphere.contains("Tech Talk"))
+        assertFalse(byAtmosphere.contains("Coffee Lovers"))
+
+        // A blank query returns every room and is NOT recorded as a search.
+        val all = client.get("/rooms").bodyAsText()
+        assertTrue(all.contains("Coffee Lovers") && all.contains("Tech Talk"))
+
+        // The non-blank searches were persisted for the founder to review.
+        val searches = client.get("/founder/room-searches") { bearerAuth(founder) }.bodyAsText()
+        assertTrue(searches.contains("coffee"), "recent searches should include 'coffee'")
+        assertTrue(searches.contains("geeky"), "recent searches should include 'geeky'")
     }
 
     // --- Public chat: read-only Seekers, members can send (DESIGN §6) ---

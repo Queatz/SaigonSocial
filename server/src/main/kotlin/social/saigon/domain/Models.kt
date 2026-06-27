@@ -104,6 +104,20 @@ data class Room(
 )
 
 /**
+ * A recorded room search (DESIGN §6). Persisted whenever a member or visitor searches the room
+ * list, so the founder can understand what kinds of rooms people are looking for.
+ */
+@Serializable
+data class RoomSearch(
+    val id: String,
+    /** The raw search text the user typed, trimmed. */
+    val query: String,
+    val createdAt: Long,
+    /** The searcher's persistent user id when signed in; null for anonymous viewers. */
+    val userId: String? = null,
+)
+
+/**
  * Room-scoped, user-controlled anonymous identity (DESIGN §5).
  * Unique per (user, room) pair; regenerated on demand.
  */

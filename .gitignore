@@ -21,3 +21,4 @@ node_modules/
 deploy/web/dist/
 deploy/server/dist/
 *.deploybak
+/.junie/

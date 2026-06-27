@@ -12,6 +12,7 @@ import social.saigon.domain.PrivateMessage
 import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
+import social.saigon.domain.RoomSearch
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
@@ -31,9 +32,11 @@ object ArangoSchema {
     const val THREADS = "Threads"
     const val EMOJIS = "Emojis"
     const val METRICS = "Metrics"
+    const val ROOM_SEARCHES = "RoomSearches"
 
     /** Document collections provisioned on startup. */
-    val documentCollections: List<String> = listOf(USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS)
+    val documentCollections: List<String> =
+        listOf(USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS, ROOM_SEARCHES)
 }
 
 interface UserRepository {
@@ -68,6 +71,17 @@ interface InviteCodeRepository {
 interface RoomIdentityRepository {
     fun get(userId: String, roomId: String): RoomIdentity?
     fun put(identity: RoomIdentity): RoomIdentity
+}
+
+/**
+ * Recorded room searches (DESIGN §6). Append-only: every search of the room list is stored so the
+ * founder can understand what kinds of rooms people are looking for.
+ */
+interface RoomSearchRepository {
+    fun add(search: RoomSearch): RoomSearch
+    /** Recent searches, newest first, capped at [limit]. */
+    fun recent(limit: Int): List<RoomSearch>
+    fun all(): List<RoomSearch>
 }
 
 interface MessageRepository {
@@ -203,6 +217,14 @@ class InMemoryRoomIdentityRepository : RoomIdentityRepository {
         identity.also { store[key(it.userId, it.roomId)] = it }
 }
 
+class InMemoryRoomSearchRepository : RoomSearchRepository {
+    private val store = CopyOnWriteArrayList<RoomSearch>()
+    override fun add(search: RoomSearch): RoomSearch = search.also { store.add(it) }
+    override fun recent(limit: Int): List<RoomSearch> =
+        store.sortedByDescending { it.createdAt }.take(limit)
+    override fun all(): List<RoomSearch> = store.toList()
+}
+
 class InMemoryMessageRepository : MessageRepository {
     // CopyOnWriteArrayList + computeIfAbsent keep concurrent room writes safe under load (Phase 11).
     private val store = ConcurrentHashMap<String, MutableList<Message>>()
@@ -329,6 +351,7 @@ class Repositories(
     val users: UserRepository = InMemoryUserRepository(),
     val rooms: RoomRepository = InMemoryRoomRepository(),
     val identities: RoomIdentityRepository = InMemoryRoomIdentityRepository(),
+    val roomSearches: RoomSearchRepository = InMemoryRoomSearchRepository(),
     val messages: MessageRepository = InMemoryMessageRepository(),
     val threads: ThreadRepository = InMemoryThreadRepository(),
     val privateChats: PrivateChatRepository = InMemoryPrivateChatRepository(),
