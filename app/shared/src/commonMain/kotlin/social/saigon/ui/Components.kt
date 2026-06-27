@@ -27,6 +27,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+
+/**
+ * A short, human-friendly "time ago" label for a message/reply timestamp ([epochMillis], DESIGN §9).
+ * Shown next to messages and thread replies so people can tell how fresh a conversation is. Returns
+ * an empty string for missing/zero timestamps so callers can simply omit the label.
+ */
+@OptIn(ExperimentalTime::class)
+internal fun timeAgo(epochMillis: Long): String {
+    if (epochMillis <= 0L) return ""
+    val now = Clock.System.now().toEpochMilliseconds()
+    val diffSeconds = (now - epochMillis) / 1000
+    return when {
+        diffSeconds < 5 -> "just now"
+        diffSeconds < 60 -> "${diffSeconds}s ago"
+        diffSeconds < 3600 -> "${diffSeconds / 60}m ago"
+        diffSeconds < 86_400 -> "${diffSeconds / 3600}h ago"
+        diffSeconds < 604_800 -> "${diffSeconds / 86_400}d ago"
+        else -> "${diffSeconds / 604_800}w ago"
+    }
+}
 
 /**
  * A small circular profile icon derived from a display [name]'s first letter (DESIGN §5). Used by

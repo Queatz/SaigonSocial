@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +66,7 @@ private sealed interface Screen {
     data object RoomList : Screen
     data class Room(val room: RoomSummary) : Screen
     data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
+    data object DirectChats : Screen
     data object Profile : Screen
 }
 
@@ -81,6 +83,33 @@ fun SaigonApp() {
         }
 
         var screen by remember { mutableStateOf<Screen>(Screen.RoomList) }
+
+        // Open one-on-one chats the user can return to (DESIGN §7). Private chats are ephemeral and
+        // never persisted, so this list lives only for the current session — it powers the "Direct
+        // chats" screen and the in-room "someone started a chat with you" notification.
+        val directChats = remember { mutableStateListOf<DirectChat>() }
+
+        // Record a direct chat (newest first, de-duplicated by peer) so it shows in the list.
+        fun recordDirectChat(chat: DirectChat) {
+            directChats.removeAll { it.targetUserId == chat.targetUserId && it.roomId == chat.roomId }
+            directChats.add(0, chat)
+        }
+
+        // Record the chat and open it.
+        fun openDirectChat(chat: DirectChat) {
+            recordDirectChat(chat)
+            screen = Screen.Private(chat.roomId, chat.targetUserId, chat.peerName)
+        }
+
+        // Drop a direct chat once it has ended — ended private chats are gone for good (DESIGN §7),
+        // so they must not keep showing under "Direct chats" on the home screen.
+        fun removeDirectChat(roomId: String, targetUserId: String) {
+            directChats.removeAll { it.targetUserId == targetUserId && it.roomId == roomId }
+        }
+
+        // The most recent "someone started a chat with you" notice, surfaced as an app-level banner
+        // so the recipient learns about it from any screen — not only while sitting inside a room.
+        var chatNotice by remember { mutableStateOf<DirectChat?>(null) }
 
         // The signed-in user's profile, used for top-bar identity and room permissions.
         var profile by remember { mutableStateOf<ProfileResponse?>(null) }
@@ -105,6 +134,33 @@ fun SaigonApp() {
         val role = profile?.role
         val canCreateRooms = role == Role.SUPPORTER || role == Role.FOUNDER
         val canManageRooms = role == Role.FOUNDER
+        // Only members (not read-only Seekers/anonymous viewers) may start a private chat (DESIGN §7).
+        val canStartPrivate = role != null && role != Role.SEEKER
+
+        // An always-on notifications socket so the user is told when someone opens a chat with them
+        // regardless of the current screen (DESIGN §7). The room socket only delivers this while the
+        // user is sitting inside a room, so on the room list / profile / direct-chats screens the
+        // notice would otherwise be dropped and the chat would never appear for the recipient.
+        val selfId = profile?.id
+        LaunchedEffect(token, selfId) {
+            if (token == null || selfId == null) return@LaunchedEffect
+            val channel = runCatching { api.openNotifications() }.getOrNull() ?: return@LaunchedEffect
+            try {
+                channel.start { notice ->
+                    val chat = DirectChat(notice.roomId.orEmpty(), notice.peerId, notice.peerName ?: "Someone")
+                    // Always list the chat so it shows up under "Direct chats" from any screen.
+                    recordDirectChat(chat)
+                    // Surface a banner too, but don't nag the initiator (already in this chat) or
+                    // duplicate the in-room banner that the room screen already shows.
+                    val current = screen
+                    val alreadyInThisChat = current is Screen.Private && current.targetUserId == notice.peerId
+                    val inARoom = current is Screen.Room
+                    if (!alreadyInThisChat && !inARoom) chatNotice = chat
+                }
+            } finally {
+                runCatching { channel.close() }
+            }
+        }
 
         Surface(
             modifier = Modifier
@@ -114,20 +170,38 @@ fun SaigonApp() {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)),
             color = MaterialTheme.colorScheme.background,
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            // Subtle canvas gradient behind every screen (DESIGN §1 — "subtle gradients").
+            Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush())) {
                 TopBar(
                     title = when (val s = screen) {
                         Screen.RoomList -> "Saigon.Social"
                         is Screen.Room -> "${s.room.emoji} ${s.room.name}"
                         is Screen.Private -> "Chat with ${s.peerName}"
+                        Screen.DirectChats -> "Direct chats"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                     },
                     canGoBack = screen != Screen.RoomList,
                     signedIn = token != null,
+                    // Don't show the "Sign in" button while the sign-in page is already open.
+                    showSignIn = screen != Screen.Profile,
                     profileName = profile?.displayName,
                     onBack = { screen = Screen.RoomList },
                     onProfile = { screen = Screen.Profile },
                 )
+
+                // App-level "someone started a chat with you" notice, shown above any screen so the
+                // recipient never misses it (DESIGN §7).
+                chatNotice?.let { notice ->
+                    MaxWidthContainer {
+                        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            IncomingChatBanner(
+                                chat = notice,
+                                onOpen = { chatNotice = null; openDirectChat(notice) },
+                                onDismiss = { chatNotice = null },
+                            )
+                        }
+                    }
+                }
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when (val s = screen) {
@@ -137,16 +211,21 @@ fun SaigonApp() {
                                 onOpen = { screen = Screen.Room(it) },
                                 canCreateRooms = canCreateRooms,
                                 canManageRooms = canManageRooms,
+                                directChatCount = directChats.size,
+                                onOpenDirectChats = { screen = Screen.DirectChats },
                             )
                         }
                         is Screen.Room -> RoomChatScreen(
                             api = api,
                             room = s.room,
                             hasToken = token != null,
+                            canStartPrivate = canStartPrivate,
                             selfUserId = profile?.id,
                             onStartPrivate = { occupant ->
-                                screen = Screen.Private(s.room.id, occupant.userId, occupant.name)
+                                openDirectChat(DirectChat(s.room.id, occupant.userId, occupant.name))
                             },
+                            onRecordDirectChat = { recordDirectChat(it) },
+                            onOpenDirectChat = { openDirectChat(it) },
                             onOpenRoom = { screen = Screen.Room(it) },
                         )
                         is Screen.Private -> PrivateChatScreen(
@@ -156,7 +235,14 @@ fun SaigonApp() {
                             peerName = s.peerName,
                             selfUserId = profile?.id,
                             onClose = { screen = Screen.RoomList },
+                            onEnded = { removeDirectChat(s.roomId, s.targetUserId) },
                         )
+                        Screen.DirectChats -> MaxWidthContainer {
+                            DirectChatsScreen(
+                                chats = directChats,
+                                onOpen = { openDirectChat(it) },
+                            )
+                        }
                         Screen.Profile -> MaxWidthContainer { ProfileScreen(api, token, onToken = { token = it }) }
                     }
                 }
@@ -170,11 +256,13 @@ private fun TopBar(
     title: String,
     canGoBack: Boolean,
     signedIn: Boolean,
+    showSignIn: Boolean,
     profileName: String?,
     onBack: () -> Unit,
     onProfile: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.primary) {
+    // A subtle gradient sheen across the bar (DESIGN §1) instead of one flat fill.
+    Box(modifier = Modifier.fillMaxWidth().background(topBarBrush())) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -241,7 +329,7 @@ private fun TopBar(
                 ) {
                     ProfileIcon(name = profileName ?: "?", size = 36.dp)
                 }
-            } else {
+            } else if (showSignIn) {
                 TextButton(onClick = onProfile) {
                     Text("Sign in", color = MaterialTheme.colorScheme.onPrimary)
                 }

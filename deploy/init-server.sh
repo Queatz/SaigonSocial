@@ -29,6 +29,14 @@ TRAEFIK_CONTAINER="${TRAEFIK_CONTAINER:-traefik}"
 CERT_RESOLVER="${CERT_RESOLVER:-letsencrypt}"    # must match the deploy scripts' certresolver label
 ACME_EMAIL="${ACME_EMAIL:-admin@saigon.social}"  # Let's Encrypt registration / expiry notices
 
+# ArangoDB — the API server's mandatory datastore (DESIGN §12). It runs as a container on the same
+# shared `web` network, so the API reaches it by container name. These defaults MUST match the
+# ARANGO_* values used by ./deploy/deploy-server.sh.
+ARANGO_CONTAINER="${ARANGO_CONTAINER:-saigon-arango}"
+ARANGO_IMAGE="${ARANGO_IMAGE:-arangodb:3.11}"
+ARANGO_PASSWORD="${ARANGO_PASSWORD:-saigon}"      # root password baked into the DB on first boot
+ARANGO_VOLUME="${ARANGO_VOLUME:-arango-data}"     # named volume so data survives container restarts
+
 # ---- Remote bootstrap ---------------------------------------------------------------------------
 # Everything below runs on the remote host. We pass our config through as environment variables.
 echo ">> Initialising backend host ${SSH_HOST}"
@@ -39,6 +47,10 @@ ssh ${SSH_OPTS} "${SSH_HOST}" \
   TRAEFIK_CONTAINER="${TRAEFIK_CONTAINER}" \
   CERT_RESOLVER="${CERT_RESOLVER}" \
   ACME_EMAIL="${ACME_EMAIL}" \
+  ARANGO_CONTAINER="${ARANGO_CONTAINER}" \
+  ARANGO_IMAGE="${ARANGO_IMAGE}" \
+  ARANGO_PASSWORD="${ARANGO_PASSWORD}" \
+  ARANGO_VOLUME="${ARANGO_VOLUME}" \
   'bash -se' <<'REMOTE'
 set -euo pipefail
 
@@ -81,6 +93,21 @@ if [ -z "$(docker ps -q -f "name=^${TRAEFIK_CONTAINER}$")" ]; then
     "--certificatesresolvers.${CERT_RESOLVER}.acme.httpchallenge.entrypoint=web"
 else
   echo "   - Traefik already running"
+fi
+
+echo "   - ensuring ArangoDB '${ARANGO_CONTAINER}'"
+if [ -z "$(docker ps -q -f "name=^${ARANGO_CONTAINER}$")" ]; then
+  docker rm -f "${ARANGO_CONTAINER}" >/dev/null 2>&1 || true
+  docker volume inspect "${ARANGO_VOLUME}" >/dev/null 2>&1 || docker volume create "${ARANGO_VOLUME}"
+  docker run -d \
+    --name "${ARANGO_CONTAINER}" \
+    --restart unless-stopped \
+    --network "${DOCKER_NETWORK}" \
+    -e "ARANGO_ROOT_PASSWORD=${ARANGO_PASSWORD}" \
+    -v "${ARANGO_VOLUME}:/var/lib/arangodb3" \
+    "${ARANGO_IMAGE}"
+else
+  echo "   - ArangoDB already running"
 fi
 
 echo ">> Backend host ready."

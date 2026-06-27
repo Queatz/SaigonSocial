@@ -114,6 +114,11 @@ data class ProfileResponse(
     val passwordSet: Boolean = false,
 )
 
+/** The caller's private emoji tally (`GET /profile/me/emoji-stats`, DESIGN §4, §8). Visible only
+ * to the user themself. */
+@Serializable
+data class EmojiStatsResponse(val stats: Map<String, Int> = emptyMap())
+
 /** Editable profile fields (`PUT /profile/me`, DESIGN §4). Null fields are left unchanged. */
 @Serializable
 data class ProfileUpdate(
@@ -228,6 +233,17 @@ data class PrivateMessage(
     val author: String,
     val text: String,
     val mine: Boolean,
+)
+
+/**
+ * An open one-on-one direct chat the user can return to (DESIGN §7). Client-only navigation state:
+ * private chats are ephemeral and never persisted, so this list lives only for the current session.
+ * It backs the "Direct chats" screen and the in-room "someone started a chat with you" notification.
+ */
+data class DirectChat(
+    val roomId: String,
+    val targetUserId: String,
+    val peerName: String,
 )
 
 /**

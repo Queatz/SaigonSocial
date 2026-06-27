@@ -37,6 +37,17 @@ DOCKER_NETWORK="${DOCKER_NETWORK:-web}"   # shared network created by ./deploy/i
 CERT_RESOLVER="${CERT_RESOLVER:-letsencrypt}"   # must match ./deploy/init-server.sh
 APP_PORT="${APP_PORT:-9090}"              # container port the Ktor server listens on
 
+# ArangoDB — the server's mandatory datastore (DESIGN §12). The app reaches it by container name over
+# the shared `web` network. These defaults MUST match ./deploy/init-server.sh (which boots the DB).
+ARANGO_CONTAINER="${ARANGO_CONTAINER:-saigon-arango}"
+ARANGO_IMAGE="${ARANGO_IMAGE:-arangodb:3.11}"
+ARANGO_HOST="${ARANGO_HOST:-${ARANGO_CONTAINER}}"
+ARANGO_PORT="${ARANGO_PORT:-8529}"
+ARANGO_USER="${ARANGO_USER:-root}"
+ARANGO_PASSWORD="${ARANGO_PASSWORD:-saigon}"
+ARANGO_DB="${ARANGO_DB:-saigon_social}"
+ARANGO_VOLUME="${ARANGO_VOLUME:-arango-data}"
+
 # Where to deploy. By default we ship the image to the remote host over SSH and run it there.
 # Set LOCAL=true to build and run on this machine instead (app + Traefik on the same box).
 SSH_HOST="${1:-${SSH_HOST:-root@${DOMAIN}}}"
@@ -105,6 +116,25 @@ fi
 
 # NOTE: we deliberately do NOT publish host ports — Traefik reaches the container over the shared
 # `web` Docker network. Publishing 9090 is unnecessary and risks a port clash on the host.
+# Make sure an ArangoDB container is up (idempotent). init-server.sh normally creates it; we are
+# defensive here so a deploy onto a host that predates the DB (or a LOCAL run) still works.
+ensure_arango() {
+  # $1 = docker command to use (e.g. "docker" locally, or "docker" on the remote shell)
+  local D="$1"
+  if [ -z "$(${D} ps -q -f "name=^${ARANGO_CONTAINER}$")" ]; then
+    echo ">> Starting ArangoDB container ${ARANGO_CONTAINER}"
+    ${D} rm -f "${ARANGO_CONTAINER}" >/dev/null 2>&1 || true
+    ${D} volume inspect "${ARANGO_VOLUME}" >/dev/null 2>&1 || ${D} volume create "${ARANGO_VOLUME}"
+    ${D} run -d \
+      --name "${ARANGO_CONTAINER}" \
+      --restart unless-stopped \
+      --network "${DOCKER_NETWORK}" \
+      -e "ARANGO_ROOT_PASSWORD=${ARANGO_PASSWORD}" \
+      -v "${ARANGO_VOLUME}:/var/lib/arangodb3" \
+      "${ARANGO_IMAGE}"
+  fi
+}
+
 run_container() {
   # $1 = docker command to use (e.g. "docker" locally, or "docker" on the remote shell)
   local D="$1"
@@ -116,6 +146,11 @@ run_container() {
     -e "QWEN_API_KEY=${QWEN_API_KEY}" \
     -e "PORT=${APP_PORT}" \
     -e "HOST=0.0.0.0" \
+    -e "ARANGO_HOST=${ARANGO_HOST}" \
+    -e "ARANGO_PORT=${ARANGO_PORT}" \
+    -e "ARANGO_USER=${ARANGO_USER}" \
+    -e "ARANGO_PASSWORD=${ARANGO_PASSWORD}" \
+    -e "ARANGO_DB=${ARANGO_DB}" \
     ${EXTRA_ENV} \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.saigon-server.rule=Host(\`${DOMAIN}\`)" \
@@ -128,6 +163,7 @@ run_container() {
 if [ "${LOCAL}" = "true" ]; then
   # ---- Run locally ------------------------------------------------------------------------------
   echo ">> (Re)starting container ${CONTAINER_NAME} locally for ${DOMAIN}"
+  ensure_arango "${DOCKER}"
   run_container "${DOCKER}"
   echo ">> Server deployed locally: https://${DOMAIN} (container '${CONTAINER_NAME}')"
   exit 0
@@ -148,11 +184,33 @@ ssh ${SSH_OPTS} "${SSH_HOST}" \
   CERT_RESOLVER="${CERT_RESOLVER}" \
   QWEN_API_KEY="${QWEN_API_KEY}" \
   JWT_SECRET="${JWT_SECRET}" \
+  ARANGO_CONTAINER="${ARANGO_CONTAINER}" \
+  ARANGO_IMAGE="${ARANGO_IMAGE}" \
+  ARANGO_HOST="${ARANGO_HOST}" \
+  ARANGO_PORT="${ARANGO_PORT}" \
+  ARANGO_USER="${ARANGO_USER}" \
+  ARANGO_PASSWORD="${ARANGO_PASSWORD}" \
+  ARANGO_DB="${ARANGO_DB}" \
+  ARANGO_VOLUME="${ARANGO_VOLUME}" \
   'bash -se' <<'REMOTE'
 set -euo pipefail
 
 # Make sure the shared network exists (init-server.sh creates it; be defensive on re-runs).
 docker network inspect "${DOCKER_NETWORK}" >/dev/null 2>&1 || docker network create "${DOCKER_NETWORK}"
+
+# Make sure ArangoDB is up (init-server.sh creates it; be defensive on re-runs / older hosts).
+if [ -z "$(docker ps -q -f "name=^${ARANGO_CONTAINER}$")" ]; then
+  echo "   - starting ArangoDB container ${ARANGO_CONTAINER}"
+  docker rm -f "${ARANGO_CONTAINER}" >/dev/null 2>&1 || true
+  docker volume inspect "${ARANGO_VOLUME}" >/dev/null 2>&1 || docker volume create "${ARANGO_VOLUME}"
+  docker run -d \
+    --name "${ARANGO_CONTAINER}" \
+    --restart unless-stopped \
+    --network "${DOCKER_NETWORK}" \
+    -e "ARANGO_ROOT_PASSWORD=${ARANGO_PASSWORD}" \
+    -v "${ARANGO_VOLUME}:/var/lib/arangodb3" \
+    "${ARANGO_IMAGE}"
+fi
 
 EXTRA_ENV=""
 if [ -n "${JWT_SECRET}" ]; then
@@ -167,6 +225,11 @@ docker run -d \
   -e "QWEN_API_KEY=${QWEN_API_KEY}" \
   -e "PORT=${APP_PORT}" \
   -e "HOST=0.0.0.0" \
+  -e "ARANGO_HOST=${ARANGO_HOST}" \
+  -e "ARANGO_PORT=${ARANGO_PORT}" \
+  -e "ARANGO_USER=${ARANGO_USER}" \
+  -e "ARANGO_PASSWORD=${ARANGO_PASSWORD}" \
+  -e "ARANGO_DB=${ARANGO_DB}" \
   ${EXTRA_ENV} \
   --label "traefik.enable=true" \
   --label "traefik.http.routers.saigon-server.rule=Host(\`${DOMAIN}\`)" \

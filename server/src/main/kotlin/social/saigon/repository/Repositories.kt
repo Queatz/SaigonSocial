@@ -90,6 +90,8 @@ interface MessageRepository {
 interface PrivateChatRepository {
     fun create(chat: PrivateChat): PrivateChat
     fun get(id: String): PrivateChat?
+    /** An open chat including both users (in either direction), or null if none is open. */
+    fun findOpen(userA: String, userB: String): PrivateChat?
     /** Append an ephemeral message; the chat must still be open. */
     fun addMessage(message: PrivateMessage): PrivateMessage
     fun messages(chatId: String): List<PrivateMessage>
@@ -222,6 +224,8 @@ class InMemoryPrivateChatRepository : PrivateChatRepository {
     private val byChat = ConcurrentHashMap<String, MutableList<PrivateMessage>>()
     override fun create(chat: PrivateChat): PrivateChat = chat.also { chats[it.id] = it }
     override fun get(id: String): PrivateChat? = chats[id]
+    override fun findOpen(userA: String, userB: String): PrivateChat? =
+        chats.values.firstOrNull { it.includes(userA) && it.includes(userB) }
     override fun addMessage(message: PrivateMessage): PrivateMessage = message.also {
         byChat.getOrPut(it.chatId) { mutableListOf() }.add(it)
     }

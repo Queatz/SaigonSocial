@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import social.saigon.domain.InviteCode
 import social.saigon.domain.Message
 import social.saigon.domain.MetricEvent
 import social.saigon.domain.Payment
@@ -41,9 +42,10 @@ object ArangoSchemaExtra {
     const val WARNINGS = "Warnings"
     const val MODERATION_FLAGS = "ModerationFlags"
     const val PAYMENTS = "Payments"
+    const val INVITES = "Invites"
 
     val documentCollections: List<String> = listOf(
-        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS,
+        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS, INVITES,
     )
 }
 
@@ -56,20 +58,26 @@ data class ArangoConfig(
     val database: String,
 ) {
     companion object {
+        /** The default fallbacks, kept in sync with the deploy scripts and the local compose file. */
+        const val DEFAULT_HOST = "localhost"
+        const val DEFAULT_PORT = 8529
+        const val DEFAULT_USER = "root"
+        const val DEFAULT_PASSWORD = ""
+        const val DEFAULT_DATABASE = "saigon_social"
+
         /**
-         * Reads the Arango connection from the environment. Returns null when no host is configured,
-         * so the platform transparently falls back to in-memory repositories (e.g. in tests).
+         * Reads the Arango connection from the environment, applying the documented defaults for any
+         * variable that is unset. ArangoDB is mandatory (DESIGN §12): the platform never falls back
+         * to file/in-memory storage in production, so this always returns a usable config and the
+         * caller fails loudly if the database is unreachable.
          */
-        fun fromEnv(getenv: (String) -> String? = System::getenv): ArangoConfig? {
-            val host = getenv("ARANGO_HOST")?.takeIf { it.isNotBlank() } ?: return null
-            return ArangoConfig(
-                host = host,
-                port = getenv("ARANGO_PORT")?.toIntOrNull() ?: 8529,
-                user = getenv("ARANGO_USER") ?: "root",
-                password = getenv("ARANGO_PASSWORD") ?: "",
-                database = getenv("ARANGO_DB") ?: "saigon_social",
-            )
-        }
+        fun fromEnv(getenv: (String) -> String? = System::getenv): ArangoConfig = ArangoConfig(
+            host = getenv("ARANGO_HOST")?.takeIf { it.isNotBlank() } ?: DEFAULT_HOST,
+            port = getenv("ARANGO_PORT")?.toIntOrNull() ?: DEFAULT_PORT,
+            user = getenv("ARANGO_USER")?.takeIf { it.isNotBlank() } ?: DEFAULT_USER,
+            password = getenv("ARANGO_PASSWORD") ?: DEFAULT_PASSWORD,
+            database = getenv("ARANGO_DB")?.takeIf { it.isNotBlank() } ?: DEFAULT_DATABASE,
+        )
     }
 }
 
@@ -85,23 +93,71 @@ private data class ModerationFlag(
 /**
  * Connects to ArangoDB, creating the database and all collections if they do not yet exist, and
  * returns a ready-to-use [ArangoDatabase] handle.
+ *
+ * ArangoDB is mandatory (DESIGN §12), but it is commonly started moments before the server (the
+ * local `docker compose up` and the deploy scripts both boot the container right before launching
+ * the app). A freshly started container reports "Started" while the database is still initialising
+ * and not yet accepting connections, which surfaces as the driver's "Cannot contact any host!".
+ * So we retry for a bounded window before failing loudly — long enough to ride out first-boot
+ * initialisation, short enough that a genuinely missing/misconfigured database still fails fast
+ * (both locally and in deployment). The window is configurable via ARANGO_CONNECT_TIMEOUT_SECONDS.
  */
-fun connectArango(config: ArangoConfig): ArangoDatabase {
+fun connectArango(
+    config: ArangoConfig,
+    timeoutSeconds: Long =
+        System.getenv("ARANGO_CONNECT_TIMEOUT_SECONDS")?.toLongOrNull() ?: DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    sleep: (Long) -> Unit = { Thread.sleep(it) },
+): ArangoDatabase {
     val arango = ArangoDB.Builder()
         .host(config.host, config.port)
         .user(config.user)
         .password(config.password)
         .build()
-    if (!arango.db(config.database).exists()) {
-        arango.createDatabase(config.database)
+
+    val deadline = System.currentTimeMillis() + timeoutSeconds * 1000
+    var lastError: Exception? = null
+    var attempt = 0
+    while (true) {
+        attempt++
+        try {
+            if (!arango.db(config.database).exists()) {
+                arango.createDatabase(config.database)
+            }
+            val db = arango.db(config.database)
+            (ArangoSchema.documentCollections + ArangoSchemaExtra.documentCollections).forEach { name ->
+                val collection = db.collection(name)
+                if (!collection.exists()) collection.create()
+            }
+            return db
+        } catch (e: Exception) {
+            lastError = e
+            if (System.currentTimeMillis() >= deadline) break
+            System.err.println(
+                "ArangoDB not reachable yet at ${config.host}:${config.port} " +
+                    "(attempt $attempt); retrying while it starts up…",
+            )
+            // Wait for the database to finish booting, but don't sleep past the deadline.
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) break
+            sleep(minOf(RETRY_DELAY_MS, remaining))
+        }
     }
-    val db = arango.db(config.database)
-    (ArangoSchema.documentCollections + ArangoSchemaExtra.documentCollections).forEach { name ->
-        val collection = db.collection(name)
-        if (!collection.exists()) collection.create()
-    }
-    return db
+
+    // Fail loudly (both locally and in deployment) once the window elapses, rather than silently
+    // degrading to volatile storage (DESIGN §12): the server must not start without its database.
+    throw IllegalStateException(
+        "Cannot reach ArangoDB at ${config.host}:${config.port} (db='${config.database}', " +
+            "user='${config.user}') after ${timeoutSeconds}s. Start ArangoDB and check the ARANGO_* " +
+            "environment variables. For local development run: docker compose up -d arango",
+        lastError,
+    )
 }
+
+/** Default window to wait for ArangoDB to become reachable before giving up (first boot is slow). */
+const val DEFAULT_CONNECT_TIMEOUT_SECONDS = 60L
+
+/** Delay between connection attempts while waiting for ArangoDB to come up. */
+private const val RETRY_DELAY_MS = 2000L
 
 /** Builds an Arango-backed [Repositories] aggregate (ephemeral repos stay in-memory). */
 fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
@@ -115,6 +171,7 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     moderation = ArangoModerationRepository(db),
     payments = ArangoPaymentRepository(db),
     metrics = ArangoMetricRepository(db),
+    invites = ArangoInviteCodeRepository(db),
 )
 
 /**
@@ -295,4 +352,15 @@ internal class ArangoMetricRepository(db: ArangoDatabase) : MetricRepository {
     private val store = ArangoStore(db, ArangoSchema.METRICS, MetricEvent.serializer()) { it.id }
     override fun add(event: MetricEvent): MetricEvent = store.put(event)
     override fun all(): List<MetricEvent> = store.all()
+}
+
+internal class ArangoInviteCodeRepository(db: ArangoDatabase) : InviteCodeRepository {
+    // Invite codes are matched case-insensitively (DESIGN §2), so the uppercased code is the _key.
+    private val store = ArangoStore(db, ArangoSchemaExtra.INVITES, InviteCode.serializer()) { key(it.code) }
+    private fun key(code: String) = code.uppercase()
+    override fun create(invite: InviteCode): InviteCode = store.put(invite)
+    override fun get(code: String): InviteCode? = store.get(key(code))
+    override fun update(invite: InviteCode): InviteCode = store.put(invite)
+    override fun all(): List<InviteCode> = store.all()
+    override fun delete(code: String) = store.delete(key(code))
 }

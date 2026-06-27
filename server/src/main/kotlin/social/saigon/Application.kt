@@ -35,11 +35,11 @@ import social.saigon.repository.seedInitialData
 import social.saigon.routes.registerRoutes
 
 fun main() {
-    // Persist to ArangoDB when configured (DESIGN §12); otherwise fall back to in-memory storage so
-    // the platform still runs locally without a database.
-    val repositories = ArangoConfig.fromEnv()?.let { config ->
-        arangoRepositories(connectArango(config))
-    } ?: Repositories()
+    // ArangoDB is the single source of truth for all durable state (DESIGN §12). It is mandatory:
+    // connectArango fails loudly — both locally and in deployment — if the database is unreachable,
+    // rather than silently degrading to file/in-memory storage that wiped accounts on restart.
+    // Connection settings come from the ARANGO_* environment variables (sensible local defaults).
+    val repositories = arangoRepositories(connectArango(ArangoConfig.fromEnv()))
     seedInitialData(repositories)
 
     // Founder-managed access with no open sign-up (DESIGN §2). The founder is not pre-created: the

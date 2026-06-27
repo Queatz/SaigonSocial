@@ -56,6 +56,27 @@ class Phase5Test {
         assertFailsWith<IllegalArgumentException> { svc.start("seeker-like", "supporter") }
     }
 
+    // --- Recipient can open the chat the initiator created, even against a Sharer (DESIGN §7) ---
+
+    @Test
+    fun recipientCanOpenExistingChatWithUnavailableInitiator() {
+        val users = InMemoryUserRepository()
+        users.create(User(id = "sharer", role = Role.SHARER, displayName = "Sharer"))
+        users.create(User(id = "supporter", role = Role.SUPPORTER, displayName = "Supporter"))
+        val svc = PrivateChatService(InMemoryPrivateChatRepository(), users)
+
+        // The Sharer taps the Supporter and creates the chat.
+        val created = svc.openOrStart("sharer", "supporter")
+
+        // The Supporter (recipient) opens the chat by tapping the Sharer's name. Although a plain
+        // start would reject the Sharer as "not available," openOrStart reuses the existing chat.
+        val reopened = svc.openOrStart("supporter", "sharer")
+        assertEquals(created.id, reopened.id)
+
+        // Sanity: a plain start against the Sharer still fails (availability gate intact).
+        assertFailsWith<IllegalArgumentException> { svc.start("supporter", "sharer") }
+    }
+
     // --- Expired Supporter subscriptions are not available (DESIGN §3, §7) ---
 
     @Test

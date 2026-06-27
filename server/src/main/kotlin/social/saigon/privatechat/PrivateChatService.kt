@@ -66,6 +66,21 @@ class PrivateChatService(
         )
     }
 
+    /**
+     * Open the one-on-one chat between [userId] and [peerId], reusing an already-open session if
+     * one exists, otherwise starting a fresh one (DESIGN §7).
+     *
+     * The recipient of a chat opens it by tapping the *initiator's* name — but the initiator need
+     * not be an available Supporter, so a plain [start] would wrongly reject them with "User is not
+     * available for private chat." Reusing the existing session lets either party (re)open the chat
+     * the initiator already created without re-running the availability gate.
+     */
+    fun openOrStart(userId: String, peerId: String): PrivateChat {
+        require(userId != peerId) { "Cannot start a private chat with yourself" }
+        chats.findOpen(userId, peerId)?.let { return it }
+        return start(userId, peerId)
+    }
+
     /** The open chat with [chatId], or null if it is unknown/ended. */
     fun get(chatId: String): PrivateChat? = chats.get(chatId)
 

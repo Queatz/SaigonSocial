@@ -148,6 +148,8 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     },
                 ) { Text("Save profile") }
 
+                EmojiStatsSection(api = api, profileId = p.id)
+
                 Accordion(title = "Your username") {
                     UsernameSection(api = api, profile = p, onUpdated = { profile = it })
                 }
@@ -182,6 +184,39 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                             TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") }
                         },
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The caller's private emoji stats (DESIGN §4, §8): the tally of closing emojis they have received,
+ * shown only here on their own profile and never publicly. Loaded lazily from `emojiStats()`.
+ */
+@Composable
+private fun EmojiStatsSection(api: SaigonApi, profileId: String) {
+    var stats by remember(profileId) { mutableStateOf<Map<String, Int>?>(null) }
+    LaunchedEffect(profileId) {
+        stats = runCatching { api.emojiStats() }.getOrDefault(emptyMap())
+    }
+    Accordion(title = "Your emoji stats") {
+        val current = stats
+        when {
+            current == null -> CircularProgressIndicator()
+            current.isEmpty() -> Text(
+                "No emojis yet. They'll appear here after your private chats wrap up.",
+                fontSize = 13.sp,
+            )
+            else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                current.entries.sortedByDescending { it.value }.forEach { (emoji, count) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(emoji, fontSize = 20.sp)
+                        Text("× $count", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

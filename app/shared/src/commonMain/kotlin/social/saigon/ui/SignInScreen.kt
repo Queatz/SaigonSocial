@@ -47,10 +47,7 @@ internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
     ) {
         Text("Members only", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Text(
-            "Saigon.Social is founder-managed — there's no open sign-up. Got an invite code from the " +
-                "founder? Use it to create your account below. Already have an account? Sign in with " +
-                "your username and password. Without an account you can still browse rooms and read " +
-                "public chat.",
+            "Founder-managed, invite only. Browsing stays open without an account.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -80,11 +77,6 @@ private fun CreateAccountSection(api: SaigonApi, onToken: (String?) -> Unit) {
     var busy by remember { mutableStateOf(false) }
 
     Text("Create your account", fontWeight = FontWeight.Bold)
-    Text(
-        "Enter the invite code the founder gave you, then choose a username and password.",
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
     OutlinedTextField(
         value = code,
         onValueChange = { code = it; error = null },
@@ -146,11 +138,6 @@ private fun SignInSection(api: SaigonApi, onToken: (String?) -> Unit) {
     var busy by remember { mutableStateOf(false) }
 
     Text("Sign in", fontWeight = FontWeight.Bold)
-    Text(
-        "Sign in with the username and password for your account.",
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
     OutlinedTextField(
         value = identifier,
         onValueChange = { identifier = it; error = null },

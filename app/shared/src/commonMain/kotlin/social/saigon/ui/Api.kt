@@ -141,6 +141,14 @@ class SaigonApi(
         return response.decodeMember()
     }
 
+    /**
+     * The caller's private emoji tally, aggregated from received final-emoji reactions (DESIGN §4,
+     * §8). Visible only to the user themself. Requires a member token.
+     */
+    suspend fun emojiStats(): Map<String, Int> =
+        client.get("$baseUrl/profile/me/emoji-stats") { HttpRequestAuth(this) }
+            .decodeMember<EmojiStatsResponse>().stats
+
     /** Update editable profile fields (DESIGN §4). Requires a member token. */
     suspend fun updateProfile(update: ProfileUpdate): ProfileResponse =
         client.put("$baseUrl/profile/me") {
@@ -334,6 +342,23 @@ class SaigonApi(
         return PrivateChatChannel(session, roomId, targetUserId, json)
     }
 
+    /**
+     * Open an always-on notifications channel for the signed-in member (DESIGN §7). Unlike the
+     * room/private sockets it never joins a room — it exists only so the server has a live session
+     * to route `PrivateChatStarted` to. This lets a member learn that someone opened a chat with
+     * them no matter which screen they are on (room list, profile, …), instead of only while they
+     * happen to be sitting inside a room. Anonymous viewers carry no user id, so they get nothing.
+     */
+    suspend fun openNotifications(): NotificationsChannel {
+        val wsUrl = buildString {
+            append(baseUrl.replaceFirst("http", "ws"))
+            append("/ws")
+            token?.let { append("?token=$it") }
+        }
+        val session = client.webSocketSession(wsUrl)
+        return NotificationsChannel(session, json)
+    }
+
     fun close() {
         client.close()
     }
@@ -345,6 +370,8 @@ class SaigonApi(
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"
         const val SAID_TYPE = "social.saigon.realtime.Outgoing.Said"
         const val REPLIED_TYPE = "social.saigon.realtime.Outgoing.Replied"
+        const val JOINED_TYPE = "social.saigon.realtime.Outgoing.Joined"
+        const val LEFT_TYPE = "social.saigon.realtime.Outgoing.Left"
 
         // Private-chat + final-emoji protocol (DESIGN §7, §8).
         const val START_PRIVATE_TYPE = "social.saigon.realtime.Incoming.StartPrivateChat"
@@ -402,8 +429,19 @@ class RoomChannel internal constructor(
     /**
      * Consume incoming frames, surfacing each broadcast public message to [onMessage] and each
      * thread reply to [onReply] (so the feed's "↳ N replies" indicator updates live, DESIGN §9).
+     * [onPrivateChatStarted] fires when another member opens a one-on-one chat with the caller while
+     * they are in this room, so the UI can notify them and list the new direct chat (DESIGN §7).
      */
-    suspend fun start(onMessage: (ChatMessage) -> Unit, onReply: (ReplyEvent) -> Unit = {}) {
+    suspend fun start(
+        onMessage: (ChatMessage) -> Unit,
+        onReply: (ReplyEvent) -> Unit = {},
+        onPrivateChatStarted: (peerId: String, peerName: String?, roomId: String?) -> Unit = { _, _, _ -> },
+        /**
+         * Fires whenever someone joins or leaves the room (DESIGN §6), so the UI can refresh its
+         * live "In the room" occupant list. Carries the server's de-duplicated head-count.
+         */
+        onPresenceChanged: (occupants: Int) -> Unit = {},
+    ) {
         session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
             val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
@@ -422,6 +460,14 @@ class RoomChannel internal constructor(
                         replyId = obj["replyId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         replyCount = obj["replyCount"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                     ),
+                )
+                SaigonApi.PRIVATE_STARTED_TYPE -> onPrivateChatStarted(
+                    obj["peerId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    obj["peerName"]?.jsonPrimitive?.contentOrNull,
+                    obj["roomId"]?.jsonPrimitive?.contentOrNull,
+                )
+                SaigonApi.JOINED_TYPE, SaigonApi.LEFT_TYPE -> onPresenceChanged(
+                    obj["occupants"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 )
             }
         }
@@ -444,6 +490,49 @@ class RoomChannel internal constructor(
             put("parentMessageId", parentMessageId)
             put("text", text)
         })))
+    }
+
+    suspend fun close() {
+        session.close()
+    }
+}
+
+/**
+ * Notice that another member opened a one-on-one chat with the signed-in user (`Outgoing
+ * .PrivateChatStarted`). [roomId] is where the chat was started, so the recipient can open it with
+ * the right room context (DESIGN §7).
+ */
+data class ChatStartedNotice(
+    val peerId: String,
+    val peerName: String?,
+    val roomId: String?,
+)
+
+/**
+ * An always-on, room-less WebSocket whose only job is to surface "someone started a chat with you"
+ * notices to the signed-in member regardless of which screen they are on (DESIGN §7). The server
+ * routes `PrivateChatStarted` by user id, so simply having this connection open is enough — no room
+ * join required.
+ */
+class NotificationsChannel internal constructor(
+    private val session: io.ktor.client.plugins.websocket.DefaultClientWebSocketSession,
+    private val json: Json,
+) {
+    /** Consume server frames, surfacing each chat-started notice to [onChatStarted]. Suspends until
+     * the socket closes. */
+    suspend fun start(onChatStarted: (ChatStartedNotice) -> Unit) {
+        session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
+            val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
+            if (obj["type"]?.jsonPrimitive?.contentOrNull == SaigonApi.PRIVATE_STARTED_TYPE) {
+                onChatStarted(
+                    ChatStartedNotice(
+                        peerId = obj["peerId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        peerName = obj["peerName"]?.jsonPrimitive?.contentOrNull,
+                        roomId = obj["roomId"]?.jsonPrimitive?.contentOrNull,
+                    ),
+                )
+            }
+        }
     }
 
     suspend fun close() {

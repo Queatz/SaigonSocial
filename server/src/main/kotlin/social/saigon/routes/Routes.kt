@@ -161,12 +161,17 @@ fun Application.registerRoutes(
             // Let the data store assign the id (DESIGN §12): we never hand-pick the founder's id,
             // just like every onboarded member gets a DB-assigned id. A login-only handle is set so
             // the founder can later set a password and sign back in with it (PASSWORD_AUTH.md §2D).
+            val handle = uniqueHandle(repositories, "founder")
             val founder = repositories.users.create(
                 User(
                     id = UUID.randomUUID().toString(),
                     role = Role.FOUNDER,
                     displayName = "Founder",
-                    handle = uniqueHandle(repositories, "founder"),
+                    handle = handle,
+                    // Never leave the founder without a password (issue 5): default to "founder",
+                    // which they can change later. Hashed directly (platform-issued default).
+                    passwordHash = social.saigon.auth.PasswordHasher.hash("founder"),
+                    passwordSetAt = System.currentTimeMillis(),
                 ),
             )
             call.respond(
@@ -438,14 +443,20 @@ fun Application.registerRoutes(
                 require(caller.role.isAdmin) { "Founder only" }
                 val req = call.receive<OnboardRequest>()
                 require(req.role != Role.SEEKER) { "Cannot onboard a Seeker" }
+                // A login-only handle the member can pair with a password later (PASSWORD_AUTH.md
+                // §2C); derived from their display name, kept unique.
+                val handle = uniqueHandle(repositories, req.displayName)
                 val user = repositories.users.create(
                     User(
                         id = UUID.randomUUID().toString(),
                         role = req.role,
                         displayName = req.displayName,
-                        // A login-only handle the member can pair with a password later
-                        // (PASSWORD_AUTH.md §2C); derived from their display name, kept unique.
-                        handle = uniqueHandle(repositories, req.displayName),
+                        handle = handle,
+                        // Never leave an account without a password: seed a default (the handle) the
+                        // member can change later from their profile. Hashed directly because these
+                        // are platform-issued defaults, not user-typed (so no strength gate).
+                        passwordHash = social.saigon.auth.PasswordHasher.hash(handle),
+                        passwordSetAt = System.currentTimeMillis(),
                     ),
                 )
                 // The founder collects the fee in person, so onboarding settles the tier's payment
@@ -948,17 +959,18 @@ private suspend fun handleIncoming(
         is Incoming.Ping -> session.send(Outgoing.Pong)
 
         is Incoming.Join -> {
-            val occupants = chatHub.join(frame.roomId, session.connectionId)
+            chatHub.join(frame.roomId, session.connectionId)
             // A member joining a room is an activity signal (DESIGN §14 — DAU).
             session.userId?.let { metrics.record(MetricType.ACTIVE, userId = it) }
-            chatHub.broadcast(frame.roomId, Outgoing.Joined(frame.roomId, occupants))
+            // Broadcast the de-duplicated head-count so one member never shows up twice.
+            chatHub.broadcast(frame.roomId, Outgoing.Joined(frame.roomId, chatHub.occupants(frame.roomId)))
         }
 
         is Incoming.Leave -> {
-            val occupants = chatHub.leave(frame.roomId, session.connectionId)
-            chatHub.broadcast(frame.roomId, Outgoing.Left(frame.roomId, occupants))
+            val remainingConnections = chatHub.leave(frame.roomId, session.connectionId)
+            chatHub.broadcast(frame.roomId, Outgoing.Left(frame.roomId, chatHub.occupants(frame.roomId)))
             // Ephemeral threads disappear when the room empties (DESIGN §9).
-            if (occupants == 0) threadService.clearForRoom(frame.roomId)
+            if (remainingConnections == 0) threadService.clearForRoom(frame.roomId)
         }
 
         is Incoming.Reply -> {
@@ -1053,7 +1065,10 @@ private suspend fun handleIncoming(
                 return
             }
             val chat = try {
-                privateChats.start(initiatorId, frame.targetUserId)
+                // Reuse an already-open chat if one exists, so the *recipient* can open the chat the
+                // initiator created by tapping the initiator's name — even though the initiator may
+                // not be an available Supporter (DESIGN §7).
+                privateChats.openOrStart(initiatorId, frame.targetUserId)
             } catch (e: IllegalArgumentException) {
                 session.send(Outgoing.Error(e.message ?: "Cannot start private chat"))
                 return
@@ -1061,8 +1076,8 @@ private suspend fun handleIncoming(
             // Each party sees the other's room-scoped display name (DESIGN §5, §7).
             val initiatorName = identities.getOrCreate(initiatorId, frame.roomId).name
             val targetName = identities.getOrCreate(frame.targetUserId, frame.roomId).name
-            chatHub.sendToUser(initiatorId, Outgoing.PrivateChatStarted(chat.id, frame.targetUserId, targetName))
-            chatHub.sendToUser(frame.targetUserId, Outgoing.PrivateChatStarted(chat.id, initiatorId, initiatorName))
+            chatHub.sendToUser(initiatorId, Outgoing.PrivateChatStarted(chat.id, frame.targetUserId, targetName, frame.roomId))
+            chatHub.sendToUser(frame.targetUserId, Outgoing.PrivateChatStarted(chat.id, initiatorId, initiatorName, frame.roomId))
         }
 
         is Incoming.SayPrivate -> {

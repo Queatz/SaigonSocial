@@ -1,0 +1,37 @@
+# Local development services for Saigon Social.
+#
+# ArangoDB is the API server's mandatory datastore (DESIGN §12) — the server refuses to start
+# without it (see server/.../ArangoPersistence.kt#connectArango). Bring it up before running the
+# server locally:
+#
+#   docker compose up -d arango
+#
+# This exposes ArangoDB on localhost:8529 with authentication disabled, which matches the server's
+# default ARANGO_* fallbacks (ARANGO_HOST=localhost, ARANGO_PORT=8529, ARANGO_USER=root,
+# ARANGO_PASSWORD=<empty>, ARANGO_DB=saigon_social) — so a plain `./gradlew :server:run` just works.
+# Data is kept in a named volume so it survives container restarts.
+services:
+  arango:
+    image: arangodb:3.11
+    container_name: saigon-arango
+    restart: unless-stopped
+    environment:
+      # No password locally so the empty-password default in ArangoConfig connects out of the box.
+      ARANGO_NO_AUTH: "1"
+    ports:
+      - "8529:8529"
+    volumes:
+      - arango-data:/var/lib/arangodb3
+    # The container reports "Started" before ArangoDB actually accepts connections (first boot can
+    # take 10–30s while it initialises the _system database). This healthcheck lets you wait for it
+    # with `docker compose up -d --wait arango`; the server also retries on startup (connectArango).
+    healthcheck:
+      test: ["CMD", "arangosh", "--server.authentication", "false",
+             "--javascript.execute-string", "db._version()"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  arango-data:

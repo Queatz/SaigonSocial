@@ -17,17 +17,20 @@ This is a Kotlin Multiplatform project targeting Android, Web, Server.
 
 ### Persistence (ArangoDB)
 
-The server persists everything durable (users, rooms, messages, threads, room identities, payments,
-moderation state, metrics) to **ArangoDB** (DESIGN §12). Configure the connection via environment
-variables; when `ARANGO_HOST` is unset the server falls back to in-memory storage (used by tests).
+The server persists everything durable (users, rooms, messages, threads, room identities, invite
+codes, payments, moderation state, metrics) to **ArangoDB** (DESIGN §12). ArangoDB is **mandatory**:
+there is no file/in-memory fallback — the server **fails fast** on startup (both locally and in
+deployment) if the database is unreachable. Configure the connection via environment variables; every
+variable has a sensible default that matches the local `docker-compose.yml` and the deploy scripts.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ARANGO_HOST` | _(unset → in-memory)_ | ArangoDB host |
+| `ARANGO_HOST` | `localhost` | ArangoDB host |
 | `ARANGO_PORT` | `8529` | ArangoDB port |
 | `ARANGO_USER` | `root` | Database user |
 | `ARANGO_PASSWORD` | _(empty)_ | Database password |
 | `ARANGO_DB` | `saigon_social` | Database name (created on startup) |
+| `ARANGO_CONNECT_TIMEOUT_SECONDS` | `60` | How long startup waits/retries for ArangoDB to come up |
 | `JWT_SECRET` | `dev-secret-change-me` | JWT signing secret (set a real one in prod) |
 | `PORT` / `HOST` | `9090` / `0.0.0.0` | Server bind address |
 
@@ -58,8 +61,17 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 options:
 
 - Android app: `./gradlew :app:androidApp:assembleDebug`
-- Server (with ArangoDB): `ARANGO_HOST=localhost ARANGO_USER=root ARANGO_PASSWORD=… PORT=9091 ./gradlew :server:run`
-- Server (in-memory, no DB): `./gradlew :server:run`
+- Start ArangoDB locally first (required): `docker compose up -d arango`
+  (exposes `localhost:8529` with auth disabled, matching the server's `ARANGO_*` defaults)
+- Server: `PORT=9091 ./gradlew :server:run`
+  (override any connection setting via `ARANGO_HOST`, `ARANGO_USER`, `ARANGO_PASSWORD`, … if needed)
+  - A freshly started container reports *Started* before ArangoDB is actually accepting connections
+    (first boot initialises the `_system` database, ~10–30s). The server **waits and retries** for up
+    to `ARANGO_CONNECT_TIMEOUT_SECONDS` (default 60s) before failing, so a plain start just works. To
+    block until the DB is ready up front, use `docker compose up -d --wait arango`.
+  - Seeing `Cannot reach ArangoDB … Cannot contact any host!`? The container isn't listening yet
+    (give it a moment / use `--wait`), or a stale `arango-data` volume was initialised with a
+    different password; reset it with `docker compose down -v` and bring it back up.
 - Web app:
     - Wasm target (faster, modern browsers): `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`
     - JS target (slower, supports older browsers): `./gradlew :app:webApp:jsBrowserDevelopmentRun`

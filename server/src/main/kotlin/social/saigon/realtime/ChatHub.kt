@@ -100,13 +100,16 @@ sealed interface Outgoing {
 
     /**
      * A private chat has opened (DESIGN §7). Sent to both participants. [peerName] is the other
-     * party's room-scoped display name, where known.
+     * party's room-scoped display name, where known. [roomId] is the room the chat was initiated
+     * from, so a recipient who is off-room (or on another screen) can still open it with the right
+     * room context.
      */
     @Serializable
     data class PrivateChatStarted(
         val chatId: String,
         val peerId: String,
         val peerName: String? = null,
+        val roomId: String? = null,
     ) : Outgoing
 
     /** A plain-text private message delivered to both participants (DESIGN §7). */
@@ -211,7 +214,25 @@ class ChatHub {
         return size
     }
 
-    fun occupants(roomId: String): Int = rooms[roomId]?.size ?: 0
+    /**
+     * The live occupant count for a room, de-duplicated by member identity.
+     *
+     * Presence is tracked per connection, but a single member can hold several connections at once
+     * (a reconnect that raced the old socket's close, or a second tab). Counting raw connections
+     * would make that one person show up multiple times — especially for someone who joins and
+     * leaves regularly — so we collapse all of a member's connections to a single head-count.
+     * Anonymous viewers carry no user id, so each of their connections counts once.
+     */
+    fun occupants(roomId: String): Int {
+        val members = rooms[roomId] ?: return 0
+        val distinctUsers = HashSet<String>()
+        var anonymous = 0
+        for (connectionId in members) {
+            val userId = sessions[connectionId]?.userId
+            if (userId == null) anonymous++ else distinctUsers.add(userId)
+        }
+        return distinctUsers.size + anonymous
+    }
 
     fun isEmpty(roomId: String): Boolean = occupants(roomId) == 0
 

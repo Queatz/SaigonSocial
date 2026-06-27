@@ -53,6 +53,7 @@ internal fun PrivateChatScreen(
     peerName: String,
     selfUserId: String?,
     onClose: () -> Unit,
+    onEnded: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val messages = remember(targetUserId) { mutableStateListOf<PrivateMessage>() }
@@ -89,9 +90,11 @@ internal fun PrivateChatScreen(
                                 ),
                             )
                         },
-                        onEnded = { ended = true },
+                        // A private chat is ephemeral and gone once it ends (DESIGN §7): drop it
+                        // from the "Direct chats" list so it no longer lingers on the home screen.
+                        onEnded = { ended = true; onEnded() },
                         // The server opens the prompt for both parties; `ended` already drives the UI.
-                        onFinalPrompt = { ended = true },
+                        onFinalPrompt = { ended = true; onEnded() },
                         onRevealed = { youSent, theySent ->
                             mine = youSent
                             theirs = theySent
