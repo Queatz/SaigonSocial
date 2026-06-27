@@ -287,6 +287,9 @@ internal fun RoomChatScreen(
     onRecordDirectChat: (DirectChat) -> Unit,
     onOpenDirectChat: (DirectChat) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
+    onSignIn: () -> Unit,
+    initialThreadId: String? = null,
+    onThreadChange: (String?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val rooms = remember { mutableStateListOf<RoomSummary>() }
@@ -335,10 +338,31 @@ internal fun RoomChatScreen(
         loadingMore = false
     }
 
+    // Keep the thread sheet in sync with the route (DESIGN §12): opening `/room/{id}/thread/{id}`
+    // directly, or walking the history back stack, drives which message's thread is shown. Re-runs
+    // as messages stream in so a deep-linked thread opens once its parent message has loaded.
+    LaunchedEffect(initialThreadId, messages.size) {
+        when {
+            initialThreadId == null -> openThread = null
+            openThread?.id != initialThreadId ->
+                messages.firstOrNull { it.id == initialThreadId }?.let { openThread = it }
+        }
+    }
+
     // Trigger an older-page load only while the user is actively scrolling at the very top.
     LaunchedEffect(listState, room.id) {
         snapshotFlow { listState.firstVisibleItemIndex to listState.isScrollInProgress }
             .collect { (idx, scrolling) -> if (idx == 0 && scrolling) loadOlder() }
+    }
+
+    // Scroll to the bottom so the latest message is in view: on initial load (once the list is
+    // composed, i.e. loading has finished) and whenever a new message arrives (DESIGN §6).
+    // Keyed on the newest message's id so paging in older history (prepended at the top) doesn't
+    // yank the view down, and on `loading` so the very first page scrolls down once it's rendered.
+    LaunchedEffect(messages.lastOrNull()?.id, loading, room.id) {
+        if (!loading && messages.isNotEmpty()) {
+            runCatching { listState.animateScrollToItem(listState.layoutInfo.totalItemsCount) }
+        }
     }
 
     // Live public-chat WebSocket: join on enter, append broadcasts, close on leave (DESIGN §6, §9).
@@ -465,7 +489,7 @@ internal fun RoomChatScreen(
                         val withThreads = messages.filter { it.replyCount > 0 }.sortedByDescending { it.createdAt }
                         val withoutThreads = messages.filter { it.replyCount == 0 }
                         items(withThreads + withoutThreads, key = { it.id }) { msg ->
-                            MessageRow(msg = msg, onOpenThread = { openThread = msg })
+                            MessageRow(msg = msg, onOpenThread = { openThread = msg; onThreadChange(msg.id) })
                         }
                     }
                 }
@@ -483,6 +507,7 @@ internal fun RoomChatScreen(
                     sendLabel = "Send",
                     placeholder = if (hasToken) "Message" else "Sign in to send",
                     enabled = hasToken,
+                    onDisabledClick = onSignIn,
                 )
             }
 
@@ -498,7 +523,8 @@ internal fun RoomChatScreen(
                 message = msg,
                 channel = channel,
                 hasToken = hasToken,
-                onClose = { openThread = null },
+                onSignIn = onSignIn,
+                onClose = { openThread = null; onThreadChange(null) },
             )
         }
         }
@@ -748,6 +774,7 @@ private fun ThreadSheet(
     message: FeedMessage,
     channel: RoomChannel?,
     hasToken: Boolean,
+    onSignIn: () -> Unit,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -854,6 +881,7 @@ private fun ThreadSheet(
                 sendLabel = "Reply",
                 placeholder = if (hasToken) "Reply" else "Sign in to reply",
                 enabled = hasToken,
+                onDisabledClick = onSignIn,
             )
         }
     }

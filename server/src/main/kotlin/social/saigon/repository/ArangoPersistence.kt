@@ -255,8 +255,8 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
             mapOf("roomId" to roomId),
         )
     override fun page(roomId: String, before: Long?, limit: Int): List<Message> {
-        // Fetch the newest [limit] messages older than [before] (descending), then flip to
-        // oldest→newest for display.
+        // The database does the ordering and the paging: it returns the newest [limit] messages
+        // older than [before] (newest→oldest). No application-level sorting happens here.
         val aql = if (before == null) {
             "FOR d IN ${ArangoSchema.MESSAGES} FILTER d.roomId == @roomId " +
                 "SORT d.createdAt DESC LIMIT @limit RETURN d"
@@ -269,7 +269,7 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
         } else {
             mapOf("roomId" to roomId, "before" to before, "limit" to limit)
         }
-        return store.query(aql, bindVars).reversed()
+        return store.query(aql, bindVars)
     }
 }
 

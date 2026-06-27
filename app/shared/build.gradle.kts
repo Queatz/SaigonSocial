@@ -59,9 +59,11 @@ kotlin {
         }
         jsMain.dependencies {
             implementation(libs.ktor.clientJs)
+            implementation("org.jetbrains.kotlinx:kotlinx-browser:0.5.0")
         }
         wasmJsMain.dependencies {
             implementation(libs.ktor.clientJs)
+            implementation("org.jetbrains.kotlinx:kotlinx-browser:0.5.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

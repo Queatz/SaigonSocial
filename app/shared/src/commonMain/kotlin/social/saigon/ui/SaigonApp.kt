@@ -32,12 +32,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,10 +67,27 @@ import androidx.compose.ui.unit.sp
  */
 private sealed interface Screen {
     data object RoomList : Screen
-    data class Room(val room: RoomSummary) : Screen
+
+    /** A room / public chat. [threadId], when set, opens that message's thread sheet (DESIGN §9). */
+    data class Room(val room: RoomSummary, val threadId: String? = null) : Screen
     data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
     data object DirectChats : Screen
     data object Profile : Screen
+}
+
+/**
+ * The URL path that mirrors [screen] in the browser's address bar (DESIGN §12), or null for screens
+ * that aren't deep-linkable (ephemeral private chats, the session-only direct-chats list, and the
+ * profile/sign-in editor) — those leave the current URL untouched.
+ */
+private fun screenToPath(screen: Screen): String? = when (screen) {
+    Screen.RoomList -> "/"
+    is Screen.Room ->
+        if (screen.threadId != null) "/room/${screen.room.id}/thread/${screen.threadId}"
+        else "/room/${screen.room.id}"
+    is Screen.Private -> null
+    Screen.DirectChats -> null
+    Screen.Profile -> null
 }
 
 @Composable
@@ -83,6 +103,47 @@ fun SaigonApp() {
         }
 
         var screen by remember { mutableStateOf<Screen>(Screen.RoomList) }
+
+        // Mirror the current screen into the browser URL + history so links are shareable and the
+        // Back/Forward buttons walk the in-app navigation (DESIGN §12). The supported routes are
+        // "/", "/room/{id}", and "/room/{id}/thread/{id}" (see [screenToPath]).
+        val scope = rememberCoroutineScope()
+        val router = remember { UrlRouter() }
+
+        // Resolve a URL path to a screen. Rooms are matched by id from the live room list, since the
+        // room screen needs the full RoomSummary; an unknown path falls back to the home screen.
+        suspend fun screenForPath(path: String): Screen {
+            val segments = path.trim('/').split('/').filter { it.isNotEmpty() }
+            if (segments.firstOrNull() != "room" || segments.size < 2) return Screen.RoomList
+            val roomId = segments[1]
+            val room = runCatching { api.rooms() }.getOrNull()?.firstOrNull { it.id == roomId }
+                ?: return Screen.RoomList
+            val threadId = if (segments.size >= 4 && segments[2] == "thread") segments[3] else null
+            return Screen.Room(room, threadId)
+        }
+
+        // On first load, adopt whatever the address bar already points at (a deep link or refresh)
+        // and normalise the URL to match. Guarded by `routed` so the screen→URL sync below doesn't
+        // clobber the incoming path before it has been applied.
+        var routed by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            screen = screenForPath(router.current())
+            screenToPath(screen)?.let { router.replace(it) }
+            routed = true
+        }
+
+        // Screen → URL: push a new history entry whenever navigation moves to a different path.
+        LaunchedEffect(screen, routed) {
+            if (!routed) return@LaunchedEffect
+            val path = screenToPath(screen) ?: return@LaunchedEffect
+            if (path != router.current()) router.push(path)
+        }
+
+        // URL → screen: the Back/Forward buttons (popstate) restore the matching screen.
+        DisposableEffect(Unit) {
+            val dispose = router.onPopState { path -> scope.launch { screen = screenForPath(path) } }
+            onDispose { dispose() }
+        }
 
         // Open one-on-one chats the user can return to (DESIGN §7). Private chats are ephemeral and
         // never persisted, so this list lives only for the current session — it powers the "Direct
@@ -227,6 +288,12 @@ fun SaigonApp() {
                             onRecordDirectChat = { recordDirectChat(it) },
                             onOpenDirectChat = { openDirectChat(it) },
                             onOpenRoom = { screen = Screen.Room(it) },
+                            onSignIn = { screen = Screen.Profile },
+                            initialThreadId = s.threadId,
+                            onThreadChange = { threadId ->
+                                val current = screen
+                                if (current is Screen.Room) screen = current.copy(threadId = threadId)
+                            },
                         )
                         is Screen.Private -> PrivateChatScreen(
                             api = api,
@@ -369,39 +436,51 @@ internal fun MessageComposer(
     sendLabel: String,
     placeholder: String,
     enabled: Boolean = true,
+    onDisabledClick: (() -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
-                if (
-                    enabled &&
-                    event.type == KeyEventType.KeyDown &&
-                    event.key == Key.Enter &&
-                    !event.isShiftPressed
-                ) {
-                    onSend()
-                    true
-                } else {
-                    false
-                }
-            },
-            label = { Text(placeholder) },
-            shape = InputFieldShape,
-            maxLines = 5,
-            enabled = enabled,
-        )
-        Spacer(Modifier.width(8.dp))
-        // Match the input field's height exactly so the action button never towers over it.
-        Button(
-            enabled = enabled,
-            onClick = onSend,
-            modifier = Modifier.height(56.dp),
-        ) { Text(sendLabel) }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
+                    if (
+                        enabled &&
+                        event.type == KeyEventType.KeyDown &&
+                        event.key == Key.Enter &&
+                        !event.isShiftPressed
+                    ) {
+                        onSend()
+                        true
+                    } else {
+                        false
+                    }
+                },
+                label = { Text(placeholder) },
+                shape = InputFieldShape,
+                maxLines = 5,
+                enabled = enabled,
+            )
+            Spacer(Modifier.width(8.dp))
+            // Match the input field's height exactly so the action button never towers over it.
+            Button(
+                enabled = enabled,
+                onClick = onSend,
+                modifier = Modifier.height(56.dp),
+            ) { Text(sendLabel) }
+        }
+        // When disabled (e.g. "Sign in to send"/"Sign in to reply"), the field and button can't be
+        // tapped, so overlay a transparent clickable that takes the user to the sign-in screen.
+        if (!enabled && onDisabledClick != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(onClick = onDisabledClick),
+            )
+        }
     }
 }
 

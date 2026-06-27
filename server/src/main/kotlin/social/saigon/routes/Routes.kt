@@ -284,6 +284,9 @@ fun Application.registerRoutes(
                     replyCount = threadService.replyCount(message.id),
                 )
             }
+            // Ordering and paging are done by the database (see MessageRepository.page): the feed is
+            // already newest→oldest, so it is sent as-is. The client flips each page back to
+            // oldest→newest for display (see SaigonApi.messages).
             call.respond(feed)
         }
 

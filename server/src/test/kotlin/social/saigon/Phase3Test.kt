@@ -142,6 +142,62 @@ class Phase3Test {
     }
 
     @Test
+    fun messagesFeedIsSortedNewestToOldest() = testApplication {
+        val repositories = Repositories()
+        // Seed three messages out of chronological order to prove the endpoint sorts them.
+        repositories.messages.add(
+            social.saigon.domain.Message("m2", "room1", "u1", "second", createdAt = 2_000L),
+        )
+        repositories.messages.add(
+            social.saigon.domain.Message("m1", "room1", "u1", "first", createdAt = 1_000L),
+        )
+        repositories.messages.add(
+            social.saigon.domain.Message("m3", "room1", "u1", "third", createdAt = 3_000L),
+        )
+        val authConfig = AuthConfig(secret = "test-secret")
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // The wire response is ordered newest→oldest (highest createdAt first).
+        val body = client.get("/rooms/room1/messages").bodyAsText()
+        val firstIdx = body.indexOf("\"createdAt\":3000")
+        val midIdx = body.indexOf("\"createdAt\":2000")
+        val lastIdx = body.indexOf("\"createdAt\":1000")
+        assertTrue(firstIdx in 0 until midIdx, "newest message must come first")
+        assertTrue(midIdx in 0 until lastIdx, "middle message must come before the oldest")
+    }
+
+    @Test
+    fun messagesEndpointPagesWithLimitAndBeforeCursor() = testApplication {
+        val repositories = Repositories()
+        // Five messages spanning createdAt 1..5; the database applies the limit + cursor.
+        (1..5).forEach { i ->
+            repositories.messages.add(
+                social.saigon.domain.Message("m$i", "room1", "u1", "msg$i", createdAt = i * 1_000L),
+            )
+        }
+        val authConfig = AuthConfig(secret = "test-secret")
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // First page: newest two (createdAt 5000, 4000) in newest→oldest order.
+        val first = client.get("/rooms/room1/messages?limit=2").bodyAsText()
+        assertTrue(first.contains("\"createdAt\":5000"), "first page must include the newest message")
+        assertTrue(first.contains("\"createdAt\":4000"), "first page must include the second-newest message")
+        assertFalse(first.contains("\"createdAt\":3000"), "first page must be limited to two messages")
+        assertTrue(
+            first.indexOf("\"createdAt\":5000") < first.indexOf("\"createdAt\":4000"),
+            "page must be ordered newest→oldest",
+        )
+
+        // Paging upward with the cursor of the oldest message on the first page (4000) yields the
+        // next-older two (3000, 2000) — proving the cursor flows API → backend → DB.
+        val second = client.get("/rooms/room1/messages?limit=2&before=4000").bodyAsText()
+        assertTrue(second.contains("\"createdAt\":3000"), "second page must continue from the cursor")
+        assertTrue(second.contains("\"createdAt\":2000"), "second page must include the next-older message")
+        assertFalse(second.contains("\"createdAt\":4000"), "the cursor message must be excluded")
+        assertFalse(second.contains("\"createdAt\":5000"), "newer messages must not reappear")
+    }
+
+    @Test
     fun publicChatReadableByAnyoneAndOccupantsShowIntentsAndLanguages() = testApplication {
         val repositories = Repositories()
         repositories.users.create(

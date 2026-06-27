@@ -89,14 +89,16 @@ class SaigonApi(
     /**
      * A page of a room's public chat feed, each message carrying its reply-count (DESIGN §6, §9).
      * Infinite scroll pages by 20 — pass [before] (the oldest loaded message's createdAt) to fetch
-     * the previous page of older messages. Results are ordered oldest→newest.
+     * the previous page of older messages. The database orders and pages the feed newest→oldest
+     * (see MessageRepository.page); we only reverse the page here so the UI keeps its oldest→newest
+     * chronological order. No client-side sorting happens.
      */
     suspend fun messages(roomId: String, before: Long? = null, limit: Int = 20): List<FeedMessage> =
         client.get("$baseUrl/rooms/$roomId/messages") {
             HttpRequestAuth(this)
             url.parameters.append("limit", limit.toString())
             before?.let { url.parameters.append("before", it.toString()) }
-        }.body()
+        }.body<List<FeedMessage>>().reversed()
 
     /** Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. */
     suspend fun createRoom(name: String, emoji: String, atmosphere: String): Unit =

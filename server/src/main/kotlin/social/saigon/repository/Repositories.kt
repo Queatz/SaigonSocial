@@ -77,8 +77,9 @@ interface MessageRepository {
 
     /**
      * A single page of a room's messages for infinite scroll (20 per page). Returns up to [limit]
-     * messages ordered oldest→newest; when [before] is non-null only messages strictly older than
-     * that createdAt are considered (so the client can page upward through history).
+     * messages ordered newest→oldest; when [before] is non-null only messages strictly older than
+     * that createdAt are considered (so the client can page upward through history). The ordering
+     * and the limit are applied by the data store itself, not in application code.
      */
     fun page(roomId: String, before: Long?, limit: Int): List<Message>
 }
@@ -213,9 +214,10 @@ class InMemoryMessageRepository : MessageRepository {
     override fun get(id: String): Message? = byId[id]
     override fun byRoom(roomId: String): List<Message> = store[roomId]?.toList() ?: emptyList()
     override fun page(roomId: String, before: Long?, limit: Int): List<Message> {
-        val all = (store[roomId]?.toList() ?: emptyList()).sortedBy { it.createdAt }
+        // Mirror the store-level contract: newest→oldest, newest [limit] strictly older than [before].
+        val all = (store[roomId]?.toList() ?: emptyList()).sortedByDescending { it.createdAt }
         val older = if (before == null) all else all.filter { it.createdAt < before }
-        return older.takeLast(limit)
+        return older.take(limit)
     }
 }
 
