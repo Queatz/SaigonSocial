@@ -1,0 +1,12 @@
+# Keep the Docker build context small and reproducible: ship only sources + the Gradle wrapper,
+# and let the multi-stage builds compile everything from scratch.
+.git
+.idea
+.gradle
+.kotlin
+**/build/
+kotlin-js-store
+node_modules
+local.properties
+*.iml
+.DS_Store

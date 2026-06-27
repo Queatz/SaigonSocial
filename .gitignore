@@ -17,3 +17,7 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+# Deploy artifacts produced by ./deploy/deploy-*.sh
+deploy/web/dist/
+deploy/server/dist/
+*.deploybak

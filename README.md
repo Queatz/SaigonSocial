@@ -64,6 +64,52 @@ options:
     - Wasm target (faster, modern browsers): `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`
     - JS target (slower, supports older browsers): `./gradlew :app:webApp:jsBrowserDevelopmentRun`
 
+### Deployment
+
+First-time host setup (run once per server, over SSH) installs Docker, creates the shared `web`
+Docker network, and brings up a Traefik reverse proxy that terminates TLS via Let's Encrypt:
+
+- Backend host (`api.saigon.social`): `./deploy/init-server.sh [user@]host`
+- Web host (`saigon.social`): `./deploy/init-web.sh [user@]host`
+
+Both init scripts are idempotent; if the web client and API share a single host, you only need to
+run one of them. Override defaults via env vars, e.g. `ACME_EMAIL`, `SSH_HOST`, `CERT_RESOLVER`.
+
+Then two scripts under [`deploy/`](./deploy) build each service's Docker image **on your machine**,
+ship it to the target host over SSH (`docker save | ssh docker load`), and run the container **on
+that host** — attached to the shared `web` network so the host's Traefik can route to it (this is
+what lets Let's Encrypt issue a certificate). No container registry/login is required.
+
+- Server → **api.saigon.social**: `./deploy/deploy-server.sh [user@]host`
+  (injects `QWEN_API_KEY` as a runtime env var; pass `JWT_SECRET=…` for a real production secret).
+- Web → **saigon.social**: `./deploy/deploy-web.sh [user@]host`
+  (bakes `DEFAULT_BASE_URL=https://api.saigon.social` into the bundle at build time, since the web
+  client reads it from the compile-time constant `SaigonApi.DEFAULT_BASE_URL`).
+
+The server's fat JAR is compiled **on your machine** with Gradle (`:server:buildFatJar`) and packaged
+into a tiny JRE image ([`deploy/server`](./deploy/server)) — we build on the host rather than inside
+Docker so each deploy doesn't re-download Gradle and recompile from scratch (which took 10+ minutes).
+The web client's Compose/**JS** bundle is compiled **on your machine** with Gradle
+(`:app:webApp:jsBrowserDistribution` — we deploy the JS target for broad browser support; the Kotlin
+web tooling can't run inside a minimal container and is very slow there), then the static assets are
+packaged into a tiny nginx image ([`deploy/web`](./deploy/web)). Both services
+are routed by host with Traefik labels. The deploy target defaults to `root@<domain>`; override via
+env vars, e.g. `SSH_HOST`, `REGISTRY`, `IMAGE_TAG`, `CERT_RESOLVER`, or set `LOCAL=true` to build and
+run on this machine instead (when the app and Traefik share one box):
+
+```bash
+SSH_HOST=deploy@api.saigon.social JWT_SECRET=… ./deploy/deploy-server.sh
+./deploy/deploy-web.sh                 # ships to root@saigon.social by default
+LOCAL=true ./deploy/deploy-server.sh   # build & run here instead of over SSH
+```
+
+HTTPS is handled automatically by Traefik (Let's Encrypt) — no certbot needed. To verify that
+certificates are being issued and the sites are reachable over TLS, run the read-only checker:
+
+```bash
+./deploy/check-tls.sh            # checks saigon.social and api.saigon.social
+```
+
 ### Running tests
 
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:

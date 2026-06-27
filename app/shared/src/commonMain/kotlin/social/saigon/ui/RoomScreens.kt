@@ -477,8 +477,9 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
                 Text(msg.text, fontSize = 15.sp)
                 if (msg.replyCount > 0) {
                     Spacer(Modifier.height(4.dp))
+                    val replyWord = if (msg.replyCount == 1) "reply" else "replies"
                     Text(
-                        "⤷ ${msg.replyCount} replies (tap to open)",
+                        "\uD83D\uDCAC ${msg.replyCount} $replyWord (tap to open)",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
                     )
