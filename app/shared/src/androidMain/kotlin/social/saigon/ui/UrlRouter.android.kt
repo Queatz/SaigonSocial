@@ -8,6 +8,8 @@ package social.saigon.ui
 actual class UrlRouter actual constructor() {
     actual fun current(): String = "/"
 
+    actual fun currentUrl(): String = "/"
+
     actual fun push(path: String) {}
 
     actual fun replace(path: String) {}

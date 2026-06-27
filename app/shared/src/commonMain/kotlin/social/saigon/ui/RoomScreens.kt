@@ -711,18 +711,22 @@ private fun OccupantList(
 ) {
     Surface(
         modifier = Modifier.width(260.dp).fillMaxHeight(),
+        shape = RoundedCornerShape(16.dp, 0.dp, 0.dp, 0.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
         // card per persistent user id here regardless of how the list was assembled — a member can
         // briefly hold several live connections during join/leave churn (DESIGN §6).
         val people = occupants.distinctBy { it.userId }
-        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-            Text("In the room", fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                ShareButton()
+            }
             Spacer(Modifier.height(8.dp))
             if (people.isEmpty()) {
                 Text(
-                    "Nobody's here right now.",
+                    text = "Nobody's here right now.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -768,6 +772,45 @@ private fun OccupantList(
     }
 }
 
+/**
+ * A share affordance shown beside a section header: tapping it opens a dialog with the current,
+ * shareable URL and a "Copy link" button so members can hand the room/thread link to someone else.
+ */
+@Composable
+private fun ShareButton() {
+    val router = remember { UrlRouter() }
+    var showDialog by remember { mutableStateOf(false) }
+    IconButton(onClick = { showDialog = true }, modifier = Modifier.size(28.dp)) {
+        Text("\uD83D\uDD17", fontSize = 16.sp)
+    }
+    if (showDialog) {
+        val url = remember { router.currentUrl() }
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Share") },
+            text = {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copyToClipboard(url)
+                    showDialog = false
+                }) { Text("Copy link") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Close") }
+            },
+        )
+    }
+}
+
 /** Desktop/landscape left panel: the rooms list, letting members hop between rooms (DESIGN §6). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -780,9 +823,10 @@ private fun RoomNavPanel(
 ) {
     Surface(
         modifier = Modifier.width(260.dp).fillMaxHeight(),
+        shape = RoundedCornerShape(0.dp, 16.dp, 0.dp, 0.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Text("Popular rooms", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
@@ -843,7 +887,10 @@ private fun OccupantScroller(
     // join/leave churn (DESIGN §6).
     val people = occupants.distinctBy { it.userId }
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text("In the room", fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            ShareButton()
+        }
         Spacer(Modifier.height(8.dp))
         if (people.isEmpty()) {
             Text(
@@ -970,8 +1017,11 @@ private fun ThreadSheet(
         // rendered inline (not via the dragHandle slot) so it carries no "Drag handle" tooltip/semantics.
         PlainDragHandle()
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
-            Text("Thread", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Thread", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                ShareButton()
+            }
+            Spacer(Modifier.height(16.dp))
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.padding(12.dp)) {
                     ProfileIcon(name = message.displayAuthor, size = 32.dp)

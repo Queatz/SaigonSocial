@@ -366,9 +366,14 @@ private fun TopBar(
     onProfile: () -> Unit,
 ) {
     // A subtle gradient sheen across the bar (DESIGN §1) instead of one flat fill.
-    Box(modifier = Modifier.fillMaxWidth().background(topBarBrush())) {
+    Box(modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp)
+        .clip(MaterialTheme.shapes.large)
+        .background(topBarBrush())
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (canGoBack) {

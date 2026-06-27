@@ -7,6 +7,8 @@ import org.w3c.dom.events.Event
 actual class UrlRouter actual constructor() {
     actual fun current(): String = window.location.pathname
 
+    actual fun currentUrl(): String = window.location.href
+
     actual fun push(path: String) {
         window.history.pushState(null, "", path)
     }

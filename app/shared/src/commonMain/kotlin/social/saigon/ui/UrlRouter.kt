@@ -18,6 +18,9 @@ expect class UrlRouter() {
     /** The current path, e.g. "/" or "/room/abc/thread/xyz". */
     fun current(): String
 
+    /** The full, shareable URL of the current screen, e.g. "https://saigon.social/room/abc". */
+    fun currentUrl(): String
+
     /** Navigate forward, adding a new entry to the history back stack. */
     fun push(path: String)
 
