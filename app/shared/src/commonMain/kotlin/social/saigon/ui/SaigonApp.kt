@@ -278,14 +278,12 @@ fun SaigonApp() {
                 // App-level "someone started a chat with you" notice, shown above any screen so the
                 // recipient never misses it (DESIGN §7).
                 chatNotice?.let { notice ->
-                    MaxWidthContainer {
-                        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            IncomingChatBanner(
-                                chat = notice,
-                                onOpen = { chatNotice = null; openDirectChat(notice) },
-                                onDismiss = { chatNotice = null },
-                            )
-                        }
+                    MaxWidthBox(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        IncomingChatBanner(
+                            chat = notice,
+                            onOpen = { chatNotice = null; openDirectChat(notice) },
+                            onDismiss = { chatNotice = null },
+                        )
                     }
                 }
 
@@ -346,6 +344,7 @@ fun SaigonApp() {
 
                         Screen.DirectChats -> MaxWidthContainer {
                             DirectChatsScreen(
+                                api = api,
                                 chats = directChats,
                                 onOpen = { openDirectChat(it) },
                             )
@@ -522,6 +521,13 @@ internal fun Centered(content: @Composable () -> Unit) {
 private fun MaxWidthContainer(content: @Composable () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Box(modifier = Modifier.widthIn(max = 800.dp).fillMaxSize()) { content() }
+    }
+}
+
+@Composable
+private fun MaxWidthBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxWidth().then(modifier), contentAlignment = Alignment.TopCenter) {
+        Box(modifier = Modifier.widthIn(max = 800.dp)) { content() }
     }
 }
 

@@ -125,7 +125,7 @@ internal fun RoomListScreen(
                                 contentDescription = "Saigon.Social",
                                 modifier = Modifier
                                     .align(Alignment.CenterHorizontally)
-                                    .padding(bottom = 16.dp)
+                                    .padding(bottom = 24.dp)
                                     .size(128.dp),
                             )
                             Text(
@@ -134,28 +134,6 @@ internal fun RoomListScreen(
                                 color = MaterialTheme.colorScheme.onBackground,
                                 textAlign = TextAlign.Center
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                OutlinedTextField(
-                                    value = search,
-                                    onValueChange = { search = it },
-                                    label = { Text("Search rooms") },
-                                    singleLine = true,
-                                    shape = InputFieldShape,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (canCreateRooms) {
-                                    IconButton(
-                                        onClick = { showCreate = true },
-                                        modifier = Modifier.padding(top = 8.dp)
-                                    ) {
-                                        Text("➕")
-                                    }
-                                }
-                            }
                         }
                     }
                     // Entry to the open direct chats (DESIGN §7). Shown once at least one chat exists so the
@@ -186,8 +164,34 @@ internal fun RoomListScreen(
                         }
                     }
                     item {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedTextField(
+                                    value = search,
+                                    onValueChange = { search = it },
+                                    label = { Text("Search rooms") },
+                                    singleLine = true,
+                                    shape = InputFieldShape,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (canCreateRooms) {
+                                    IconButton(
+                                        onClick = { showCreate = true },
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    ) {
+                                        Text("➕")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
                         Text(
-                            text = "Popular rooms",
+                            text = "Popular",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(top = 16.dp)
@@ -508,7 +512,13 @@ internal fun RoomChatScreen(
                         onOpenRoom = onOpenRoom,
                     )
                 }
-                Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                Column(modifier = Modifier.weight(1f).fillMaxHeight().then(
+                    if (wide) {
+                        Modifier.padding(vertical = 16.dp)
+                    } else {
+                        Modifier.padding(16.dp)
+                    }
+                )) {
                     if (!wide) {
                         OccupantScroller(
                             occupants = occupants,
@@ -710,13 +720,10 @@ private fun OccupantList(
     canStartPrivate: Boolean,
     onTapAvailable: (OccupantView) -> Unit,
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .width(260.dp)
             .fillMaxHeight()
-            .shadow(16.dp, RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)),
-        shape = RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
         // card per persistent user id here regardless of how the list was assembled — a member can
@@ -825,16 +832,13 @@ private fun RoomNavPanel(
     onSearchChange: (String) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .width(260.dp)
             .fillMaxHeight()
-            .shadow(16.dp, RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)),
-        shape = RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Popular rooms", fontWeight = FontWeight.Bold)
+            Text("Popular", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
@@ -1052,7 +1056,7 @@ private fun ThreadSheet(
             }
             Spacer(Modifier.height(10.dp))
             Column(
-                modifier = Modifier.fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
+                modifier = Modifier.padding(horizontal = 8.dp).fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (loadingReplies) {
@@ -1124,7 +1128,7 @@ private fun ThreadSheet(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DirectChatsScreen(chats: List<DirectChat>, onOpen: (DirectChat) -> Unit) {
+internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: (DirectChat) -> Unit) {
     if (chats.isEmpty()) {
         Centered {
             Text(
@@ -1134,6 +1138,14 @@ internal fun DirectChatsScreen(chats: List<DirectChat>, onOpen: (DirectChat) -> 
             )
         }
         return
+    }
+    // Resolve each chat's origin room (DESIGN §7): the chat preserves the room it was created from
+    // via its `roomId`, so look up that room's name + emoji to show where the conversation began.
+    var roomsById by remember { mutableStateOf<Map<String, RoomSummary>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        runCatching { api.rooms() }.getOrNull()?.let { list ->
+            roomsById = list.associateBy { it.id }
+        }
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -1147,7 +1159,16 @@ internal fun DirectChatsScreen(chats: List<DirectChat>, onOpen: (DirectChat) -> 
                 ) {
                     ProfileIcon(name = chat.peerName, size = 36.dp)
                     Spacer(Modifier.width(12.dp))
-                    Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        roomsById[chat.roomId]?.let { room ->
+                            Text(
+                                "${room.emoji} ${room.name}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
