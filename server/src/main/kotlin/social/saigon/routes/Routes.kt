@@ -704,8 +704,7 @@ fun Application.registerRoutes(
                     handleIncoming(incomingFrame, session, chatHub, repositories, identities, threadService, privateChatService, finalEmojiService, moderationService, metricsService)
                 }
             } finally {
-                // Room emptied on disconnect → drop its ephemeral threads (DESIGN §9).
-                chatHub.unregister(connectionId).forEach { threadService.clearForRoom(it) }
+                chatHub.unregister(connectionId)
             }
         }
     }
@@ -1001,10 +1000,8 @@ private suspend fun handleIncoming(
         }
 
         is Incoming.Leave -> {
-            val remainingConnections = chatHub.leave(frame.roomId, session.connectionId)
+            chatHub.leave(frame.roomId, session.connectionId)
             chatHub.broadcast(frame.roomId, Outgoing.Left(frame.roomId, chatHub.occupants(frame.roomId)))
-            // Ephemeral threads disappear when the room empties (DESIGN §9).
-            if (remainingConnections == 0) threadService.clearForRoom(frame.roomId)
         }
 
         is Incoming.Reply -> {

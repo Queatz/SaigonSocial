@@ -65,21 +65,7 @@ class Phase4Test {
         assertFailsWith<IllegalArgumentException> { svc.reply("m1", "u2", "hi", replyToId = "nope") }
     }
 
-    // --- Ephemeral threads: clear on room empty or after 24h inactivity (DESIGN §9) ---
-
-    @Test
-    fun threadsClearWhenRoomEmpties() {
-        val messages = InMemoryMessageRepository()
-        val threads = InMemoryThreadRepository()
-        val svc = ThreadService(threads, messages)
-        messages.add(Message("m1", "room1", "u1", "hello", 0))
-        svc.reply("m1", "u2", "hi")
-        assertEquals(1, svc.replyCount("m1"))
-
-        svc.clearForRoom("room1")
-        assertEquals(0, svc.replyCount("m1"))
-        assertTrue(svc.thread("m1").isEmpty())
-    }
+    // --- Ephemeral threads: clear after 24h inactivity (DESIGN §9) ---
 
     @Test
     fun inactiveThreadsAreSweptAfter24h() {

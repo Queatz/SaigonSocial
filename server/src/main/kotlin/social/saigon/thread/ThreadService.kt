@@ -71,12 +71,6 @@ class ThreadService(
     /** Reply-count for the main-feed indicator, e.g. "↳ 4 replies" (DESIGN §9). */
     fun replyCount(parentMessageId: String): Int = threads.replyCount(parentMessageId)
 
-    /** Drop every thread attached to a message in [roomId] — used when the room empties. */
-    fun clearForRoom(roomId: String) {
-        val ids = messages.byRoom(roomId).map { it.id }
-        if (ids.isNotEmpty()) threads.clear(ids)
-    }
-
     /**
      * Drop threads idle for longer than [INACTIVITY_WINDOW_MS]. A thread's activity is the
      * timestamp of its most recent reply. Returns the number of threads cleared.

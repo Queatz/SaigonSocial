@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -837,9 +838,9 @@ private fun OccupantScroller(
     canStartPrivate: Boolean,
     onTapAvailable: (OccupantView) -> Unit,
 ) {
-    // Final dedup at the render boundary: a LazyRow key must be unique, so guarantee one card per
-    // persistent user id regardless of how the list was assembled — a member can briefly hold
-    // several live connections during join/leave churn (DESIGN §6).
+    // Final dedup at the render boundary: guarantee one card per persistent user id regardless of
+    // how the list was assembled — a member can briefly hold several live connections during
+    // join/leave churn (DESIGN §6).
     val people = occupants.distinctBy { it.userId }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("In the room", fontWeight = FontWeight.Bold)
@@ -851,14 +852,21 @@ private fun OccupantScroller(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(people, key = { it.userId }) { person ->
+            // A horizontally-scrolling Row (rather than a LazyRow) measured at IntrinsicSize.Max so
+            // the row is exactly as tall as its tallest card's natural content. Each card then fills
+            // that height (fillMaxHeight), making every card the same height without forcing the row
+            // to grow beyond the normal content height (DESIGN §6).
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                people.forEach { person ->
                     // Only members may open a chat, and never with yourself or an unavailable person.
                     val isSelf = selfUserId != null && person.userId == selfUserId
                     val tappable = canStartPrivate && person.available && !isSelf
                     Card(
                         onClick = { if (tappable) onTapAvailable(person) },
-                        modifier = Modifier.width(180.dp),
+                        modifier = Modifier.width(180.dp).fillMaxHeight(),
                     ) {
                         Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

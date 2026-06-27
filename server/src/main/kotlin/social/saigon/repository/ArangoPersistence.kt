@@ -306,7 +306,6 @@ internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
             keys.forEach { store.delete(it) }
         }
     }
-    override fun clearForRoom(roomId: String, messageIds: Collection<String>) = clear(messageIds)
 }
 
 internal class ArangoModerationRepository(db: ArangoDatabase) : ModerationRepository {

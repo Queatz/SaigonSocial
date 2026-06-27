@@ -178,7 +178,6 @@ interface ThreadRepository {
     fun parents(): Set<String>
     /** Drop the threads hanging off the given parent message ids. */
     fun clear(parentMessageIds: Collection<String>)
-    fun clearForRoom(roomId: String, messageIds: Collection<String>)
 }
 
 class InMemoryUserRepository : UserRepository {
@@ -338,9 +337,6 @@ class InMemoryThreadRepository : ThreadRepository {
     override fun parents(): Set<String> = store.keys.toSet()
     override fun clear(parentMessageIds: Collection<String>) {
         parentMessageIds.forEach { store.remove(it) }
-    }
-    override fun clearForRoom(roomId: String, messageIds: Collection<String>) {
-        messageIds.forEach { store.remove(it) }
     }
 }
 
