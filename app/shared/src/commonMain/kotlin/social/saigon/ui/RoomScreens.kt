@@ -30,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -46,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -343,6 +341,7 @@ internal fun RoomChatScreen(
     selfUserId: String?,
     onStartPrivate: (OccupantView) -> Unit,
     onRecordDirectChat: (DirectChat) -> Unit,
+    onIncomingChat: (DirectChat) -> Unit,
     onOpenDirectChat: (DirectChat) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
     onSignIn: () -> Unit,
@@ -374,9 +373,6 @@ internal fun RoomChatScreen(
     // for every client — not just the member who sent it. Accumulated (rather than a single latest
     // value) so two replies arriving back-to-back are never dropped before the sheet sees them (DESIGN §9).
     val liveReplies = remember(room.id) { mutableStateListOf<ReplyEvent>() }
-    // The most recent chat another member opened with us while we're in this room (DESIGN §7), shown
-    // as a dismissible banner so we notice a new direct chat without leaving the room.
-    var incomingChat by remember(room.id) { mutableStateOf<DirectChat?>(null) }
     // Infinite scroll: page upward by 20, stopping once a short page signals the start of history.
     var loadingMore by remember(room.id) { mutableStateOf(false) }
     var reachedStart by remember(room.id) { mutableStateOf(false) }
@@ -474,7 +470,9 @@ internal fun RoomChatScreen(
                         // Prefer the room the chat was started from; fall back to the current room.
                         val chat = DirectChat(originRoomId ?: room.id, peerId, peerName ?: "Someone")
                         onRecordDirectChat(chat)
-                        incomingChat = chat
+                        // Surface the app-level banner (DESIGN §7) rather than a duplicate in-room
+                        // one, so the notice is shown the same way it is from every other screen.
+                        onIncomingChat(chat)
                     },
                     onPresenceChanged = {
                         // Someone joined or left (DESIGN §6): refresh the live "In the room" list so
@@ -525,14 +523,6 @@ internal fun RoomChatScreen(
                             selfUserId = selfUserId,
                             canStartPrivate = canStartPrivate,
                             onTapAvailable = onStartPrivate
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    incomingChat?.let { chat ->
-                        IncomingChatBanner(
-                            chat = chat,
-                            onOpen = { incomingChat = null; onOpenDirectChat(chat) },
-                            onDismiss = { incomingChat = null },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -650,40 +640,25 @@ private fun IdentityBar(identity: RoomIdentity?, onRefresh: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
-    Card(onClick = onOpenThread, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            ProfileIcon(name = msg.displayAuthor, size = 32.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                // Author and, when known, how long ago the message was sent (DESIGN §9).
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        msg.displayAuthor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    val ago = timeAgo(msg.createdAt)
-                    if (ago.isNotEmpty()) {
-                        Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Text(msg.text, fontSize = 15.sp)
-                if (msg.replyCount > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    val replyWord = if (msg.replyCount == 1) "reply" else "replies"
-                    Text(
-                        "\uD83D\uDCAC ${msg.replyCount} $replyWord",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+    ChatMessage(
+        authorName = msg.displayAuthor,
+        text = msg.text,
+        timestamp = msg.createdAt,
+        onClick = onOpenThread,
+        footer = if (msg.replyCount > 0) {
+            {
+                Spacer(Modifier.height(4.dp))
+                val replyWord = if (msg.replyCount == 1) "reply" else "replies"
+                Text(
+                    "\uD83D\uDCAC ${msg.replyCount} $replyWord",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
-        }
-    }
+        } else null,
+    )
 }
 
 /**
@@ -1033,27 +1008,11 @@ private fun ThreadSheet(
                 ShareButton()
             }
             Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(12.dp)) {
-                    ProfileIcon(name = message.displayAuthor, size = 32.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                message.displayAuthor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            val ago = timeAgo(message.createdAt)
-                            if (ago.isNotEmpty()) {
-                                Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Text(message.text)
-                    }
-                }
-            }
+            ChatMessage(
+                authorName = message.displayAuthor,
+                text = message.text,
+                timestamp = message.createdAt,
+            )
             Spacer(Modifier.height(10.dp))
             Column(
                 modifier = Modifier.padding(horizontal = 8.dp).fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
@@ -1077,25 +1036,11 @@ private fun ThreadSheet(
                     )
                 }
                 replies.forEach { reply ->
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        ProfileIcon(name = reply.displayAuthor, size = 28.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    reply.displayAuthor,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                val ago = timeAgo(reply.createdAt)
-                                if (ago.isNotEmpty()) {
-                                    Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Text(reply.text, fontSize = 14.sp)
-                        }
-                    }
+                    ChatMessage(
+                        authorName = reply.displayAuthor,
+                        text = reply.text,
+                        timestamp = reply.createdAt,
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))

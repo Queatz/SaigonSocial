@@ -278,7 +278,7 @@ fun SaigonApp() {
                 // App-level "someone started a chat with you" notice, shown above any screen so the
                 // recipient never misses it (DESIGN §7).
                 chatNotice?.let { notice ->
-                    MaxWidthBox(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    MaxWidthBox(modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp)) {
                         IncomingChatBanner(
                             chat = notice,
                             onOpen = { chatNotice = null; openDirectChat(notice) },
@@ -310,6 +310,15 @@ fun SaigonApp() {
                                 openDirectChat(DirectChat(s.room.id, occupant.userId, occupant.name))
                             },
                             onRecordDirectChat = { recordDirectChat(it) },
+                            // Surface the shared app-level banner (DESIGN §7) when the room socket
+                            // reports someone opened a chat with us, instead of a duplicate in-room
+                            // banner — but not for a chat we ourselves just opened.
+                            onIncomingChat = { chat ->
+                                val current = screen
+                                val alreadyInThisChat =
+                                    current is Screen.Private && current.targetUserId == chat.targetUserId
+                                if (!alreadyInThisChat) chatNotice = chat
+                            },
                             onOpenDirectChat = { openDirectChat(it) },
                             onOpenRoom = { screen = Screen.Room(it) },
                             onSignIn = { screen = Screen.Profile },

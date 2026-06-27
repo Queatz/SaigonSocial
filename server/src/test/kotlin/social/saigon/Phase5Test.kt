@@ -77,6 +77,34 @@ class Phase5Test {
         assertFailsWith<IllegalArgumentException> { svc.start("supporter", "sharer") }
     }
 
+    // --- Chats started from different rooms are independent (DESIGN §7) ---
+
+    @Test
+    fun chatsAreScopedToTheRoomTheyWereStartedIn() {
+        val users = InMemoryUserRepository()
+        users.create(User(id = "sharer", role = Role.SHARER, displayName = "Sharer"))
+        users.create(User(id = "supporter", role = Role.SUPPORTER, displayName = "Supporter"))
+        val repo = InMemoryPrivateChatRepository()
+        val svc = PrivateChatService(repo, users)
+
+        // The same pair opens a chat from two different rooms: each gets its own session.
+        val roomOne = svc.openOrStart("sharer", "supporter", "room1")
+        val roomTwo = svc.openOrStart("sharer", "supporter", "room2")
+        assertTrue(roomOne.id != roomTwo.id)
+        assertEquals("room1", roomOne.roomId)
+        assertEquals("room2", roomTwo.roomId)
+
+        // Reopening within the same room reuses that room's session (no third chat is created).
+        assertEquals(roomOne.id, svc.openOrStart("supporter", "sharer", "room1").id)
+        assertEquals(roomTwo.id, svc.openOrStart("supporter", "sharer", "room2").id)
+
+        // Messages stay confined to their own room's chat — histories never bleed together.
+        svc.post(roomOne.id, "sharer", "from room one")
+        svc.post(roomTwo.id, "sharer", "from room two")
+        assertEquals(listOf("from room one"), svc.messages(roomOne.id).map { it.text })
+        assertEquals(listOf("from room two"), svc.messages(roomTwo.id).map { it.text })
+    }
+
     // --- Expired Supporter subscriptions are not available (DESIGN §3, §7) ---
 
     @Test

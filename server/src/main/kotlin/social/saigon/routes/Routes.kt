@@ -1099,7 +1099,7 @@ private suspend fun handleIncoming(
                 // Reuse an already-open chat if one exists, so the *recipient* can open the chat the
                 // initiator created by tapping the initiator's name — even though the initiator may
                 // not be an available Supporter (DESIGN §7).
-                privateChats.openOrStart(initiatorId, frame.targetUserId)
+                privateChats.openOrStart(initiatorId, frame.targetUserId, frame.roomId)
             } catch (e: IllegalArgumentException) {
                 session.send(Outgoing.Error(e.message ?: "Cannot start private chat"))
                 return

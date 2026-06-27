@@ -16,6 +16,12 @@ data class PrivateChat(
     val initiatorId: String,
     /** The available Supporter being messaged. */
     val targetId: String,
+    /**
+     * The room the chat was originated from (DESIGN §7). Private chats are scoped to the room they
+     * were started in, so the same two people can hold separate, independent conversations opened
+     * from different rooms — their histories never bleed into one another.
+     */
+    val roomId: String,
     val createdAt: Long,
 ) {
     /** The two participants of this chat. */

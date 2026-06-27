@@ -6,14 +6,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -70,6 +75,75 @@ internal fun ProfileIcon(name: String, size: Dp = 32.dp) {
             fontWeight = FontWeight.Bold,
             fontSize = (size.value / 2.2f).sp,
         )
+    }
+}
+
+/**
+ * The shared chat message component used across every conversation surface: the room feed, thread
+ * replies, and direct chats (DESIGN §6, §7, §9).
+ *
+ * The author's [ProfileIcon] sits *outside* the message bubble, and the bubble only grows to fit its
+ * content (capped well short of full width) rather than stretching edge-to-edge. Setting [reversed]
+ * mirrors the whole row — avatar on the right, bubble tinted as "mine" and right-aligned — so the
+ * same component renders both incoming and outgoing messages in a one-on-one chat.
+ *
+ * [authorName] drives both the avatar and the (optional) name label; [timestamp] adds a "time ago"
+ * label when known; [onClick] makes the bubble tappable (e.g. to open a thread); and [footer] adds
+ * extra content beneath the text inside the bubble (e.g. a "↳ N replies" indicator).
+ */
+@Composable
+internal fun ChatMessage(
+    authorName: String,
+    text: String,
+    modifier: Modifier = Modifier,
+    timestamp: Long? = null,
+    reversed: Boolean = false,
+    showAuthor: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    footer: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = if (reversed) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (!reversed) {
+            ProfileIcon(name = authorName, size = 32.dp)
+            Spacer(Modifier.width(8.dp))
+        }
+        val bubbleShape = RoundedCornerShape(12.dp)
+        val bubbleColor = if (reversed) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant
+        Surface(
+            color = bubbleColor,
+            shape = bubbleShape,
+            modifier = Modifier
+                .widthIn(max = 480.dp)
+                .then(if (onClick != null) Modifier.clip(bubbleShape).clickable(onClick = onClick) else Modifier),
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                val ago = timestamp?.let { timeAgo(it) }.orEmpty()
+                if (showAuthor || ago.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (showAuthor) {
+                            Text(authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        if (ago.isNotEmpty()) {
+                            Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Text(text, fontSize = 15.sp)
+                footer?.invoke()
+            }
+        }
+        if (reversed) {
+            Spacer(Modifier.width(8.dp))
+            ProfileIcon(name = authorName, size = 32.dp)
+        }
     }
 }
 

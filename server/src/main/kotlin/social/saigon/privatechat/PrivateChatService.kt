@@ -40,12 +40,14 @@ class PrivateChatService(
     }
 
     /**
-     * Start a private chat from [initiatorId] by tapping [targetId]'s name in a room (DESIGN §7).
+     * Start a private chat from [initiatorId] by tapping [targetId]'s name in [roomId] (DESIGN §7).
+     * The chat is scoped to [roomId], so the same pair can hold separate conversations opened from
+     * different rooms.
      *
      * @throws IllegalArgumentException if the initiator is unknown or may not start chats, the
      *   target is not an available Supporter, or the two are the same person.
      */
-    fun start(initiatorId: String, targetId: String): PrivateChat {
+    fun start(initiatorId: String, targetId: String, roomId: String = ""): PrivateChat {
         require(initiatorId != targetId) { "Cannot start a private chat with yourself" }
         val initiator = users.get(initiatorId)
             ?: throw IllegalArgumentException("Unknown user")
@@ -61,6 +63,7 @@ class PrivateChatService(
                 id = UUID.randomUUID().toString(),
                 initiatorId = initiatorId,
                 targetId = targetId,
+                roomId = roomId,
                 createdAt = clock(),
             ),
         )
@@ -75,10 +78,10 @@ class PrivateChatService(
      * available for private chat." Reusing the existing session lets either party (re)open the chat
      * the initiator already created without re-running the availability gate.
      */
-    fun openOrStart(userId: String, peerId: String): PrivateChat {
+    fun openOrStart(userId: String, peerId: String, roomId: String = ""): PrivateChat {
         require(userId != peerId) { "Cannot start a private chat with yourself" }
-        chats.findOpen(userId, peerId)?.let { return it }
-        return start(userId, peerId)
+        chats.findOpen(userId, peerId, roomId)?.let { return it }
+        return start(userId, peerId, roomId)
     }
 
     /** The open chat with [chatId], or null if it is unknown/ended. */

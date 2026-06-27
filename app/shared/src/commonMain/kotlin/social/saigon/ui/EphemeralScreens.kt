@@ -19,7 +19,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -144,18 +143,12 @@ internal fun PrivateChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(messages) { m ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
-                    ) {
-                        Surface(
-                            color = if (m.mine) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text(m.text, modifier = Modifier.padding(10.dp), fontSize = 15.sp)
-                        }
-                    }
+                    ChatMessage(
+                        authorName = m.author,
+                        text = m.text,
+                        reversed = m.mine,
+                        showAuthor = false,
+                    )
                 }
             }
         }
