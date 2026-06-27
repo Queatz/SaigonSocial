@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -124,7 +125,7 @@ internal fun RoomListScreen(
                                 contentDescription = "Saigon.Social",
                                 modifier = Modifier
                                     .align(Alignment.CenterHorizontally)
-                                    .padding(top = 24.dp, bottom = 8.dp)
+                                    .padding(bottom = 16.dp)
                                     .size(128.dp),
                             )
                             Text(
@@ -710,8 +711,11 @@ private fun OccupantList(
     onTapAvailable: (OccupantView) -> Unit,
 ) {
     Surface(
-        modifier = Modifier.width(260.dp).fillMaxHeight(),
-        shape = RoundedCornerShape(16.dp, 0.dp, 0.dp, 0.dp),
+        modifier = Modifier
+            .width(260.dp)
+            .fillMaxHeight()
+            .shadow(16.dp, RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)),
+        shape = RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
@@ -822,8 +826,11 @@ private fun RoomNavPanel(
     onOpenRoom: (RoomSummary) -> Unit,
 ) {
     Surface(
-        modifier = Modifier.width(260.dp).fillMaxHeight(),
-        shape = RoundedCornerShape(0.dp, 16.dp, 0.dp, 0.dp),
+        modifier = Modifier
+            .width(260.dp)
+            .fillMaxHeight()
+            .shadow(16.dp, RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)),
+        shape = RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {

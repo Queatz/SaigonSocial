@@ -45,6 +45,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -52,6 +54,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -252,8 +255,9 @@ fun SaigonApp() {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)),
             color = MaterialTheme.colorScheme.background,
         ) {
-            // Subtle canvas gradient behind every screen (DESIGN §1 — "subtle gradients").
-            Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush())) {
+            // Subtle canvas gradient behind every screen (DESIGN §1 — "subtle gradients"), topped
+            // with a faint film-grain texture so the background reads as soft and tactile.
+            Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush()).subtleGrain()) {
                 TopBar(
                     title = when (val s = screen) {
                         Screen.RoomList -> "Saigon.Social"
@@ -368,9 +372,19 @@ private fun TopBar(
     // A subtle gradient sheen across the bar (DESIGN §1) instead of one flat fill.
     Box(modifier = Modifier
         .fillMaxWidth()
-        .padding(16.dp)
-        .clip(MaterialTheme.shapes.large)
+        .padding(bottom = 16.dp)
+        .shadow(16.dp, RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
+        .clip(RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
         .background(topBarBrush())
+        .innerShadow(                                              // 2. Overlay the inset shadow
+            shape = RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp),
+            shadow = androidx.compose.ui.graphics.shadow.Shadow(
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
+                radius = 12.dp,
+                offset = DpOffset(x = 0.dp, y = -2.dp),
+                spread = 1.dp
+            )
+        )
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),

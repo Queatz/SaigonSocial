@@ -13,43 +13,43 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import kotlin.random.Random
 
 /**
  * Saigon.Social visual identity (DESIGN §1 — "A digital room for the city").
  *
- * A warm, natural palette: a deep river-blue primary leans on earthy brown and soft mauve-purple
- * accents, lifted by a sunlit honey-yellow over a warm sandstone canvas. The mood stays unhurried
- * and human — the opposite of a loud social network — while feeling grounded and organic.
- *
- * The dark scheme keeps the same character — river blue, warm brown, mauve purple and honey yellow
- * glowing over a deep, low-contrast walnut-black canvas — so the app feels at home in either light
- * or dark mode.
+ * Reimagined professional palette: deep forest green primary paired with earthy browns and muted
+ * blues for a grounded, trustworthy feel. High contrast neutrals over warm off-white (light) and
+ * deep charcoal (dark) ensure readability in professional settings. Accents provide subtle warmth
+ * without distraction.
  */
 private val SaigonLightColors = lightColorScheme(
-    primary = Color(0xFF1F5C82),            // deep river blue
+    primary = Color(0xFF1a6749),            // richer, darker forest green for light mode
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFAFD4ED),
-    onPrimaryContainer = Color(0xFF03192A),
+    primaryContainer = Color(0xFF319f6f),
+    onPrimaryContainer = Color(0xFF052014),
 
-    secondary = Color(0xFF7A5638),          // earthy brown
+    secondary = Color(0xFF6B4E31),          // earthy brown
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFEAD3BD),
-    onSecondaryContainer = Color(0xFF2A1A0B),
+    secondaryContainer = Color(0xFFD4B89E),
+    onSecondaryContainer = Color(0xFF2C2118),
 
-    tertiary = Color(0xFF6E5295),           // soft mauve purple
+    tertiary = Color(0xFF3D5A80),           // earthy blue
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFE3D4F2),
-    onTertiaryContainer = Color(0xFF22103B),
+    tertiaryContainer = Color(0xFF9DB4D9),
+    onTertiaryContainer = Color(0xFF1A2A40),
 
-    background = Color(0xFFF4EEE2),         // warm sandstone, a touch deeper for card contrast
-    onBackground = Color(0xFF1C1810),
-    // Cards / surfaces lean a hair cooler than the warm canvas so the eye can separate them.
+    background = Color(0xFFF8F6F0),         // warm off-white for professional contrast
+    onBackground = Color(0xFF1C1B17),
+    // Cards / surfaces use clean neutrals for separation and readability.
     surface = Color(0xFFFCFBF7),
-    onSurface = Color(0xFF1C1810),
+    onSurface = Color(0xFF1C1B17),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFFAF7F1),
     surfaceContainer = Color(0xFFF3F1EC),
@@ -65,36 +65,35 @@ private val SaigonLightColors = lightColorScheme(
 )
 
 private val SaigonDarkColors = darkColorScheme(
-    primary = Color(0xFF8DC4EA),            // river blue, lifted but not neon for dark surfaces
-    onPrimary = Color(0xFF042E47),
-    primaryContainer = Color(0xFF124264),
-    onPrimaryContainer = Color(0xFFC3E1F6),
+    primary = Color(0xFF1a6749),            // richer, lighter forest green for dark mode
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF0D2818),
+    onPrimaryContainer = Color(0xFFA8E0C0),
 
-    secondary = Color(0xFFDBB893),          // warm brown
-    onSecondary = Color(0xFF42290F),
-    secondaryContainer = Color(0xFF5C3E22),
-    onSecondaryContainer = Color(0xFFF3DEC6),
+    secondary = Color(0xFFD4B89E),          // earthy brown
+    onSecondary = Color(0xFF2C2118),
+    secondaryContainer = Color(0xFF6B4E31),
+    onSecondaryContainer = Color(0xFFF3E6D9),
 
-    tertiary = Color(0xFFC7B0E6),           // soft mauve purple
-    onTertiary = Color(0xFF382150),
-    tertiaryContainer = Color(0xFF503869),
-    onTertiaryContainer = Color(0xFFE9DBF8),
+    tertiary = Color(0xFF9DB4D9),           // earthy blue
+    onTertiary = Color(0xFF1A2A40),
+    tertiaryContainer = Color(0xFF3D5A80),
+    onTertiaryContainer = Color(0xFFC5D4EB),
 
-    background = Color(0xFF12100A),         // deep, slightly darker walnut canvas for more contrast
-    onBackground = Color(0xFFE9E1D2),
-    onSurface = Color(0xFFE9E1D2),
-    // Cards / containers step away from the warm brown into a cooler charcoal, both to lift them
-    // off the olive canvas and to give the all-warm UI a calm cool note to rest against.
-    surface = Color(0xFF1B1A20),
-    surfaceContainerLowest = Color(0xFF131217),
-    surfaceContainerLow = Color(0xFF1E1D24),
-    surfaceContainer = Color(0xFF24232B),
-    surfaceContainerHigh = Color(0xFF2C2B34),
-    surfaceContainerHighest = Color(0xFF34333D),
-    surfaceVariant = Color(0xFF2A2932),     // calm side-panel / bubble fill, cool charcoal
+    background = Color(0xFF1A1C1F),         // deep charcoal for professional contrast
+    onBackground = Color(0xFFE8E6E1),
+    onSurface = Color(0xFFE8E6E1),
+    // Cards / containers use cooler neutrals to separate from background while maintaining harmony.
+    surface = Color(0xFF25282C),
+    surfaceContainerLowest = Color(0xFF141618),
+    surfaceContainerLow = Color(0xFF1F2226),
+    surfaceContainer = Color(0xFF25282C),
+    surfaceContainerHigh = Color(0xFF2E3136),
+    surfaceContainerHighest = Color(0xFF373A40),
+    surfaceVariant = Color(0xFF2E3136),     // calm side-panel / bubble fill
     onSurfaceVariant = Color(0xFFCBC8C2),
 
-    outline = Color(0xFFA39A86),            // brighter so input borders read clearly
+    outline = Color(0xFF8A857A),            // brighter so input borders read clearly
     outlineVariant = Color(0xFF44434D),     // soft hairline borders
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
@@ -112,22 +111,20 @@ private val SaigonShapes = Shapes(
 val InputFieldShape = SaigonShapes.medium
 
 /**
- * Sunlit honey-yellow accent (DESIGN §1) — the fourth note of the natural palette. Material's color
- * scheme has no dedicated slot for it, so it lives here and is woven into the top-bar gradient to
- * warm the blue-to-purple sweep. Tuned per light/dark so it glows without ever shouting.
+ * Warm earthy gold accent — complements the forest green primary in top-bar gradients. Provides
+ * subtle professional warmth without high saturation.
  */
-private val SaigonHoneyLight = Color(0xFFE89A3C)
-private val SaigonHoneyDark = Color(0xFFEFB36A)
+private val SaigonHoneyLight = Color(0xFFD4A574)
+private val SaigonHoneyDark = Color(0xFFE8C89A)
 
 /**
- * Warm community accent (DESIGN §1) — a soft sage-teal used for interactive text (room titles, reply
- * counts, links). Standard Material blue would tip the warm palette back toward "software"; a muted
- * green-teal keeps the "neighbourhood, human conversation" feel while still reading as a link.
+ * Muted forest accent — used for interactive text (room titles, reply counts, links). Keeps a
+ * natural, professional tone consistent with the new palette.
  */
-private val SaigonAccentLight = Color(0xFF2E8A78)
-private val SaigonAccentDark = Color(0xFF80C7B3)
+private val SaigonAccentLight = Color(0xFF2D5A3D)
+private val SaigonAccentDark = Color(0xFF8FB89A)
 
-/** The warm sage-teal community accent for the active light/dark scheme (DESIGN §1). */
+/** The muted forest accent for the active light/dark scheme. */
 val accentColor: Color
     @Composable
     @ReadOnlyComposable
@@ -190,12 +187,10 @@ fun appBackgroundBrush(): Brush = Brush.verticalGradient(
 @Composable
 @ReadOnlyComposable
 fun topBarBrush(): Brush {
-    val honey = if (isSystemInDarkTheme()) SaigonHoneyDark else SaigonHoneyLight
     return Brush.horizontalGradient(
         colors = listOf(
             MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.tertiary,
-            honey,
+            MaterialTheme.colorScheme.primaryContainer,
         ),
     )
 }
@@ -206,4 +201,36 @@ fun topBarBrush(): Brush {
  */
 @Composable
 fun Modifier.softBorder(shape: Shape = SaigonShapes.medium): Modifier =
-    this.border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), shape)
+    this.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+
+/**
+ * A very subtle, static film-grain overlay (DESIGN §1). Scatters a fixed set of tiny, faint
+ * speckles across the surface so the flat background gradient gains a little texture and feels less
+ * digitally smooth. The grain is deterministic (a fixed seed) so it stays steady across recompositions
+ * rather than shimmering, and the dots are drawn at very low alpha so they only register as a soft tint.
+ */
+@Composable
+fun Modifier.subtleGrain(
+    grainColor: Color = MaterialTheme.colorScheme.onBackground,
+    density: Int = 1200,
+    alpha: Float = 0.04f,
+): Modifier = this.drawWithCache {
+    // Pin the speckle layout to the current size so the grain only recomputes on resize, not on
+    // every redraw — keeping it static and cheap.
+    val random = Random(42)
+    val dotRadius = 1f + random.nextFloat() * 1.6f
+    val points = List(density) {
+        Offset(random.nextFloat() * size.width, random.nextFloat() * size.height)
+    }
+    onDrawWithContent {
+        drawContent()
+        points.forEach { point ->
+            drawCircle(
+                color = grainColor,
+                radius = dotRadius,
+                center = point,
+                alpha = alpha,
+            )
+        }
+    }
+}

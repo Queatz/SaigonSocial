@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -218,7 +219,7 @@ internal fun FinalEmojiScreen(
                 // You've chosen; wait for the peer before revealing anything (no placeholder).
                 Text("Waiting for $peer to choose…", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(20.dp))
-                LoadingSpinner()
+                CircularProgressIndicator()
                 Spacer(Modifier.height(16.dp))
                 Text(
                     "Your pick is locked in. Both emojis are revealed only once $peer picks one too.",
