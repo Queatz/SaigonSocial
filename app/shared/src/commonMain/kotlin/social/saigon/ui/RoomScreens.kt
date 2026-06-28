@@ -283,10 +283,10 @@ internal fun RoomListScreen(
             title = "New room",
             initial = null,
             onDismiss = { showCreate = false },
-            onConfirm = { name, emoji, atmosphere ->
+            onConfirm = { name, emoji, atmosphere, id ->
                 showCreate = false
                 scope.launch {
-                    runCatching { api.createRoom(name, emoji, atmosphere) }
+                    runCatching { api.createRoom(name, emoji, atmosphere, id) }
                     reload()
                 }
             },
@@ -298,7 +298,7 @@ internal fun RoomListScreen(
             title = "Rename room",
             initial = room,
             onDismiss = { editing = null },
-            onConfirm = { name, emoji, atmosphere ->
+            onConfirm = { name, emoji, atmosphere, _ ->
                 editing = null
                 scope.launch {
                     runCatching { api.updateRoom(room.id, name, emoji, atmosphere) }
@@ -333,11 +333,14 @@ private fun RoomFormDialog(
     title: String,
     initial: RoomSummary?,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, emoji: String, atmosphere: String) -> Unit,
+    onConfirm: (name: String, emoji: String, atmosphere: String, id: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var emoji by remember { mutableStateOf(initial?.emoji ?: "") }
     var atmosphere by remember { mutableStateOf(initial?.atmosphere ?: "") }
+    // The room URL (id) can only be chosen at creation time; existing rooms keep their id.
+    var id by remember { mutableStateOf("") }
+    val isCreate = initial == null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -363,12 +366,21 @@ private fun RoomFormDialog(
                     label = { Text("Atmosphere (optional)") },
                     shape = InputFieldShape,
                 )
+                if (isCreate) {
+                    OutlinedTextField(
+                        value = id,
+                        onValueChange = { id = it },
+                        label = { Text("URL (optional)") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && emoji.isNotBlank(),
-                onClick = { onConfirm(name.trim(), emoji.trim(), atmosphere.trim()) },
+                onClick = { onConfirm(name.trim(), emoji.trim(), atmosphere.trim(), id.trim()) },
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -648,7 +660,7 @@ internal fun RoomChatScreen(
                             }
                         },
                         sendLabel = "Send",
-                        placeholder = if (hasToken) "Message" else "Sign in to send",
+                        placeholder = if (hasToken) "Message" else "Sign in to reply",
                         enabled = hasToken,
                         onDisabledClick = onSignIn,
                     )
@@ -678,14 +690,17 @@ internal fun RoomChatScreen(
                 )
             }
 
-            selectedOccupant?.let { person ->
+            selectedOccupant?.let { selected ->
+                // Resolve from the live occupant list so a name change from "Refresh" updates the
+                // open sheet in place rather than dismissing it.
+                val person = occupants.firstOrNull { it.userId == selected.userId } ?: selected
                 val isSelf = selfUserId != null && person.userId == selfUserId
                 OccupantDetailSheet(
                     person = person,
                     isSelf = isSelf,
                     canStartPrivate = canStartPrivate,
                     onStartChat = { selectedOccupant = null; onStartPrivate(person) },
-                    onRefresh = { selectedOccupant = null; onRefreshIdentity() },
+                    onRefresh = onRefreshIdentity,
                     onClose = { selectedOccupant = null },
                 )
             }
@@ -920,14 +935,17 @@ private fun OccupantList(
                 }
             }
         }
-        selected?.let { person ->
+        selected?.let { sel ->
+            // Resolve from the live occupant list so a name change from "Refresh" updates the open
+            // sheet in place rather than dismissing it.
+            val person = occupants.firstOrNull { it.userId == sel.userId } ?: sel
             val isSelf = selfUserId != null && person.userId == selfUserId
             OccupantDetailSheet(
                 person = person,
                 isSelf = isSelf,
                 canStartPrivate = canStartPrivate,
                 onStartChat = { selected = null; onTapAvailable(person) },
-                onRefresh = { selected = null; onRefreshSelf() },
+                onRefresh = onRefreshSelf,
                 onClose = { selected = null },
             )
         }
@@ -954,8 +972,12 @@ private fun OccupantEmojiLine(person: OccupantView) {
  */
 @Composable
 private fun ShareButton() {
+    val scope = rememberCoroutineScope()
     val router = remember { UrlRouter() }
     var showDialog by remember { mutableStateOf(false) }
+    // Briefly confirms the link landed on the clipboard after "Copy link" is tapped, then clears
+    // itself so the dialog returns to its normal state.
+    var copied by remember { mutableStateOf(false) }
     IconButton(onClick = { showDialog = true }, modifier = Modifier.size(28.dp)) {
         Text("\uD83D\uDD17", fontSize = 16.sp)
     }
@@ -965,19 +987,33 @@ private fun ShareButton() {
             onDismissRequest = { showDialog = false },
             title = { Text("Share") },
             text = {
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = {},
-                    readOnly = true,
-                    singleLine = true,
-                    shape = InputFieldShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (copied) {
+                        Text(
+                            "Link copied!",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     copyToClipboard(url)
-                    showDialog = false
+                    // Show a brief "Link copied!" toast, then clear it after a moment.
+                    copied = true
+                    scope.launch {
+                        delay(1500)
+                        copied = false
+                    }
                 }) { Text("Copy link") }
             },
             dismissButton = {
@@ -1103,8 +1139,13 @@ private fun OccupantScroller(
                                     modifier = Modifier.weight(1f),
                                 )
                                 if (isSelf) {
-                                    IconButton(onClick = onRefreshSelf, modifier = Modifier.size(24.dp)) {
-                                        Text("\uD83D\uDD04", fontSize = 14.sp)
+                                    IconButton(
+                                        onClick = onRefreshSelf,
+                                        modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("\uD83D\uDD04", fontSize = 14.sp)
+                                        }
                                     }
                                 } else if (person.available) {
                                     Text(
@@ -1121,14 +1162,17 @@ private fun OccupantScroller(
             }
         }
     }
-    selected?.let { person ->
+    selected?.let { sel ->
+        // Resolve from the live occupant list so a name change from "Refresh" updates the open
+        // sheet in place rather than dismissing it.
+        val person = occupants.firstOrNull { it.userId == sel.userId } ?: sel
         val isSelf = selfUserId != null && person.userId == selfUserId
         OccupantDetailSheet(
             person = person,
             isSelf = isSelf,
             canStartPrivate = canStartPrivate,
             onStartChat = { selected = null; onTapAvailable(person) },
-            onRefresh = { selected = null; onRefreshSelf() },
+            onRefresh = onRefreshSelf,
             onClose = { selected = null },
         )
     }

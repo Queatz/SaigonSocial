@@ -23,6 +23,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -150,6 +152,7 @@ private fun SignInSection(api: SaigonApi, onToken: (String?) -> Unit) {
     OutlinedTextField(
         value = password,
         onValueChange = { password = it; error = null },
+        visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
         label = { Text("Password") },
         singleLine = true,

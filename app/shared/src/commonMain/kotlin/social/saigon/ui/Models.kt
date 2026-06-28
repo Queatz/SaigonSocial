@@ -147,6 +147,8 @@ data class RoomCreate(
     val name: String,
     val emoji: String,
     val atmosphere: String = "",
+    /** Optional caller-chosen room URL (id); blank/null lets the server assign one. */
+    val id: String? = null,
 )
 
 /** Founder request to rename/edit a room (`PUT /rooms/{id}`, DESIGN §6). Null fields unchanged. */
@@ -201,7 +203,16 @@ data class MemberView(
     /** Language codes the member speaks. */
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (formerly "interests"). */
-    val introduction: List<String> = emptyList(),
+    val interests: List<String> = emptyList(),
+)
+
+/** A recorded room search shown in the Founder's "Room searches" list (`GET /founder/room-searches`). */
+@Serializable
+data class RoomSearchView(
+    /** The raw search text the user typed, trimmed. */
+    val query: String,
+    /** Unix epoch millis the search was recorded. */
+    val createdAt: Long,
 )
 
 /** Founder request to mint a single-use invite code for a new member. */
@@ -236,6 +247,14 @@ data class ChangeUsernameRequest(val username: String)
 /** Founder-only request to change a member's tier (`PATCH /founder/members/{id}/role`). */
 @Serializable
 data class SetTierRequest(val role: Role)
+
+/** Founder-only request to reset a member's password (`POST /founder/members/{id}/password`). */
+@Serializable
+data class ResetPasswordRequest(val newPassword: String)
+
+/** Founder-only request to change a member's display name (`PATCH /founder/members/{id}/name`). */
+@Serializable
+data class SetNameRequest(val displayName: String)
 
 /** Result of a tier change: the refreshed member plus a fresh token (null when demoted to Seeker). */
 @Serializable

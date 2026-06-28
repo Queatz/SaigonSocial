@@ -15,6 +15,11 @@ data class RoomCreate(
     val emoji: String,
     /** Free-text atmosphere/vibe. */
     val atmosphere: String = "",
+    /**
+     * Optional caller-chosen room URL (id). When blank, the server assigns a random id. When
+     * provided it must be URL-safe (lowercase letters, digits and hyphens) and not already taken.
+     */
+    val id: String? = null,
 )
 
 /**

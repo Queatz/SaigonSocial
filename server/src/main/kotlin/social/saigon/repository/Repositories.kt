@@ -46,6 +46,8 @@ interface UserRepository {
     fun all(): List<User>
     /** Look up a member by their unique, login-only handle (PASSWORD_AUTH.md §2C); null if none. */
     fun findByHandle(handle: String): User?
+    /** Permanently remove a member by id (founder-only hard removal). Idempotent. */
+    fun delete(id: String)
 }
 
 interface RoomRepository {
@@ -192,6 +194,7 @@ class InMemoryUserRepository : UserRepository {
     override fun all(): List<User> = store.values.toList()
     override fun findByHandle(handle: String): User? =
         store.values.firstOrNull { it.handle != null && it.handle.equals(handle, ignoreCase = true) }
+    override fun delete(id: String) { store.remove(id) }
 }
 
 class InMemoryRoomRepository : RoomRepository {

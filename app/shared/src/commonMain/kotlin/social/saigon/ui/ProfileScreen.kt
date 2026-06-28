@@ -1,5 +1,6 @@
 package social.saigon.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +40,7 @@ internal fun ProfileScreen(
     token: String?,
     onToken: (String?) -> Unit,
     onViewMembers: () -> Unit = {},
+    onViewRoomSearches: () -> Unit = {},
 ) {
     if (token == null) {
         SignInPanel(api = api, onToken = onToken)
@@ -90,9 +94,13 @@ internal fun ProfileScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowIntents.forEach { option ->
                                 val selected = option in intents
+                                val intentScale by animateFloatAsState(if (selected) 1f else 0.95f)
+                                val intentAlpha by animateFloatAsState(if (selected) 1f else 0.6f)
                                 OutlinedButton(
                                     onClick = { if (selected) intents.remove(option) else intents.add(option) },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f)
+                                        .scale(intentScale)
+                                        .alpha(intentAlpha),
                                 ) {
                                     Text((if (selected) "✅ " else "") + option.badge, fontSize = 12.sp)
                                 }
@@ -107,9 +115,13 @@ internal fun ProfileScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowLangs.forEach { code ->
                                 val selected = code in languages
+                                val langScale by animateFloatAsState(if (selected) 1f else 0.95f)
+                                val langAlpha by animateFloatAsState(if (selected) 1f else 0.6f)
                                 OutlinedButton(
                                     onClick = { if (selected) languages.remove(code) else languages.add(code) },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f)
+                                        .scale(langScale)
+                                        .alpha(langAlpha),
                                 ) {
                                     Text(
                                         (if (selected) "✅ " else "") + UiConstants.languageLabel(code),
@@ -169,6 +181,9 @@ internal fun ProfileScreen(
                     OutlinedButton(onClick = onViewMembers, modifier = Modifier.fillMaxWidth()) {
                         Text("View members")
                     }
+                    OutlinedButton(onClick = onViewRoomSearches, modifier = Modifier.fillMaxWidth()) {
+                        Text("Room searches")
+                    }
                 }
 
                 var confirmSignOut by remember { mutableStateOf(false) }
@@ -211,7 +226,7 @@ private fun EmojiStatsSection(api: SaigonApi, profileId: String) {
         when {
             current == null -> LoadingSpinner()
             current.isEmpty() -> Text(
-                "No emojis yet. They'll appear here after your private chats wrap up.",
+                "No emojis yet. They'll appear here after your direct chats wrap up.",
                 fontSize = 13.sp,
             )
             else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

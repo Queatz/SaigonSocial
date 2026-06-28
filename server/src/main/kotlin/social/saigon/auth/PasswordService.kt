@@ -40,6 +40,26 @@ class PasswordService(private val users: UserRepository) {
     }
 
     /**
+     * Founder-only password reset (MEMBER_MANAGEMENT.md): set a member's password on their behalf,
+     * without knowing their current one. Unlike [setPassword] there is no current-password check —
+     * the founder's authority is the gate (enforced at the route layer). Still validates strength
+     * and records [User.passwordSetAt] so the member can sign in with the new credential.
+     */
+    fun resetPassword(userId: String, newPassword: String): User {
+        val user = users.get(userId) ?: throw IllegalArgumentException("Unknown user")
+        require(user.role != Role.SEEKER) { "Seekers have no account to set a password on" }
+        require(newPassword.length >= PasswordHasher.MIN_LENGTH) {
+            "Password must be at least ${PasswordHasher.MIN_LENGTH} characters"
+        }
+        return users.update(
+            user.copy(
+                passwordHash = PasswordHasher.hash(newPassword),
+                passwordSetAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    /**
      * Verify a password sign-in. [identifier] matches the login-only handle (or, as an interim
      * fallback, the user id). On success returns the user so the caller can mint a fresh token;
      * any failure throws [InvalidCredentials] with a generic message (no user enumeration).

@@ -228,6 +228,7 @@ internal class ArangoUserRepository(db: ArangoDatabase) : UserRepository {
             "FOR d IN ${ArangoSchema.USERS} FILTER LOWER(d.handle) == LOWER(@h) LIMIT 1 RETURN d",
             mapOf("h" to handle),
         ).firstOrNull()
+    override fun delete(id: String) = store.delete(id)
 }
 
 internal class ArangoRoomRepository(db: ArangoDatabase) : RoomRepository {

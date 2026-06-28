@@ -78,6 +78,7 @@ private sealed interface Screen {
     data object DirectChats : Screen
     data object Profile : Screen
     data object Members : Screen
+    data object RoomSearches : Screen
 }
 
 /**
@@ -99,6 +100,7 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.DirectChats -> null
     Screen.Profile -> null
     Screen.Members -> null
+    Screen.RoomSearches -> null
 }
 
 @Composable
@@ -268,7 +270,11 @@ fun SaigonApp() {
                         Screen.DirectChats -> "Direct chats"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                         Screen.Members -> "Members"
+                        Screen.RoomSearches -> "Room searches"
                     },
+                    // On the room screen, show the room's atmosphere as a second title line under
+                    // the room name (when the founder set one); other screens have no subtitle.
+                    subtitle = (screen as? Screen.Room)?.room?.atmosphere?.takeIf { it.isNotBlank() },
                     canGoBack = screen != Screen.RoomList,
                     signedIn = token != null,
                     // Don't show the "Sign in" button while the sign-in page is already open.
@@ -276,7 +282,13 @@ fun SaigonApp() {
                     profileName = profile?.displayName,
                     // The members directory is opened from the profile, so Back returns there;
                     // every other screen falls back to the room list.
-                    onBack = { screen = if (screen == Screen.Members) Screen.Profile else Screen.RoomList },
+                    onBack = {
+                        screen = if (screen == Screen.Members || screen == Screen.RoomSearches) {
+                            Screen.Profile
+                        } else {
+                            Screen.RoomList
+                        }
+                    },
                     onProfile = { screen = Screen.Profile },
                 )
 
@@ -371,10 +383,13 @@ fun SaigonApp() {
                                 token,
                                 onToken = { token = it },
                                 onViewMembers = { screen = Screen.Members },
+                                onViewRoomSearches = { screen = Screen.RoomSearches },
                             )
                         }
 
                         Screen.Members -> MaxWidthContainer { FounderMembersScreen(api) }
+
+                        Screen.RoomSearches -> MaxWidthContainer { FounderRoomSearchesScreen(api) }
                     }
                 }
             }
@@ -385,6 +400,7 @@ fun SaigonApp() {
 @Composable
 private fun TopBar(
     title: String,
+    subtitle: String? = null,
     canGoBack: Boolean,
     signedIn: Boolean,
     showSignIn: Boolean,
@@ -506,13 +522,22 @@ private fun TopBar(
                 }
                 Spacer(Modifier.width(8.dp))
             }
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                )
+                // Second description line under the title (e.g. the room's atmosphere).
+                subtitle?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                        fontSize = 13.sp,
+                    )
+                }
+            }
             if (signedIn) {
                 // The user's profile icon doubles as the entry to the profile screen. Clip to a
                 // circle *before* the clickable so the ripple stays inside the icon's bounds.
@@ -572,52 +597,47 @@ internal fun MessageComposer(
     enabled: Boolean = true,
     onDisabledClick: (() -> Unit)? = null,
 ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f)
-                    .onPreviewKeyEvent { event ->
-                        if (
-                            enabled &&
-                            event.type == KeyEventType.KeyDown &&
-                            event.key == Key.Enter &&
-                            !event.isShiftPressed
-                        ) {
-                            onSend()
-                            true
-                        } else {
-                            false
-                        }
-                    },
-                label = { Text(placeholder) },
-                shape = InputFieldShape,
-                maxLines = 5,
-                enabled = enabled,
-            )
-            IconButton(
-                enabled = enabled,
-                onClick = onSend,
-                modifier = Modifier.padding(top = 8.dp),
-            ) { Text("➡️") }
-        }
-        // When disabled (e.g. "Sign in to send"/"Sign in to reply"), the field and button can't be
-        // tapped, so overlay a transparent clickable that takes the user to the sign-in screen.
-        if (!enabled && onDisabledClick != null) {
-            // Clip to the input field's corner radius *before* the clickable so the hover/ripple
-            // highlight follows the rounded shape instead of spilling into ugly square corners.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(InputFieldShape)
-                    .clickable(onClick = onDisabledClick),
-            )
-        }
+    // When disabled (e.g. "Sign in to reply"), there's nothing to type, so
+    // replace the field and send button with a single primary button carrying the placeholder
+    // text that takes the user to the sign-in screen.
+    if (!enabled) {
+        Button(
+            onClick = { onDisabledClick?.invoke() },
+            modifier = Modifier.fillMaxWidth(),
+            shape = InputFieldShape,
+        ) { Text(placeholder) }
+        return
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f)
+                .onPreviewKeyEvent { event ->
+                    if (
+                        event.type == KeyEventType.KeyDown &&
+                        event.key == Key.Enter &&
+                        !event.isShiftPressed
+                    ) {
+                        onSend()
+                        true
+                    } else {
+                        false
+                    }
+                },
+            label = { Text(placeholder) },
+            shape = InputFieldShape,
+            maxLines = 5,
+        )
+        IconButton(
+            onClick = onSend,
+            modifier = Modifier.padding(top = 8.dp),
+        ) { Text("➡️") }
     }
 }
 

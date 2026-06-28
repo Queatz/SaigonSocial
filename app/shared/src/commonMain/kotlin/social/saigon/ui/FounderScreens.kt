@@ -13,9 +13,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +71,16 @@ internal fun FounderInviteSection(api: SaigonApi) {
             }
         }
     }
+    // Spell out what each tier can do so the founder picks the right one for the new member.
+    Text(
+        when (role) {
+            Role.SHARER -> "Sharer: Can chat in the rooms and initiate direct chats with supporters."
+            Role.SUPPORTER -> "Supporter: Can create rooms and receive direct chat requests from sharers."
+            else -> ""
+        },
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
     code?.let {
         Text("Invite code (share this with the new member):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -158,8 +168,85 @@ internal fun FounderMembersScreen(api: SaigonApi) {
 }
 
 /**
+ * Stand-alone page hosting the founder-only list of recent room searches ([FounderRoomSearchesSection]),
+ * reached via the "Room searches" button on the profile screen. Scrolls independently with the same
+ * page padding the profile editor uses so it reads as its own screen.
+ */
+@Composable
+internal fun FounderRoomSearchesScreen(api: SaigonApi) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FounderRoomSearchesSection(api)
+    }
+}
+
+/**
+ * Founder-only list of the latest room searches (DESIGN §6). Every time a member or visitor filters
+ * the room list, the query is recorded server-side; surfacing the most recent searches here lets the
+ * founder understand what kinds of rooms people are looking for.
+ */
+@Composable
+internal fun FounderRoomSearchesSection(api: SaigonApi) {
+    val searches = remember { mutableStateListOf<RoomSearchView>() }
+    var loaded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        error = null
+        try {
+            val list = api.roomSearches()
+            searches.clear()
+            searches.addAll(list)
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load room searches"
+        } finally {
+            loaded = true
+        }
+    }
+
+    Text("Room searches", fontWeight = FontWeight.Bold)
+    Text(
+        "The latest searches people ran against the room list, newest first. Use them to understand " +
+            "what kinds of rooms people are looking for.",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+
+    when {
+        !loaded -> LoadingSpinner()
+        searches.isEmpty() -> Text(
+            "No room searches yet.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        else -> searches.forEach { search -> RoomSearchRow(search) }
+    }
+}
+
+/** A single recorded room search: the query the user typed and how long ago it was run. */
+@Composable
+private fun RoomSearchRow(search: RoomSearchView) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(search.query, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            val ago = timeAgo(search.createdAt)
+            if (ago.isNotEmpty()) {
+                Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/**
  * Founder-only member directory (MEMBER_MANAGEMENT.md A & B). Lists everyone the founder has
- * onboarded with their tier, intent, languages, and introduction, plus per-member controls to comp
+ * onboarded with their tier, intent, languages, and interests, plus per-member controls to comp
  * them up to Supporter or downgrade to Sharer (each behind a confirmation dialog). The Founder's
  * own row is read-only. A tier change mints a fresh token surfaced so the founder can hand it over.
  */
@@ -171,6 +258,9 @@ internal fun FounderMembersSection(api: SaigonApi) {
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf<Pair<MemberView, Role>?>(null) }
+    var pendingRemove by remember { mutableStateOf<MemberView?>(null) }
+    var pendingReset by remember { mutableStateOf<MemberView?>(null) }
+    var pendingRename by remember { mutableStateOf<MemberView?>(null) }
 
     suspend fun reload() {
         error = null
@@ -210,7 +300,13 @@ internal fun FounderMembersSection(api: SaigonApi) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         else -> members.forEach { member ->
-            MemberRow(member = member, onChange = { role -> pending = member to role })
+            MemberRow(
+                member = member,
+                onChange = { role -> pending = member to role },
+                onRemove = { pendingRemove = member },
+                onResetPassword = { pendingReset = member },
+                onChangeName = { pendingRename = member },
+            )
         }
     }
 
@@ -245,15 +341,147 @@ internal fun FounderMembersSection(api: SaigonApi) {
             },
         )
     }
+
+    pendingRemove?.let { member ->
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            title = { Text("Remove member") },
+            text = {
+                Text(
+                    "Permanently remove ${member.displayName}? Their account and sign-in are deleted " +
+                        "and they'll lose access immediately. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRemove = null
+                    notice = null
+                    scope.launch {
+                        notice = try {
+                            api.removeMember(member.id)
+                            reload()
+                            "Removed ${member.displayName}."
+                        } catch (e: Throwable) {
+                            e.message ?: "Could not remove that member."
+                        }
+                    }
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemove = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingRename?.let { member ->
+        var newName by remember(member.id) { mutableStateOf(member.displayName) }
+        var dialogError by remember(member.id) { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text("Change name") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Set the display name for ${member.displayName}. This is how you tie the " +
+                            "account to the verified person, so keep it accurate.",
+                    )
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Display name") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    dialogError?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = newName.trim()
+                    if (name.isBlank()) {
+                        dialogError = "A name is required."
+                        return@TextButton
+                    }
+                    notice = null
+                    scope.launch {
+                        try {
+                            val updated = api.setMemberName(member.id, name)
+                            pendingRename = null
+                            reload()
+                            notice = "Renamed to ${updated.displayName}."
+                        } catch (e: Throwable) {
+                            dialogError = e.message ?: "Could not change that name."
+                        }
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRename = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingReset?.let { member ->
+        var newPassword by remember(member.id) { mutableStateOf("") }
+        var dialogError by remember(member.id) { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { pendingReset = null },
+            title = { Text("Reset password") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Set a new sign-in password for ${member.displayName}. Share it with them " +
+                            "securely; they can change it later from their profile.",
+                    )
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New password") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    dialogError?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val password = newPassword
+                    notice = null
+                    scope.launch {
+                        try {
+                            val updated = api.resetMemberPassword(member.id, password)
+                            pendingReset = null
+                            notice = "Reset the password for ${updated.displayName}."
+                        } catch (e: Throwable) {
+                            dialogError = e.message ?: "Could not reset that password."
+                        }
+                    }
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingReset = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 /**
  * A single member in the founder directory, with their profile details and tier controls
- * (MEMBER_MANAGEMENT.md A & B). The Founder's own row exposes no tier controls (their role is
- * fixed), and there is no "Seeker" option — members are only ever comped to Supporter or Sharer.
+ * (MEMBER_MANAGEMENT.md A & B), plus founder-only account controls to reset the member's password
+ * or permanently remove them. The Founder's own row exposes none of these controls (their role is
+ * fixed and their account can't be removed); there is no "Seeker" tier option — members are only
+ * ever comped to Supporter or Sharer.
  */
 @Composable
-private fun MemberRow(member: MemberView, onChange: (Role) -> Unit) {
+private fun MemberRow(
+    member: MemberView,
+    onChange: (Role) -> Unit,
+    onRemove: () -> Unit,
+    onResetPassword: () -> Unit,
+    onChangeName: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -280,9 +508,9 @@ private fun MemberRow(member: MemberView, onChange: (Role) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (member.introduction.isNotEmpty()) {
+            if (member.interests.isNotEmpty()) {
                 Text(
-                    "Introduction: " + member.introduction.joinToString(", "),
+                    "Interests: " + member.interests.joinToString(", "),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -303,8 +531,30 @@ private fun MemberRow(member: MemberView, onChange: (Role) -> Unit) {
                             enabled = !current,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text(option.label, fontSize = 11.sp)
+                            Text(option.label, fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
+                    }
+                }
+                // Founder-only account controls: reset the member's sign-in password on their
+                // behalf, or permanently remove the account (MEMBER_MANAGEMENT.md).
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onChangeName,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Change name", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                    }
+                    OutlinedButton(
+                        onClick = onResetPassword,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Reset password", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                    }
+                    OutlinedButton(
+                        onClick = onRemove,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Remove", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false)
                     }
                 }
             }

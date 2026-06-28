@@ -610,6 +610,56 @@ fun Application.registerRoutes(
                 )
             }
 
+            // Founder-only hard removal (MEMBER_MANAGEMENT.md): permanently delete a member's
+            // account. Distinct from a demote-to-Seeker soft removal — the row is gone for good.
+            // The Founder cannot remove their own account, so the platform always keeps an admin.
+            delete("/founder/members/{id}") {
+                val founderId = requireFounder(call.caller())
+                val userId = call.parameters["id"].orEmpty()
+                require(userId.isNotBlank()) { "id required" }
+                require(userId != founderId) { "The Founder cannot remove their own account." }
+                val user = repositories.users.get(userId)
+                    ?: throw IllegalArgumentException("That member does not exist.")
+                require(user.role != Role.FOUNDER) { "The Founder's account cannot be removed." }
+                repositories.users.delete(userId)
+                call.respond(mapOf("removed" to userId))
+            }
+
+            // Founder-only password reset (MEMBER_MANAGEMENT.md): set a member's sign-in password on
+            // their behalf (e.g. when they are locked out), without knowing the current one. The
+            // Founder's authority is the gate; the hash is never returned.
+            post("/founder/members/{id}/password") {
+                val founderId = requireFounder(call.caller())
+                val userId = call.parameters["id"].orEmpty()
+                require(userId.isNotBlank()) { "id required" }
+                require(userId != founderId) {
+                    "Use your own profile to change the Founder password."
+                }
+                val req = call.receive<ResetPasswordRequest>()
+                val updated = passwordService.resetPassword(userId, req.newPassword)
+                call.respond(updated.toMemberView(economicsService))
+            }
+
+            // Founder-only name change (MEMBER_MANAGEMENT.md): set a member's display name on their
+            // behalf. The display name is how the Founder ties an account to the verified person
+            // IRL, so only the Founder may change it. The Founder's own name is changed from their
+            // own profile, not here.
+            patch("/founder/members/{id}/name") {
+                val founderId = requireFounder(call.caller())
+                val userId = call.parameters["id"].orEmpty()
+                require(userId.isNotBlank()) { "id required" }
+                require(userId != founderId) {
+                    "Use your own profile to change the Founder name."
+                }
+                val req = call.receive<SetNameRequest>()
+                val displayName = req.displayName.trim()
+                require(displayName.isNotBlank()) { "A name is required." }
+                val user = repositories.users.get(userId)
+                    ?: throw IllegalArgumentException("That member does not exist.")
+                val updated = repositories.users.update(user.copy(displayName = displayName))
+                call.respond(updated.toMemberView(economicsService))
+            }
+
             // --- Phase 8: Economics & Onboarding (DESIGN §3, §11) ---
 
             // The caller's own economic standing (tier, payment status, subscription expiry).
@@ -917,6 +967,14 @@ data class MemberView(
 @Serializable
 data class SetTierRequest(val role: Role)
 
+/** Body for a founder-only password reset on a member's behalf (MEMBER_MANAGEMENT.md). */
+@Serializable
+data class ResetPasswordRequest(val newPassword: String)
+
+/** Body for a founder-only display-name change on a member's behalf (MEMBER_MANAGEMENT.md). */
+@Serializable
+data class SetNameRequest(val displayName: String)
+
 /**
  * Result of a founder-initiated tier change: the member's refreshed directory view plus a fresh
  * access token carrying the new role (null when the member was demoted to Seeker).
@@ -1148,7 +1206,7 @@ private suspend fun handleIncoming(
                 // not be an available Supporter (DESIGN §7).
                 privateChats.openOrStart(initiatorId, frame.targetUserId, frame.roomId)
             } catch (e: IllegalArgumentException) {
-                session.send(Outgoing.Error(e.message ?: "Cannot start private chat"))
+                session.send(Outgoing.Error(e.message ?: "Cannot start direct chat"))
                 return
             }
             // Each party sees the other's room-scoped display name (DESIGN §5, §7).
@@ -1197,7 +1255,7 @@ private suspend fun handleIncoming(
             val ended = try {
                 privateChats.end(frame.chatId, byUserId)
             } catch (e: IllegalArgumentException) {
-                session.send(Outgoing.Error(e.message ?: "Cannot end private chat"))
+                session.send(Outgoing.Error(e.message ?: "Cannot end direct chat"))
                 return
             } ?: return
             val notice = Outgoing.PrivateChatEnded(ended.id, byUserId)

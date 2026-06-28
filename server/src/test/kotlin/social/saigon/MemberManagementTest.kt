@@ -1,8 +1,10 @@
 package social.saigon
 
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
+import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -166,6 +168,142 @@ class MemberManagementTest {
         // No member token is minted for a Seeker (the null default is omitted from the JSON).
         assertFalse(demote.bodyAsText().contains("\"token\":\""))
         assertEquals(Role.SEEKER, repositories.users.get("linh")!!.role)
+    }
+
+    @Test
+    fun founderRemovesAMemberButNotThemselves() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "F"))
+        repositories.users.create(User(id = "linh", role = Role.SHARER, displayName = "Linh", sharerPaidAt = 1L))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val founderToken = TokenService(authConfig).issueMemberToken("founder", Role.FOUNDER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val res = client.delete("/founder/members/linh") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+        }
+        assertEquals(HttpStatusCode.OK, res.status)
+        assertNull(repositories.users.get("linh"))
+
+        // The founder cannot remove their own account, so the platform always keeps an admin.
+        val self = client.delete("/founder/members/founder") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+        }
+        assertEquals(HttpStatusCode.BadRequest, self.status)
+        assertEquals(Role.FOUNDER, repositories.users.get("founder")!!.role)
+    }
+
+    @Test
+    fun nonFounderCannotRemoveAMember() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "F"))
+        repositories.users.create(User(id = "linh", role = Role.SHARER, displayName = "Linh", sharerPaidAt = 1L))
+        repositories.users.create(User(id = "minh", role = Role.SHARER, displayName = "Minh", sharerPaidAt = 1L))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val sharerToken = TokenService(authConfig).issueMemberToken("minh", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val res = client.delete("/founder/members/linh") {
+            header(HttpHeaders.Authorization, "Bearer $sharerToken")
+        }
+        assertEquals(HttpStatusCode.Forbidden, res.status)
+        // The member is left untouched.
+        assertEquals("Linh", repositories.users.get("linh")!!.displayName)
+    }
+
+    @Test
+    fun founderResetsAMembersPasswordAndNonFounderCannot() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "F"))
+        repositories.users.create(
+            User(
+                id = "linh",
+                role = Role.SHARER,
+                displayName = "Linh",
+                handle = "linh",
+                sharerPaidAt = 1L,
+            ),
+        )
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokens = TokenService(authConfig)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val res = client.post("/founder/members/linh/password") {
+            header(HttpHeaders.Authorization, "Bearer ${tokens.issueMemberToken("founder", Role.FOUNDER)}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"newPassword":"brand-new-pass"}""")
+        }
+        assertEquals(HttpStatusCode.OK, res.status)
+        // The member can now sign in with the founder-set password; the hash is never returned.
+        assertFalse(res.bodyAsText().contains("passwordHash"))
+        val signedIn = social.saigon.auth.PasswordService(repositories.users)
+            .authenticate("linh", "brand-new-pass")
+        assertEquals("linh", signedIn.id)
+
+        // A non-founder may not reset anyone's password.
+        val asSharer = client.post("/founder/members/linh/password") {
+            header(HttpHeaders.Authorization, "Bearer ${tokens.issueMemberToken("linh", Role.SHARER)}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"newPassword":"another-pass"}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, asSharer.status)
+    }
+
+    @Test
+    fun founderChangesAMembersNameButNotTheirOwn() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "Founder"))
+        repositories.users.create(User(id = "linh", role = Role.SHARER, displayName = "Linh", sharerPaidAt = 1L))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val founderToken = TokenService(authConfig).issueMemberToken("founder", Role.FOUNDER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val res = client.patch("/founder/members/linh/name") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"displayName":"  Linh Nguyen  "}""")
+        }
+        assertEquals(HttpStatusCode.OK, res.status)
+        // The name is trimmed and persisted.
+        assertEquals("Linh Nguyen", repositories.users.get("linh")!!.displayName)
+
+        // The founder changes their own name from their own profile, not here.
+        val self = client.patch("/founder/members/founder/name") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"displayName":"New Founder"}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, self.status)
+        assertEquals("Founder", repositories.users.get("founder")!!.displayName)
+
+        // A blank name is rejected.
+        val blank = client.patch("/founder/members/linh/name") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"displayName":"   "}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, blank.status)
+        assertEquals("Linh Nguyen", repositories.users.get("linh")!!.displayName)
+    }
+
+    @Test
+    fun nonFounderCannotChangeAMembersName() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "F"))
+        repositories.users.create(User(id = "linh", role = Role.SHARER, displayName = "Linh", sharerPaidAt = 1L))
+        repositories.users.create(User(id = "minh", role = Role.SHARER, displayName = "Minh", sharerPaidAt = 1L))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val sharerToken = TokenService(authConfig).issueMemberToken("minh", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val res = client.patch("/founder/members/linh/name") {
+            header(HttpHeaders.Authorization, "Bearer $sharerToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"displayName":"Hacked"}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, res.status)
+        // The member's name is left untouched.
+        assertEquals("Linh", repositories.users.get("linh")!!.displayName)
     }
 
     @Test

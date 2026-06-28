@@ -48,15 +48,15 @@ class PrivateChatService(
      *   target is not an available Supporter, or the two are the same person.
      */
     fun start(initiatorId: String, targetId: String, roomId: String = ""): PrivateChat {
-        require(initiatorId != targetId) { "Cannot start a private chat with yourself" }
+        require(initiatorId != targetId) { "Cannot start a direct chat with yourself" }
         val initiator = users.get(initiatorId)
             ?: throw IllegalArgumentException("Unknown user")
         require(initiator.role.can(Capability.START_PRIVATE_CHAT)) {
-            "Role ${initiator.role} cannot start a private chat"
+            "Role ${initiator.role} cannot start a direct chat"
         }
         val target = users.get(targetId)
             ?: throw IllegalArgumentException("Unknown user")
-        require(available(target)) { "User is not available for private chat" }
+        require(available(target)) { "User is not available for direct chat" }
 
         return chats.create(
             PrivateChat(
@@ -79,7 +79,7 @@ class PrivateChatService(
      * the initiator already created without re-running the availability gate.
      */
     fun openOrStart(userId: String, peerId: String, roomId: String = ""): PrivateChat {
-        require(userId != peerId) { "Cannot start a private chat with yourself" }
+        require(userId != peerId) { "Cannot start a direct chat with yourself" }
         chats.findOpen(userId, peerId, roomId)?.let { return it }
         return start(userId, peerId, roomId)
     }

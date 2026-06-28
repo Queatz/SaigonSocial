@@ -26,15 +26,32 @@ class RoomService(private val rooms: RoomRepository) {
         require(!name.startsWith("#")) { "Room name must not start with '#'" }
         val emoji = request.emoji.trim()
         require(emoji.isNotEmpty()) { "Room emoji required" }
+        val id = resolveId(request.id)
         return rooms.create(
             Room(
-                id = UUID.randomUUID().toString(),
+                id = id,
                 name = name,
                 emoji = emoji,
                 atmosphere = request.atmosphere.trim(),
                 createdBy = founderId,
             ),
         )
+    }
+
+    /**
+     * Resolve the id for a new room: when the caller supplies one (the room's URL), validate it is
+     * URL-safe and not already taken; otherwise assign a random id.
+     *
+     * @throws IllegalArgumentException if the requested id is malformed or already in use.
+     */
+    private fun resolveId(requested: String?): String {
+        val candidate = requested?.trim()
+        if (candidate.isNullOrEmpty()) return UUID.randomUUID().toString()
+        require(candidate.matches(ID_PATTERN)) {
+            "Room URL may only contain lowercase letters, digits and hyphens"
+        }
+        require(rooms.get(candidate) == null) { "That room URL is already taken" }
+        return candidate
     }
 
     /**
@@ -63,4 +80,9 @@ class RoomService(private val rooms: RoomRepository) {
 
     /** All rooms, for the room-list view. */
     fun list(): List<Room> = rooms.all()
+
+    private companion object {
+        /** URL-safe room id: lowercase letters, digits and hyphens. */
+        val ID_PATTERN = Regex("[a-z0-9-]+")
+    }
 }

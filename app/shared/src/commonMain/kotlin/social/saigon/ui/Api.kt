@@ -107,12 +107,15 @@ class SaigonApi(
             before?.let { url.parameters.append("before", it.toString()) }
         }.body<List<FeedMessage>>().reversed()
 
-    /** Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. */
-    suspend fun createRoom(name: String, emoji: String, atmosphere: String): Unit =
+    /**
+     * Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. An optional
+     * [id] sets the room's URL; when blank the server assigns one.
+     */
+    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null): Unit =
         client.post("$baseUrl/rooms") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(RoomCreate(name, emoji, atmosphere))
+            setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }))
         }.let { }
 
     /** Founder-only: rename/edit a room (DESIGN §6). */
@@ -310,6 +313,16 @@ class SaigonApi(
         client.get("$baseUrl/founder/members") { HttpRequestAuth(this) }.decodeMember()
 
     /**
+     * Founder-only: the most recent room searches, newest first (DESIGN §6), so the founder can
+     * understand what kinds of rooms people are looking for. [limit] caps the result (1–500).
+     */
+    suspend fun roomSearches(limit: Int = 100): List<RoomSearchView> =
+        client.get("$baseUrl/founder/room-searches") {
+            HttpRequestAuth(this)
+            url.parameters.append("limit", limit.toString())
+        }.decodeMember()
+
+    /**
      * Founder-only: change a member's tier (comp to Supporter, downgrade to Sharer, or demote to
      * Seeker). Returns the refreshed member and a fresh token they can re-authenticate with.
      */
@@ -318,6 +331,42 @@ class SaigonApi(
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
             setBody(SetTierRequest(role))
+        }.decodeMember()
+
+    /**
+     * Founder-only: permanently remove a member's account (a hard removal, distinct from demoting
+     * to Seeker). The Founder's own account cannot be removed; the server rejects that with 4xx.
+     */
+    suspend fun removeMember(userId: String) {
+        val response = client.delete("$baseUrl/founder/members/$userId") { HttpRequestAuth(this) }
+        if (!response.status.isSuccess()) {
+            throw InvalidTokenException(
+                response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                    ?: "Could not remove that member.",
+            )
+        }
+    }
+
+    /**
+     * Founder-only: reset a member's sign-in password on their behalf (e.g. when they're locked
+     * out). Returns the refreshed member view; the password hash is never exposed.
+     */
+    suspend fun resetMemberPassword(userId: String, newPassword: String): MemberView =
+        client.post("$baseUrl/founder/members/$userId/password") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(ResetPasswordRequest(newPassword))
+        }.decodeMember()
+
+    /**
+     * Founder-only: change a member's display name on their behalf — it's how the Founder ties an
+     * account to the verified person IRL. Returns the refreshed member view.
+     */
+    suspend fun setMemberName(userId: String, displayName: String): MemberView =
+        client.patch("$baseUrl/founder/members/$userId/name") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(SetNameRequest(displayName))
         }.decodeMember()
 
     /**
@@ -383,7 +432,7 @@ class SaigonApi(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "http://localhost:9090"
+        const val DEFAULT_BASE_URL = "https://api.saigon.social"
         private const val JOIN_TYPE = "social.saigon.realtime.Incoming.Join"
         const val SAY_TYPE = "social.saigon.realtime.Incoming.Say"
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"

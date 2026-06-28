@@ -56,6 +56,29 @@ class Phase3Test {
         assertFailsWith<IllegalArgumentException> { svc.create("founder", RoomCreate(name = "ok", emoji = "  ")) }
     }
 
+    @Test
+    fun roomServiceHonorsCallerSuppliedUrlId() {
+        val svc = RoomService(InMemoryRoomRepository())
+
+        // A caller-supplied id becomes the room's URL.
+        val room = svc.create("founder", RoomCreate(name = "Coffee", emoji = "☕", id = " coffee "))
+        assertEquals("coffee", room.id)
+
+        // A blank id falls back to a server-assigned id.
+        val auto = svc.create("founder", RoomCreate(name = "Tea", emoji = "🍵", id = "   "))
+        assertTrue(auto.id.isNotBlank())
+        assertFalse(auto.id == "coffee")
+
+        // A duplicate id is rejected.
+        assertFailsWith<IllegalArgumentException> {
+            svc.create("founder", RoomCreate(name = "Coffee 2", emoji = "☕", id = "coffee"))
+        }
+        // A malformed id (uppercase/spaces/symbols) is rejected.
+        assertFailsWith<IllegalArgumentException> {
+            svc.create("founder", RoomCreate(name = "Bad", emoji = "x", id = "Not Valid!"))
+        }
+    }
+
     // --- Plain-text-only enforcement (DESIGN §2, §6) ---
 
     @Test
