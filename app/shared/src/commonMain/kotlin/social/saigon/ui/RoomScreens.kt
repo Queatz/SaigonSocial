@@ -762,7 +762,7 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isSelf) "You are \"${person.name}\" here" else person.name,
+                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                     )
@@ -930,7 +930,7 @@ private fun OccupantList(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        if (isSelf) "You are \"${person.name}\" here" else person.name,
+                                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -1153,7 +1153,7 @@ private fun OccupantScroller(
                                 ProfileIcon(name = person.name, size = 28.dp)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    if (isSelf) "You are \"${person.name}\" here" else person.name,
+                                    if (isSelf) "You are \"${person.name}\" in this room" else person.name,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f),
                                 )

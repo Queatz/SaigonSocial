@@ -104,9 +104,9 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
 }
 
 @Composable
-fun SaigonApp() {
+fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
     SaigonTheme {
-        val api = remember { SaigonApi() }
+        val api = remember { SaigonApi(baseUrl) }
         // Restore a previously-saved access token so a page reload doesn't sign the user out
         // (DESIGN §2): the token is persisted via TokenStore (localStorage on web).
         var token by remember { mutableStateOf(TokenStore.load()) }

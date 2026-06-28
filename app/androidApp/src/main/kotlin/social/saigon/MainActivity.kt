@@ -13,7 +13,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            App()
+            // The API base URL is chosen by the build type (BuildConfig.API_BASE_URL):
+            // debug -> local dev server, release -> production. See androidApp/build.gradle.kts.
+            App(baseUrl = BuildConfig.API_BASE_URL)
         }
     }
 }
