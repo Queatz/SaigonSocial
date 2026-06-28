@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import kotlin.math.pow
 import kotlin.random.Random
 
 /**
@@ -204,32 +205,51 @@ fun Modifier.softBorder(shape: Shape = SaigonShapes.medium): Modifier =
     this.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 
 /**
- * A very subtle, static film-grain overlay (DESIGN §1). Scatters a fixed set of tiny, faint
- * speckles across the surface so the flat background gradient gains a little texture and feels less
- * digitally smooth. The grain is deterministic (a fixed seed) so it stays steady across recompositions
- * rather than shimmering, and the dots are drawn at very low alpha so they only register as a soft tint.
+ * A very subtle, static film-grain overlay (DESIGN §1). Scatters tiny, faint speckles across the
+ * surface so the flat background gradient gains a little texture and feels less digitally smooth.
+ * The grain is deterministic (a fixed seed) so it stays steady across recompositions rather than
+ * shimmering, and the dots are drawn at very low alpha so they only register as a soft tint.
+ *
+ * The speckle count scales with the container's area so the grain density stays constant regardless
+ * of container size: a large container gets more dots overall than a small one, but both share the
+ * same dots-per-area. [density] is the number of speckles per 1,000,000 px² (≈ a 1000×1000 area).
+ *
+ * Each speckle's alpha is varied with a power curve so the grain isn't perfectly uniform: roughly
+ * 90% of the dots stay at the base [alpha] while a sparse ~10% are noticeably brighter, giving the
+ * texture a little organic sparkle. A uniform random value `u` is raised to [brightnessExponent]
+ * (which crushes most samples toward 0) and then scales an extra [brightnessBoost]× of alpha on
+ * top of the base, so only the rare high-`u` dots light up.
  */
 @Composable
 fun Modifier.subtleGrain(
     grainColor: Color = MaterialTheme.colorScheme.onBackground,
     density: Int = 1200,
-    alpha: Float = 0.04f,
+    alpha: Float = 0.02f,
+    brightnessExponent: Float = 12f,
+    brightnessBoost: Float = 4f,
 ): Modifier = this.drawWithCache {
     // Pin the speckle layout to the current size so the grain only recomputes on resize, not on
     // every redraw — keeping it static and cheap.
     val random = Random(42)
     val dotRadius = 1f + random.nextFloat() * 1.6f
-    val points = List(density) {
-        Offset(random.nextFloat() * size.width, random.nextFloat() * size.height)
+    // Derive the dot count from the area so density stays constant across container sizes.
+    val dotCount = (density * (size.width * size.height) / 1_000_000f).toInt()
+    val speckles = List(dotCount) {
+        val point = Offset(random.nextFloat() * size.width, random.nextFloat() * size.height)
+        // Raise a uniform sample to a high power so most dots stay near the base alpha and only a
+        // sparse minority get pushed toward the boosted alpha.
+        val brightness = random.nextFloat().pow(brightnessExponent)
+        val dotAlpha = alpha * (1f + brightnessBoost * brightness)
+        point to dotAlpha
     }
     onDrawWithContent {
         drawContent()
-        points.forEach { point ->
+        speckles.forEach { (point, dotAlpha) ->
             drawCircle(
                 color = grainColor,
                 radius = dotRadius,
                 center = point,
-                alpha = alpha,
+                alpha = dotAlpha,
             )
         }
     }

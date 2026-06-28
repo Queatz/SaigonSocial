@@ -88,7 +88,8 @@ internal fun ProfileIcon(name: String, size: Dp = 32.dp) {
  * same component renders both incoming and outgoing messages in a one-on-one chat.
  *
  * [authorName] drives both the avatar and the (optional) name label; [timestamp] adds a "time ago"
- * label when known; [onClick] makes the bubble tappable (e.g. to open a thread); and [footer] adds
+ * label when known; [onClick] makes the bubble tappable (e.g. to open a thread); [onAvatarClick]
+ * makes the author's [ProfileIcon] tappable (e.g. to open their detail sheet); and [footer] adds
  * extra content beneath the text inside the bubble (e.g. a "↳ N replies" indicator).
  */
 @Composable
@@ -100,6 +101,7 @@ internal fun ChatMessage(
     reversed: Boolean = false,
     showAuthor: Boolean = true,
     onClick: (() -> Unit)? = null,
+    onAvatarClick: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -108,7 +110,11 @@ internal fun ChatMessage(
         verticalAlignment = Alignment.Top,
     ) {
         if (!reversed) {
-            ProfileIcon(name = authorName, size = 32.dp)
+            Box(
+                modifier = if (onAvatarClick != null) {
+                    Modifier.clip(CircleShape).clickable(onClick = onAvatarClick)
+                } else Modifier,
+            ) { ProfileIcon(name = authorName, size = 32.dp) }
             Spacer(Modifier.width(8.dp))
         }
         val bubbleShape = RoundedCornerShape(12.dp)
@@ -142,7 +148,11 @@ internal fun ChatMessage(
         }
         if (reversed) {
             Spacer(Modifier.width(8.dp))
-            ProfileIcon(name = authorName, size = 32.dp)
+            Box(
+                modifier = if (onAvatarClick != null) {
+                    Modifier.clip(CircleShape).clickable(onClick = onAvatarClick)
+                } else Modifier,
+            ) { ProfileIcon(name = authorName, size = 32.dp) }
         }
     }
 }

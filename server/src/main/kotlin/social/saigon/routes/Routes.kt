@@ -14,6 +14,7 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
@@ -268,14 +269,22 @@ fun Application.registerRoutes(
                     ),
                 )
             }
-            // Sorted by most people active, descending (DESIGN §6).
+            // Sorted by most people active, descending (DESIGN §6). The latest message (if any) is
+            // loaded together with each room so the home list can show "time ago" + a preview line
+            // without a second round-trip.
             val rooms = matches.map { room ->
+                val last = repositories.messages.page(room.id, null, 1).firstOrNull()
                 RoomSummary(
                     id = room.id,
                     name = room.name,
                     emoji = room.emoji,
                     atmosphere = room.atmosphere,
                     occupants = chatHub.occupants(room.id),
+                    lastMessageText = last?.text,
+                    lastMessageSender = last?.let {
+                        it.authorName.ifBlank { authorName(it.authorId, room.id, repositories, identities) }
+                    },
+                    lastMessageAt = last?.createdAt,
                 )
             }.sortedByDescending { it.occupants }
             call.respond(rooms)
@@ -344,11 +353,41 @@ fun Application.registerRoutes(
                         role = user.role,
                         intents = user.intents,
                         languages = user.languages,
+                        introduction = user.interests,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
                     )
                 }
             call.respond(occupants)
+        }
+
+        // A single member's room-scoped occupant view by persistent user id (DESIGN §5, §6). Open
+        // to all roles, mirroring the occupants list. Used to open the detail sheet from a message's
+        // profile icon even when the author is no longer one of the live occupants — message authors
+        // outlive their connection, but their room identity and public profile facets do not.
+        get("/rooms/{roomId}/occupants/{userId}") {
+            val roomId = call.requireRoomId()
+            val userId = call.parameters["userId"].orEmpty()
+            require(userId.isNotBlank()) { "userId required" }
+            val user = repositories.users.get(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such member"))
+                return@get
+            }
+            val identity = identities.getOrCreate(userId, roomId)
+            call.respond(
+                OccupantView(
+                    userId = userId,
+                    name = identity.name,
+                    avatarUrl = identity.avatarUrl,
+                    role = user.role,
+                    intents = user.intents,
+                    languages = user.languages,
+                    introduction = user.interests,
+                    // "Available for chat" indicator for active Supporters (DESIGN §7).
+                    available = privateChatService.isAvailable(userId),
+                ),
+            )
         }
 
         authenticate(AUTH_JWT) {
@@ -717,6 +756,12 @@ data class RoomSummary(
     val emoji: String,
     val atmosphere: String,
     val occupants: Int,
+    /** Text of the room's most recent message, loaded with the list; null if the room has none. */
+    val lastMessageText: String? = null,
+    /** The most recent message's room-scoped sender name; null if the room has no messages. */
+    val lastMessageSender: String? = null,
+    /** Unix epoch millis of the most recent message; null if the room has no messages. */
+    val lastMessageAt: Long? = null,
 )
 
 /** A person currently in a room, with intents + languages shown next to them (DESIGN §6). */
@@ -729,6 +774,8 @@ data class OccupantView(
     val role: Role,
     val intents: List<Intent> = emptyList(),
     val languages: List<String>,
+    /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
+    val introduction: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )

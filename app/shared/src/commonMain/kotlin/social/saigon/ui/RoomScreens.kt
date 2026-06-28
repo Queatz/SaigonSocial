@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -45,8 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -73,6 +78,7 @@ internal fun RoomListScreen(
     canManageRooms: Boolean = false,
     directChatCount: Int = 0,
     onOpenDirectChats: () -> Unit = {},
+    signedIn: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     var rooms by remember { mutableStateOf<List<RoomSummary>?>(null) }
@@ -115,23 +121,28 @@ internal fun RoomListScreen(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    item {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            // App logo, centered above the search field and room list on the home screen.
-                            Image(
-                                painter = painterResource(Res.drawable.icon),
-                                contentDescription = "Saigon.Social",
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .padding(bottom = 24.dp)
-                                    .size(128.dp),
-                            )
-                            Text(
-                                text = "Welcome to Saigon's trusted chat room. Real people, real talk! What's on your mind?",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                textAlign = TextAlign.Center
-                            )
+                    // Hero section (logo + welcome text) is for first-time/visitor context only;
+                    // once the user is signed in we hide it so the "Search rooms" row sits right
+                    // below the top bar.
+                    if (!signedIn) {
+                        item {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                // App logo, centered above the search field and room list on the home screen.
+                                Image(
+                                    painter = painterResource(Res.drawable.icon),
+                                    contentDescription = "Saigon.Social",
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .padding(bottom = 24.dp)
+                                        .size(128.dp),
+                                )
+                                Text(
+                                    text = "Welcome to Saigon's trusted chat room. Real people, real talk! What's on your mind?",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                     // Entry to the open direct chats (DESIGN §7). Shown once at least one chat exists so the
@@ -211,13 +222,47 @@ internal fun RoomListScreen(
                                             fontSize = 13.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
+                                        // The latest message preview, "Sender: text", below the
+                                        // atmosphere line (loaded with the room list). Shown only when
+                                        // the room actually has a message.
+                                        room.lastMessageText?.let { text ->
+                                            val sender = room.lastMessageSender?.takeIf { it.isNotBlank() }
+                                            Text(
+                                                text = buildAnnotatedString {
+                                                    if (sender != null) {
+                                                        // Bold the sender's name to make it stand out
+                                                        // from the message text on the preview line.
+                                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                                            append("$sender: ")
+                                                        }
+                                                    }
+                                                    append(text)
+                                                },
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
                                     }
+                                    // Time since the last message, or the people count when the room
+                                    // has no message yet.
                                     Text(
-                                        peopleCount(room.occupants),
+                                        room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.secondary,
                                         fontWeight = FontWeight.Medium,
                                     )
+                                }
+                            }
+                            // For signed-out visitors, surface the primary call-to-action on every
+                            // room so it's obvious that opening a chat is the main thing to do.
+                            if (!signedIn) {
+                                Button(
+                                    onClick = { onOpen(room) },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                ) {
+                                    Text("Open chat")
                                 }
                             }
                             if (canManageRooms) {
@@ -366,9 +411,11 @@ internal fun RoomChatScreen(
     var loading by remember(room.id) { mutableStateOf(true) }
     var error by remember(room.id) { mutableStateOf<String?>(null) }
     var channel by remember(room.id) { mutableStateOf<RoomChannel?>(null) }
-    var identity by remember(room.id) { mutableStateOf<RoomIdentity?>(null) }
     var draft by remember(room.id) { mutableStateOf("") }
     var openThread by remember(room.id) { mutableStateOf<FeedMessage?>(null) }
+    // Tapping a message's profile icon opens that author's detail sheet, resolved from the live
+    // occupant list by persistent user id (DESIGN §5). Null means no sheet is shown.
+    var selectedOccupant by remember(room.id) { mutableStateOf<OccupantView?>(null) }
     // Live thread replies broadcast to the room, so an open thread sheet can append them in realtime
     // for every client — not just the member who sent it. Accumulated (rather than a single latest
     // value) so two replies arriving back-to-back are never dropped before the sheet sees them (DESIGN §9).
@@ -389,7 +436,6 @@ internal fun RoomChatScreen(
             // connections at once (the room socket plus the private-chat socket, or a reconnect
             // that raced the old socket's close), and we must never show one person twice (DESIGN §6).
             occupants.clear(); occupants.addAll(api.occupants(room.id).distinctBy { it.userId })
-            if (hasToken) identity = runCatching { api.identity(room.id) }.getOrNull()
         } catch (e: Throwable) {
             error = e.message ?: "Could not load this room"
         }
@@ -497,6 +543,18 @@ internal fun RoomChatScreen(
         return
     }
 
+    // Refresh the caller's room-scoped identity (a fresh anonymous name) and reload the occupant
+    // list so the user's own entry in "In the room" picks up the new name (DESIGN §5). Surfaced from
+    // the member-detail sheet on the user's own card, replacing the standalone identity bar.
+    val onRefreshIdentity: () -> Unit = {
+        scope.launch {
+            runCatching { api.refreshIdentity(room.id) }
+            runCatching { api.occupants(room.id) }.getOrNull()?.let {
+                occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
+            }
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val wide = maxWidth > 900.dp
         Box(modifier = Modifier.fillMaxSize()) {
@@ -522,23 +580,8 @@ internal fun RoomChatScreen(
                             occupants = occupants,
                             selfUserId = selfUserId,
                             canStartPrivate = canStartPrivate,
-                            onTapAvailable = onStartPrivate
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    if (hasToken) {
-                        IdentityBar(
-                            identity = identity,
-                            onRefresh = {
-                                scope.launch {
-                                    identity = runCatching { api.refreshIdentity(room.id) }.getOrNull()
-                                    // The occupant "In the room" list caches the old name, so reload it
-                                    // too — otherwise the user's own entry keeps showing the prior name.
-                                    runCatching { api.occupants(room.id) }.getOrNull()?.let {
-                                        occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
-                                    }
-                                }
-                            },
+                            onTapAvailable = onStartPrivate,
+                            onRefreshSelf = onRefreshIdentity,
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -572,7 +615,24 @@ internal fun RoomChatScreen(
                             // reply updates a message's "↳ N replies" indicator in place and must never
                             // change its position or sent time (DESIGN §9).
                             items(messages, key = { it.id }) { msg ->
-                                MessageRow(msg = msg, onOpenThread = { openThread = msg; onThreadChange(msg.id) })
+                                MessageRow(
+                                    msg = msg,
+                                    onOpenThread = { openThread = msg; onThreadChange(msg.id) },
+                                    onOpenProfile = {
+                                        // Prefer the live occupant (it carries the freshest
+                                        // "available" flag); otherwise fetch the author by id so the
+                                        // sheet still opens for people who've since left (DESIGN §5, §6).
+                                        val present = occupants.firstOrNull { it.userId == msg.authorId }
+                                        if (present != null) {
+                                            selectedOccupant = present
+                                        } else {
+                                            scope.launch {
+                                                runCatching { api.occupant(room.id, msg.authorId) }
+                                                    .getOrNull()?.let { selectedOccupant = it }
+                                            }
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
@@ -599,7 +659,8 @@ internal fun RoomChatScreen(
                         occupants = occupants,
                         selfUserId = selfUserId,
                         canStartPrivate = canStartPrivate,
-                        onTapAvailable = onStartPrivate
+                        onTapAvailable = onStartPrivate,
+                        onRefreshSelf = onRefreshIdentity,
                     )
                 }
             }
@@ -616,37 +677,127 @@ internal fun RoomChatScreen(
                     onClose = { openThread = null; onThreadChange(null) },
                 )
             }
+
+            selectedOccupant?.let { person ->
+                val isSelf = selfUserId != null && person.userId == selfUserId
+                OccupantDetailSheet(
+                    person = person,
+                    isSelf = isSelf,
+                    canStartPrivate = canStartPrivate,
+                    onStartChat = { selectedOccupant = null; onStartPrivate(person) },
+                    onRefresh = { selectedOccupant = null; onRefreshIdentity() },
+                    onClose = { selectedOccupant = null },
+                )
+            }
+        }
+    }
+}
+
+/** Order the people so the current user is always first, keeping everyone else in place (DESIGN §6). */
+private fun List<OccupantView>.selfFirst(selfUserId: String?): List<OccupantView> =
+    if (selfUserId == null) this else sortedByDescending { it.userId == selfUserId }
+
+/**
+ * A bottom sheet showing the full details of a single room member (DESIGN §5, §6, §7). Opened by
+ * tapping anyone in the "In the room" list — including yourself. The primary action adapts to who
+ * is shown: "🔄 Refresh" for your own identity (merging the former identity bar), "Start chat" for
+ * Supporters/Founders you can reach, and "Close" for everyone else.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OccupantDetailSheet(
+    person: OccupantView,
+    isSelf: Boolean,
+    canStartPrivate: Boolean,
+    onStartChat: () -> Unit,
+    onRefresh: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
+    ) {
+        PlainDragHandle()
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                ProfileIcon(name = person.name, size = 48.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (isSelf) "You are \"${person.name}\" here" else person.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                    )
+                    Text(
+                        person.role.label,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (person.available) {
+                    Text(
+                        "\uD83D\uDFE2 available",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (person.introduction.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("About", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(person.introduction.joinToString(" · "), fontSize = 14.sp)
+            }
+            if (person.intents.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Here for", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                person.intents.forEach { Text(it.badge, fontSize = 14.sp) }
+            }
+            if (person.languages.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Speaks", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    person.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
+                    fontSize = 14.sp,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
+            // Supporter/Founder, or simply close for everyone else.
+            val canChat = canStartPrivate &&
+                (person.role == Role.SUPPORTER || person.role == Role.FOUNDER)
+            when {
+                isSelf -> OutlinedButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("🔄 Refresh") }
+                canChat -> OutlinedButton(
+                    onClick = onStartChat,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Start chat") }
+                else -> OutlinedButton(
+                    onClick = onClose,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Close") }
+            }
         }
     }
 }
 
 @Composable
-private fun IdentityBar(identity: RoomIdentity?, onRefresh: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val name = identity?.name ?: "…"
-            ProfileIcon(name = name, size = 36.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "You are \"$name\" here",
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedButton(onClick = onRefresh) { Text("🔄 Refresh") }
-        }
-    }
-}
-
-@Composable
-private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit) {
+private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile: () -> Unit) {
     ChatMessage(
         authorName = msg.displayAuthor,
         text = msg.text,
         timestamp = msg.createdAt,
         onClick = onOpenThread,
+        onAvatarClick = onOpenProfile,
         footer = if (msg.replyCount > 0) {
             {
                 Spacer(Modifier.height(4.dp))
@@ -694,6 +845,7 @@ private fun OccupantList(
     selfUserId: String?,
     canStartPrivate: Boolean,
     onTapAvailable: (OccupantView) -> Unit,
+    onRefreshSelf: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -702,8 +854,11 @@ private fun OccupantList(
     ) {
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
         // card per persistent user id here regardless of how the list was assembled — a member can
-        // briefly hold several live connections during join/leave churn (DESIGN §6).
-        val people = occupants.distinctBy { it.userId }
+        // briefly hold several live connections during join/leave churn (DESIGN §6). The current
+        // user is always pinned to the top of the list (DESIGN §6).
+        val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
+        // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
+        var selected by remember { mutableStateOf<OccupantView?>(null) }
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -720,41 +875,70 @@ private fun OccupantList(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(people, key = { it.userId }) { person ->
                     // Identify yourself by your persistent user id, not your room-scoped name
-                    // (names can collide and change). Never dim the card — just don't let a tap on
-                    // yourself (or an unavailable person) open a chat.
-                    // Only members may open a chat, and never with yourself or an unavailable person.
+                    // (names can collide and change). Any tap opens the detail sheet.
                     val isSelf = selfUserId != null && person.userId == selfUserId
-                    val tappable = canStartPrivate && person.available && !isSelf
                     Card(
-                        onClick = { if (tappable) onTapAvailable(person) },
+                        onClick = { selected = person },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             ProfileIcon(name = person.name, size = 32.dp)
                             Spacer(Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(person.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                    if (person.available) {
+                                    Text(
+                                        if (isSelf) "You are \"${person.name}\" here" else person.name,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (!isSelf && person.available) {
                                         Text(
-                                            "\uD83D\uDFE2 available",
+                                            "\uD83D\uDFE2",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
                                     }
                                 }
-                                person.intents.forEach { Text(it.badge, fontSize = 12.sp) }
-                                Text(
-                                    person.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                OccupantEmojiLine(person)
+                            }
+                            if (isSelf) {
+                                IconButton(onClick = onRefreshSelf, modifier = Modifier.size(28.dp)) {
+                                    Text("\uD83D\uDD04", fontSize = 16.sp)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        selected?.let { person ->
+            val isSelf = selfUserId != null && person.userId == selfUserId
+            OccupantDetailSheet(
+                person = person,
+                isSelf = isSelf,
+                canStartPrivate = canStartPrivate,
+                onStartChat = { selected = null; onTapAvailable(person) },
+                onRefresh = { selected = null; onRefreshSelf() },
+                onClose = { selected = null },
+            )
+        }
+    }
+}
+
+/**
+ * Compact one-line summary of an occupant's languages and intents, shown as emoji only to save
+ * space in the member-list cards (DESIGN §6). Shared by both the desktop [OccupantList] and the
+ * mobile [OccupantScroller] so the two stay in sync.
+ */
+@Composable
+private fun OccupantEmojiLine(person: OccupantView) {
+    val emojis = person.languages.map { UiConstants.languageEmoji(it) } +
+        person.intents.map { it.emoji }
+    if (emojis.isNotEmpty()) {
+        Text(emojis.joinToString(" "), fontSize = 12.sp)
     }
 }
 
@@ -867,11 +1051,14 @@ private fun OccupantScroller(
     selfUserId: String?,
     canStartPrivate: Boolean,
     onTapAvailable: (OccupantView) -> Unit,
+    onRefreshSelf: () -> Unit,
 ) {
     // Final dedup at the render boundary: guarantee one card per persistent user id regardless of
     // how the list was assembled — a member can briefly hold several live connections during
-    // join/leave churn (DESIGN §6).
-    val people = occupants.distinctBy { it.userId }
+    // join/leave churn (DESIGN §6). The current user is always pinned first (DESIGN §6).
+    val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
+    // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
+    var selected by remember { mutableStateOf<OccupantView?>(null) }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -894,19 +1081,26 @@ private fun OccupantScroller(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 people.forEach { person ->
-                    // Only members may open a chat, and never with yourself or an unavailable person.
+                    // Identify yourself by your persistent user id; any tap opens the detail sheet.
                     val isSelf = selfUserId != null && person.userId == selfUserId
-                    val tappable = canStartPrivate && person.available && !isSelf
                     Card(
-                        onClick = { if (tappable) onTapAvailable(person) },
+                        onClick = { selected = person },
                         modifier = Modifier.width(180.dp).fillMaxHeight(),
                     ) {
                         Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 ProfileIcon(name = person.name, size = 28.dp)
                                 Spacer(Modifier.width(6.dp))
-                                Text(person.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                if (person.available) {
+                                Text(
+                                    if (isSelf) "You are \"${person.name}\" here" else person.name,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (isSelf) {
+                                    IconButton(onClick = onRefreshSelf, modifier = Modifier.size(24.dp)) {
+                                        Text("\uD83D\uDD04", fontSize = 14.sp)
+                                    }
+                                } else if (person.available) {
                                     Text(
                                         "\uD83D\uDFE2",
                                         fontSize = 11.sp,
@@ -914,17 +1108,23 @@ private fun OccupantScroller(
                                     )
                                 }
                             }
-                            Text(
-                                person.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            person.intents.forEach { Text(it.badge, fontSize = 12.sp) }
+                            OccupantEmojiLine(person)
                         }
                     }
                 }
             }
         }
+    }
+    selected?.let { person ->
+        val isSelf = selfUserId != null && person.userId == selfUserId
+        OccupantDetailSheet(
+            person = person,
+            isSelf = isSelf,
+            canStartPrivate = canStartPrivate,
+            onStartChat = { selected = null; onTapAvailable(person) },
+            onRefresh = { selected = null; onRefreshSelf() },
+            onClose = { selected = null },
+        )
     }
 }
 

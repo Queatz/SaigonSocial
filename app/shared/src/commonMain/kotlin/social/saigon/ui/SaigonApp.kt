@@ -297,6 +297,7 @@ fun SaigonApp() {
                                 canManageRooms = canManageRooms,
                                 directChatCount = directChats.size,
                                 onOpenDirectChats = { screen = Screen.DirectChats },
+                                signedIn = token != null,
                             )
                         }
 

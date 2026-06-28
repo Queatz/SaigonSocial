@@ -28,7 +28,10 @@ enum class Intent(val badge: String) {
     HEAVY_TOPICS("🫂 Heavy Topics"),
     OPEN_TO_COLLAB("🎯 Open to Collab"),
     SURPRISE_ME("🎲 Surprise Me"),
-    CASUAL("☕ Casual"),
+    CASUAL("☕ Casual");
+
+    /** Just the leading emoji of the [badge], for compact emoji-only display (DESIGN §6). */
+    val emoji: String get() = badge.substringBefore(' ')
 }
 
 /** A public room as shown in the room list (`GET /rooms`, DESIGN §6). */
@@ -39,6 +42,12 @@ data class RoomSummary(
     val emoji: String,
     val atmosphere: String,
     val occupants: Int,
+    /** Text of the room's most recent message, loaded with the list; null if the room has none. */
+    val lastMessageText: String? = null,
+    /** The most recent message's room-scoped sender name; null if the room has no messages. */
+    val lastMessageSender: String? = null,
+    /** Unix epoch millis of the most recent message; null if the room has no messages. */
+    val lastMessageAt: Long? = null,
 )
 
 /** A person currently in a room with intent + languages (`GET /rooms/{id}/occupants`, DESIGN §6). */
@@ -51,6 +60,8 @@ data class OccupantView(
     val role: Role,
     val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
+    /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
+    val introduction: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )
@@ -272,4 +283,7 @@ object UiConstants {
 
     /** The full name + flag for [code], falling back to the bare code if unknown. */
     fun languageLabel(code: String): String = languageNames[code] ?: code
+
+    /** Just the flag emoji for [code] (the leading token of its label), falling back to the code. */
+    fun languageEmoji(code: String): String = languageNames[code]?.substringBefore(' ') ?: code
 }

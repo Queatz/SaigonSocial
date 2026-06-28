@@ -131,6 +131,16 @@ class SaigonApi(
     suspend fun occupants(roomId: String): List<OccupantView> =
         client.get("$baseUrl/rooms/$roomId/occupants") { HttpRequestAuth(this) }.body()
 
+    /**
+     * A single member's room-scoped occupant view by persistent user id (DESIGN §5, §6). Used to
+     * open the detail sheet from a message's profile icon even when the author is no longer one of
+     * the live occupants. Returns null when the member can't be found (e.g. 404).
+     */
+    suspend fun occupant(roomId: String, userId: String): OccupantView? {
+        val response = client.get("$baseUrl/rooms/$roomId/occupants/$userId") { HttpRequestAuth(this) }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
     /** A message's ephemeral thread (DESIGN §9). */
     suspend fun thread(roomId: String, messageId: String): List<ThreadReply> =
         client.get("$baseUrl/rooms/$roomId/messages/$messageId/thread") { HttpRequestAuth(this) }.body()
