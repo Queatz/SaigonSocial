@@ -67,6 +67,8 @@ interface InviteCodeRepository {
     fun get(code: String): InviteCode?
     fun update(invite: InviteCode): InviteCode
     fun all(): List<InviteCode>
+    /** Only the codes that have not yet been redeemed (active/unused), newest first. */
+    fun active(): List<InviteCode>
     fun delete(code: String)
 }
 
@@ -212,6 +214,8 @@ class InMemoryInviteCodeRepository : InviteCodeRepository {
     override fun get(code: String): InviteCode? = store[key(code)]
     override fun update(invite: InviteCode): InviteCode = invite.also { store[key(it.code)] = it }
     override fun all(): List<InviteCode> = store.values.toList()
+    override fun active(): List<InviteCode> =
+        store.values.filterNot { it.redeemed }.sortedByDescending { it.createdAt }
     override fun delete(code: String) { store.remove(key(code)) }
 }
 

@@ -375,5 +375,11 @@ internal class ArangoInviteCodeRepository(db: ArangoDatabase) : InviteCodeReposi
     override fun get(code: String): InviteCode? = store.get(key(code))
     override fun update(invite: InviteCode): InviteCode = store.put(invite)
     override fun all(): List<InviteCode> = store.all()
+    override fun active(): List<InviteCode> =
+        // The database does the filtering and ordering: only unredeemed codes, newest first.
+        store.query(
+            "FOR d IN ${ArangoSchemaExtra.INVITES} FILTER d.redeemedBy == null " +
+                "SORT d.createdAt DESC RETURN d",
+        )
     override fun delete(code: String) = store.delete(key(code))
 }

@@ -565,12 +565,12 @@ fun Application.registerRoutes(
                 call.respond(InviteCodeResponse(code, req.role))
             }
 
-            // Founder-only: list every invite code that has been minted, newest first, flagging
-            // which have already been redeemed so the UI can offer to delete the unused ones.
+            // Founder-only: list the active (unredeemed) invite codes, newest first, so the UI can
+            // offer to re-share or delete them. The filtering and ordering are done by the data
+            // store itself (not in application code) so already-used codes are never loaded.
             get("/founder/invites") {
                 requireFounder(call.caller())
-                val invites = repositories.invites.all()
-                    .sortedByDescending { it.createdAt }
+                val invites = repositories.invites.active()
                     .map { InviteCodeView(it.code, it.role, it.createdAt, it.redeemed) }
                 call.respond(invites)
             }

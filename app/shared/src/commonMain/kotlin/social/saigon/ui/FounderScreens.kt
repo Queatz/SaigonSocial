@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -110,8 +111,8 @@ internal fun FounderInviteSection(api: SaigonApi) {
         },
     ) { Text("Generate invite code") }
 
-    // Active (unused) invite codes are listed so the founder can re-share or delete them; used
-    // codes are kept as an audit trail and shown as already redeemed.
+    // Only active (unused) invite codes are listed so the founder can re-share or delete them;
+    // the server returns just the unredeemed codes, so used codes are never loaded here.
     if (invites.isNotEmpty()) {
         Text("Active invite codes", fontWeight = FontWeight.Bold, fontSize = 13.sp)
         invites.forEach { invite ->
@@ -531,7 +532,13 @@ private fun MemberRow(
                             enabled = !current,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text(option.label, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            Text(
+                                option.label,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -542,19 +549,38 @@ private fun MemberRow(
                         onClick = onChangeName,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Change name", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                        Text(
+                            "Change name",
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     OutlinedButton(
                         onClick = onResetPassword,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Reset password", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                        Text(
+                            "Reset password",
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     OutlinedButton(
                         onClick = onRemove,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Remove", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false)
+                        Text(
+                            "Remove",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }

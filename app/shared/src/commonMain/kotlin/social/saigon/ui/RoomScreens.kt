@@ -198,13 +198,24 @@ internal fun RoomListScreen(
                             }
                         }
                     }
+                    val searching = search.trim().isNotEmpty()
                     item {
                         Text(
-                            text = "Popular",
+                            text = if (searching) "Results" else "Popular",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(top = 16.dp)
                         )
+                    }
+                    if (rooms!!.isEmpty() && searching) {
+                        item {
+                            Text(
+                                text = "No rooms found.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                     }
                     items(rooms!!) { room ->
                         Column {
@@ -584,7 +595,7 @@ internal fun RoomChatScreen(
                     if (wide) {
                         Modifier.padding(vertical = 16.dp)
                     } else {
-                        Modifier.padding(16.dp)
+                        Modifier.padding(horizontal = 16.dp)
                     }
                 )) {
                     if (!wide) {
@@ -728,7 +739,15 @@ private fun OccupantDetailSheet(
     onRefresh: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
+    // Animate the sheet shut before clearing the selection, so tapping "Close" slides the sheet
+    // down the same way swiping it away or tapping the scrim does — rather than vanishing instantly.
+    val animateClose: () -> Unit = {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) onClose()
+        }
+    }
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = sheetState,
@@ -803,7 +822,7 @@ private fun OccupantDetailSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Start chat") }
                 else -> OutlinedButton(
-                    onClick = onClose,
+                    onClick = animateClose,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Close") }
             }
