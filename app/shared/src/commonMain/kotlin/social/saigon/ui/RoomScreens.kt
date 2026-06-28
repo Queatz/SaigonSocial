@@ -1,6 +1,9 @@
 package social.saigon.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,6 +49,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -1104,6 +1112,38 @@ private fun RoomNavPanel(
     }
 }
 
+/**
+ * Single-line summary for the collapsed mobile occupant accordion (DESIGN §6): "1 person in the
+ * room", "2 people in the room", or a friendly note when the room is empty.
+ */
+internal fun occupantSummary(count: Int): String = when (count) {
+    0 -> "Nobody's here right now"
+    1 -> "1 person in the room"
+    else -> "$count people in the room"
+}
+
+/**
+ * The expand/collapse cue for the mobile occupant accordion. Drawn with [Canvas] rather than a font
+ * glyph so it renders identically on every platform, and animates a 180° rotation between pointing
+ * down (collapsed) and up (expanded).
+ */
+@Composable
+private fun Chevron(expanded: Boolean) {
+    val rotation by animateFloatAsState(if (expanded) 180f else 0f)
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier = Modifier.size(20.dp).rotate(rotation)) {
+        // A downward "v": from the top-left, down to the bottom-centre, back up to the top-right.
+        val left = size.width * 0.28f
+        val right = size.width * 0.72f
+        val top = size.height * 0.40f
+        val bottom = size.height * 0.62f
+        val mid = size.width / 2f
+        val stroke = Stroke(width = size.width * 0.10f, cap = StrokeCap.Round)
+        drawLine(color, Offset(left, top), Offset(mid, bottom), strokeWidth = stroke.width, cap = stroke.cap)
+        drawLine(color, Offset(right, top), Offset(mid, bottom), strokeWidth = stroke.width, cap = stroke.cap)
+    }
+}
+
 /** Portrait/mobile: the room's people in a horizontal scroller pinned to the top (DESIGN §6). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1120,61 +1160,85 @@ private fun OccupantScroller(
     val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
     // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
     var selected by remember { mutableStateOf<OccupantView?>(null) }
+    // On mobile the people list is an accordion that starts collapsed so it takes up only a single
+    // line ("N people in the room") until the user expands it; the Share action and the scroller of
+    // member cards are only revealed once expanded (DESIGN §6).
+    var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            ShareButton()
-        }
-        Spacer(Modifier.height(8.dp))
-        if (people.isEmpty()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable { expanded = !expanded }
+                .padding(8.dp),
+        ) {
             Text(
-                "Nobody's here right now.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = if (expanded) "In the room" else occupantSummary(people.size),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
             )
-        } else {
-            // A horizontally-scrolling Row (rather than a LazyRow) measured at IntrinsicSize.Max so
-            // the row is exactly as tall as its tallest card's natural content. Each card then fills
-            // that height (fillMaxHeight), making every card the same height without forcing the row
-            // to grow beyond the normal content height (DESIGN §6).
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Max),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                people.forEach { person ->
-                    // Identify yourself by your persistent user id; any tap opens the detail sheet.
-                    val isSelf = selfUserId != null && person.userId == selfUserId
-                    Card(
-                        onClick = { selected = person },
-                        modifier = Modifier.width(180.dp).fillMaxHeight(),
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                ProfileIcon(name = person.name, size = 28.dp)
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    if (isSelf) "You are \"${person.name}\" in this room" else person.name,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (isSelf) {
-                                    IconButton(
-                                        onClick = onRefreshSelf,
-                                        modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text("\uD83D\uDD04", fontSize = 14.sp)
-                                        }
-                                    }
-                                } else if (person.available) {
+            // A chevron drawn directly (rather than a font glyph) so it always renders, rotating
+            // from pointing-down (collapsed) to pointing-up (expanded) — the usual accordion cue.
+            Chevron(expanded = expanded)
+            // Share is only revealed once the accordion is open.
+            if (expanded) {
+                Spacer(modifier = Modifier.width(16.dp))
+                ShareButton()
+            }
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            if (people.isEmpty()) {
+                Text(
+                    "Nobody's here right now.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                // A horizontally-scrolling Row (rather than a LazyRow) measured at IntrinsicSize.Max
+                // so the row is exactly as tall as its tallest card's natural content. Each card then
+                // fills that height (fillMaxHeight), making every card the same height without forcing
+                // the row to grow beyond the normal content height (DESIGN §6).
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    people.forEach { person ->
+                        // Identify yourself by your persistent user id; any tap opens the detail sheet.
+                        val isSelf = selfUserId != null && person.userId == selfUserId
+                        Card(
+                            onClick = { selected = person },
+                            modifier = Modifier.width(180.dp).fillMaxHeight(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ProfileIcon(name = person.name, size = 28.dp)
+                                    Spacer(Modifier.width(6.dp))
                                     Text(
-                                        "\uD83D\uDFE2",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f),
                                     )
+                                    if (isSelf) {
+                                        IconButton(
+                                            onClick = onRefreshSelf,
+                                            modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text("\uD83D\uDD04", fontSize = 14.sp)
+                                            }
+                                        }
+                                    } else if (person.available) {
+                                        Text(
+                                            "\uD83D\uDFE2",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
                                 }
+                                OccupantEmojiLine(person)
                             }
-                            OccupantEmojiLine(person)
                         }
                     }
                 }

@@ -49,7 +49,7 @@ internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
     ) {
         Text("Members only", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Text(
-            "Founder-managed, invite only. Browsing stays open without an account.",
+            "Supporter managed, high trust, invite only.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
