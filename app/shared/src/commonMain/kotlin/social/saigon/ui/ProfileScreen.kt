@@ -32,7 +32,12 @@ import kotlinx.coroutines.launch
 // --- Profile setup / edit (DESIGN §4) ---
 
 @Composable
-internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) -> Unit) {
+internal fun ProfileScreen(
+    api: SaigonApi,
+    token: String?,
+    onToken: (String?) -> Unit,
+    onViewMembers: () -> Unit = {},
+) {
     if (token == null) {
         SignInPanel(api = api, onToken = onToken)
         return
@@ -75,7 +80,7 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     value = introduction,
                     onValueChange = { introduction = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Introduction (a few words about you)") },
+                    label = { Text("Your interests (comma-separated)") },
                     shape = InputFieldShape,
                 )
 
@@ -120,7 +125,7 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     value = availability,
                     onValueChange = { availability = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Times during the day/week you're often available") },
+                    label = { Text("Times during the week you're often available offline") },
                     shape = InputFieldShape,
                 )
 
@@ -161,7 +166,9 @@ internal fun ProfileScreen(api: SaigonApi, token: String?, onToken: (String?) ->
                     Accordion(title = "Create an invite code") {
                         FounderInviteSection(api)
                     }
-                    FounderMembersSection(api)
+                    OutlinedButton(onClick = onViewMembers, modifier = Modifier.fillMaxWidth()) {
+                        Text("View members")
+                    }
                 }
 
                 var confirmSignOut by remember { mutableStateOf(false) }

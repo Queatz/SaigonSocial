@@ -61,7 +61,9 @@ data class OccupantView(
     val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
-    val introduction: List<String> = emptyList(),
+    val interests: List<String> = emptyList(),
+    /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
+    val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )

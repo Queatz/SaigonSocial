@@ -746,11 +746,11 @@ private fun OccupantDetailSheet(
                     )
                 }
             }
-            if (person.introduction.isNotEmpty()) {
+            if (person.interests.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text("About", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Interests", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
-                Text(person.introduction.joinToString(" · "), fontSize = 14.sp)
+                Text(person.interests.joinToString(" · "), fontSize = 14.sp)
             }
             if (person.intents.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -766,6 +766,12 @@ private fun OccupantDetailSheet(
                     person.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
                     fontSize = 14.sp,
                 )
+            }
+            if (person.offlineSchedule.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Offline availability", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(person.offlineSchedule.joinToString(" · "), fontSize = 14.sp)
             }
             Spacer(Modifier.height(20.dp))
             // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
@@ -1215,7 +1221,7 @@ private fun ThreadSheet(
             )
             Spacer(Modifier.height(10.dp))
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp).fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
+                modifier = Modifier.fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (loadingReplies) {

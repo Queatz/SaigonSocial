@@ -204,6 +204,8 @@ fun topBarBrush(): Brush {
 fun Modifier.softBorder(shape: Shape = SaigonShapes.medium): Modifier =
     this.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 
+private val random = Random(42)
+
 /**
  * A very subtle, static film-grain overlay (DESIGN §1). Scatters tiny, faint speckles across the
  * surface so the flat background gradient gains a little texture and feels less digitally smooth.
@@ -230,8 +232,7 @@ fun Modifier.subtleGrain(
 ): Modifier = this.drawWithCache {
     // Pin the speckle layout to the current size so the grain only recomputes on resize, not on
     // every redraw — keeping it static and cheap.
-    val random = Random(42)
-    val dotRadius = 1f + random.nextFloat() * 1.6f
+    val dotRadius = .4f + random.nextFloat() * 1.6f
     // Derive the dot count from the area so density stays constant across container sizes.
     val dotCount = (density * (size.width * size.height) / 1_000_000f).toInt()
     val speckles = List(dotCount) {

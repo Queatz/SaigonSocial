@@ -2,7 +2,6 @@ package social.saigon.routes
 
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.principal
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -24,7 +23,6 @@ import kotlinx.serialization.json.Json
 import social.saigon.ai.IdentityGenerator
 import social.saigon.auth.AUTH_JWT
 import social.saigon.auth.CallerPrincipal
-import social.saigon.auth.Claims
 import social.saigon.auth.PasswordService
 import social.saigon.auth.TokenService
 import social.saigon.auth.toCaller
@@ -36,7 +34,6 @@ import social.saigon.domain.ForbiddenException
 import social.saigon.domain.Intent
 import social.saigon.domain.LaunchConfig
 import social.saigon.domain.Message
-import social.saigon.domain.ModerationStatus
 import social.saigon.domain.PlainText
 import social.saigon.domain.Pricing
 import social.saigon.domain.ProfileUpdate
@@ -44,7 +41,6 @@ import social.saigon.domain.ReportTarget
 import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
 import social.saigon.domain.RoomUpdate
-import social.saigon.domain.Tier
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
 import social.saigon.economics.EconomicsService
@@ -353,11 +349,12 @@ fun Application.registerRoutes(
                         role = user.role,
                         intents = user.intents,
                         languages = user.languages,
-                        introduction = user.interests,
+                        interests = user.interests,
+                        offlineSchedule = user.offlineSchedule,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
-                    )
-                }
+                        )
+                    }
             call.respond(occupants)
         }
 
@@ -383,7 +380,8 @@ fun Application.registerRoutes(
                     role = user.role,
                     intents = user.intents,
                     languages = user.languages,
-                    introduction = user.interests,
+                    interests = user.interests,
+                    offlineSchedule = user.offlineSchedule,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
                 ),
@@ -775,7 +773,9 @@ data class OccupantView(
     val intents: List<Intent> = emptyList(),
     val languages: List<String>,
     /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
-    val introduction: List<String> = emptyList(),
+    val interests: List<String> = emptyList(),
+    /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
+    val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )

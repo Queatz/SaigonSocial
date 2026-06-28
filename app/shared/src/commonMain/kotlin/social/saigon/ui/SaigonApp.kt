@@ -77,6 +77,7 @@ private sealed interface Screen {
     data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
     data object DirectChats : Screen
     data object Profile : Screen
+    data object Members : Screen
 }
 
 /**
@@ -97,6 +98,7 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     is Screen.Private -> "/chat/${screen.roomId}/${screen.targetUserId}"
     Screen.DirectChats -> null
     Screen.Profile -> null
+    Screen.Members -> null
 }
 
 @Composable
@@ -265,13 +267,16 @@ fun SaigonApp() {
                         is Screen.Private -> "Chat with ${s.peerName}"
                         Screen.DirectChats -> "Direct chats"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
+                        Screen.Members -> "Members"
                     },
                     canGoBack = screen != Screen.RoomList,
                     signedIn = token != null,
                     // Don't show the "Sign in" button while the sign-in page is already open.
                     showSignIn = screen != Screen.Profile,
                     profileName = profile?.displayName,
-                    onBack = { screen = Screen.RoomList },
+                    // The members directory is opened from the profile, so Back returns there;
+                    // every other screen falls back to the room list.
+                    onBack = { screen = if (screen == Screen.Members) Screen.Profile else Screen.RoomList },
                     onProfile = { screen = Screen.Profile },
                 )
 
@@ -360,7 +365,16 @@ fun SaigonApp() {
                             )
                         }
 
-                        Screen.Profile -> MaxWidthContainer { ProfileScreen(api, token, onToken = { token = it }) }
+                        Screen.Profile -> MaxWidthContainer {
+                            ProfileScreen(
+                                api,
+                                token,
+                                onToken = { token = it },
+                                onViewMembers = { screen = Screen.Members },
+                            )
+                        }
+
+                        Screen.Members -> MaxWidthContainer { FounderMembersScreen(api) }
                     }
                 }
             }

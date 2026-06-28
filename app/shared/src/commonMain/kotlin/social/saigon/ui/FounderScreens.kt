@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -141,6 +143,21 @@ private fun InviteRow(invite: InviteCodeView, onDelete: () -> Unit) {
 }
 
 /**
+ * Stand-alone page hosting the founder-only member directory ([FounderMembersSection]), reached via
+ * the "View members" button on the profile screen. Scrolls independently with the same page padding
+ * the profile editor uses so the directory reads as its own screen.
+ */
+@Composable
+internal fun FounderMembersScreen(api: SaigonApi) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FounderMembersSection(api)
+    }
+}
+
+/**
  * Founder-only member directory (MEMBER_MANAGEMENT.md A & B). Lists everyone the founder has
  * onboarded with their tier, intent, languages, and introduction, plus per-member controls to comp
  * them up to Supporter or downgrade to Sharer (each behind a confirmation dialog). The Founder's
@@ -174,7 +191,6 @@ internal fun FounderMembersSection(api: SaigonApi) {
         if (MembersReloadBus.reloadSignal > 0) reload()
     }
 
-    HorizontalDivider()
     Text("Members", fontWeight = FontWeight.Bold)
     Text(
         "Everyone you've onboarded, with their tier and profile details. Promote or downgrade a " +
