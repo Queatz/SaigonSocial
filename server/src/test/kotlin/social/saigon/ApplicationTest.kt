@@ -16,7 +16,7 @@ class ApplicationTest {
         val response = client.get("/")
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(
-            "Welcome to Saigon's trusted chat room. We're all real people, and we're into real conversation! What do you want to talk about?",
+            "Saigon's trusted chat room.",
             response.bodyAsText(),
         )
     }

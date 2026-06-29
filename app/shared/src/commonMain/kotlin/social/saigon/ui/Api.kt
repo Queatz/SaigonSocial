@@ -111,12 +111,21 @@ class SaigonApi(
      * Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. An optional
      * [id] sets the room's URL; when blank the server assigns one.
      */
-    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null): Unit =
-        client.post("$baseUrl/rooms") {
+    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null) {
+        val response = client.post("$baseUrl/rooms") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
             setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }))
-        }.let { }
+        }
+        // Surface the server's validation message (e.g. a taken room URL) so the UI can show it
+        // rather than silently dropping the failure.
+        if (!response.status.isSuccess()) {
+            throw RoomCreateException(
+                response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                    ?: "Could not create the room. Please try again.",
+            )
+        }
+    }
 
     /** Founder-only: rename/edit a room (DESIGN §6). */
     suspend fun updateRoom(roomId: String, name: String, emoji: String, atmosphere: String): Unit =
@@ -466,6 +475,12 @@ class InvalidTokenException(message: String) : Exception(message)
  * trusted. Callers should clear any persisted token and route the user back to the sign-in screen.
  */
 class SessionExpiredException(message: String) : Exception(message)
+
+/**
+ * Room creation was rejected by the server (e.g. the chosen room URL is already taken or malformed).
+ * Carries the server's user-facing message so the create-room dialog can show it.
+ */
+class RoomCreateException(message: String) : Exception(message)
 
 /** A live thread-reply broadcast over the WebSocket (`Outgoing.Replied`), carrying the parent's
  * fresh reply-count so the feed can update its "↳ N replies" indicator, plus the full reply payload

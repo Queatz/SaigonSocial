@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -93,6 +94,10 @@ internal fun RoomListScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var showCreate by remember { mutableStateOf(false) }
+    // Error shown inside the create dialog when the server rejects the room (e.g. the chosen URL is
+    // already taken); the dialog stays open so the user can fix the URL and retry.
+    var createError by remember { mutableStateOf<String?>(null) }
+    var creatingRoom by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RoomSummary?>(null) }
     var deleting by remember { mutableStateOf<RoomSummary?>(null) }
 
@@ -145,7 +150,9 @@ internal fun RoomListScreen(
                                         .size(128.dp),
                                 )
                                 Text(
-                                    text = "Welcome to Saigon's trusted chat room. Real people, real talk! What's on your mind?",
+                                    text = "Welcome to Saigon's trusted chat room. " +
+                                            "We're real people here for real talk! " +
+                                            "What's on your mind?",
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     textAlign = TextAlign.Center
@@ -263,6 +270,16 @@ internal fun RoomListScreen(
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                         }
+                                        // For signed-out visitors, surface the primary call-to-action on every
+                                        // room so it's obvious that opening a chat is the main thing to do.
+                                        if (!signedIn) {
+                                            Button(
+                                                onClick = { onOpen(room) },
+                                                modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                            ) {
+                                                Text("Open chat")
+                                            }
+                                        }
                                     }
                                     // Time since the last message, or the people count when the room
                                     // has no message yet.
@@ -272,16 +289,6 @@ internal fun RoomListScreen(
                                         color = MaterialTheme.colorScheme.secondary,
                                         fontWeight = FontWeight.Medium,
                                     )
-                                }
-                            }
-                            // For signed-out visitors, surface the primary call-to-action on every
-                            // room so it's obvious that opening a chat is the main thing to do.
-                            if (!signedIn) {
-                                Button(
-                                    onClick = { onOpen(room) },
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                ) {
-                                    Text("Open chat")
                                 }
                             }
                             if (canManageRooms) {
@@ -301,12 +308,28 @@ internal fun RoomListScreen(
         RoomFormDialog(
             title = "New room",
             initial = null,
-            onDismiss = { showCreate = false },
-            onConfirm = { name, emoji, atmosphere, id ->
+            error = createError,
+            submitting = creatingRoom,
+            onDismiss = {
                 showCreate = false
+                createError = null
+            },
+            onConfirm = { name, emoji, atmosphere, id ->
+                createError = null
+                creatingRoom = true
                 scope.launch {
-                    runCatching { api.createRoom(name, emoji, atmosphere, id) }
-                    reload()
+                    val result = runCatching { api.createRoom(name, emoji, atmosphere, id) }
+                    creatingRoom = false
+                    result.fold(
+                        onSuccess = {
+                            showCreate = false
+                            createError = null
+                            reload()
+                        },
+                        onFailure = {
+                            createError = it.message ?: "Could not create the room. Please try again."
+                        },
+                    )
                 }
             },
         )
@@ -353,6 +376,10 @@ private fun RoomFormDialog(
     initial: RoomSummary?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, emoji: String, atmosphere: String, id: String) -> Unit,
+    /** A server-side error (e.g. the chosen room URL is already taken) shown inside the dialog. */
+    error: String? = null,
+    /** True while a create request is in flight, so the Save button is disabled to avoid retries. */
+    submitting: Boolean = false,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var emoji by remember { mutableStateOf(initial?.emoji ?: "") }
@@ -392,13 +419,21 @@ private fun RoomFormDialog(
                         label = { Text("URL (optional)") },
                         singleLine = true,
                         shape = InputFieldShape,
+                        isError = error != null,
+                    )
+                }
+                error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
                     )
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && emoji.isNotBlank(),
+                enabled = name.isNotBlank() && emoji.isNotBlank() && !submitting,
                 onClick = { onConfirm(name.trim(), emoji.trim(), atmosphere.trim(), id.trim()) },
             ) { Text("Save") }
         },
@@ -609,6 +644,7 @@ internal fun RoomChatScreen(
                     if (!wide) {
                         OccupantScroller(
                             occupants = occupants,
+                            loading = loading,
                             selfUserId = selfUserId,
                             canStartPrivate = canStartPrivate,
                             onTapAvailable = onStartPrivate,
@@ -682,6 +718,7 @@ internal fun RoomChatScreen(
                         placeholder = if (hasToken) "Message" else "Sign in to reply",
                         enabled = hasToken,
                         onDisabledClick = onSignIn,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
                 }
 
@@ -811,7 +848,7 @@ private fun OccupantDetailSheet(
             }
             if (person.offlineSchedule.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text("Offline availability", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Availability", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(person.offlineSchedule.joinToString(" · "), fontSize = 14.sp)
             }
@@ -825,10 +862,10 @@ private fun OccupantDetailSheet(
                     onClick = onRefresh,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("🔄 Refresh") }
-                canChat -> OutlinedButton(
+                canChat -> Button(
                     onClick = onStartChat,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Start chat") }
+                ) { Text("Chat with ${person.name}") }
                 else -> OutlinedButton(
                     onClick = animateClose,
                     modifier = Modifier.fillMaxWidth(),
@@ -854,6 +891,7 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile
                     "\uD83D\uDCAC ${msg.replyCount} $replyWord",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         } else null,
@@ -1149,6 +1187,7 @@ private fun Chevron(expanded: Boolean) {
 @Composable
 private fun OccupantScroller(
     occupants: List<OccupantView>,
+    loading: Boolean,
     selfUserId: String?,
     canStartPrivate: Boolean,
     onTapAvailable: (OccupantView) -> Unit,
@@ -1164,20 +1203,31 @@ private fun OccupantScroller(
     // line ("N people in the room") until the user expands it; the Share action and the scroller of
     // member cards are only revealed once expanded (DESIGN §6).
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // The whole accordion — its summary/header row and the expanded scroller of member cards — lives
+    // inside a single rounded soft border so it reads as one consistent component (DESIGN §6).
+    val shape = if (expanded) MaterialTheme.shapes.large else MaterialTheme.shapes.medium
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .softBorder(shape)
+            .clickable { expanded = !expanded }
+            .padding(vertical = 8.dp, horizontal = 16.dp),
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .clickable { expanded = !expanded }
-                .padding(8.dp),
+                .fillMaxWidth(),
         ) {
-            Text(
-                text = if (expanded) "In the room" else occupantSummary(people.size),
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
+            if (loading && people.isEmpty()) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            } else {
+                Text(
+                    text = if (expanded) "In the room" else occupantSummary(people.size),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             // A chevron drawn directly (rather than a font glyph) so it always renders, rotating
             // from pointing-down (collapsed) to pointing-up (expanded) — the usual accordion cue.
             Chevron(expanded = expanded)
@@ -1189,9 +1239,9 @@ private fun OccupantScroller(
         }
         if (expanded) {
             Spacer(Modifier.height(8.dp))
-            if (people.isEmpty()) {
+            if (!loading && people.isEmpty()) {
                 Text(
-                    "Nobody's here right now.",
+                    text = "Nobody's here right now.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1201,7 +1251,10 @@ private fun OccupantScroller(
                 // fills that height (fillMaxHeight), making every card the same height without forcing
                 // the row to grow beyond the normal content height (DESIGN §6).
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Max),
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .height(IntrinsicSize.Max)
+                        .padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     people.forEach { person ->
@@ -1219,6 +1272,7 @@ private fun OccupantScroller(
                                         if (isSelf) "You are \"${person.name}\" in this room" else person.name,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f),
+                                        fontSize = 14.sp
                                     )
                                     if (isSelf) {
                                         IconButton(

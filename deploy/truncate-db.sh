@@ -111,13 +111,16 @@ fi
 # ---- Truncate on the remote host over SSH -------------------------------------------------------
 echo ">> Truncating database on ${SSH_HOST}"
 # shellcheck disable=SC2029  # we intentionally expand the env vars locally into the remote command.
+# NOTE: we must NOT pass ARANGO_JS as an `ssh host VAR=value ...` prefix: ssh concatenates all
+# arguments into ONE remote command string, so the multi-line JavaScript (with newlines and
+# parentheses) would break the remote shell. Instead we transmit the whole remote script — JS
+# included — over stdin via the quoted heredoc, and define ARANGO_JS literally inside it.
 ssh ${SSH_OPTS} "${SSH_HOST}" \
   ARANGO_CONTAINER="${ARANGO_CONTAINER}" \
   ARANGO_PORT="${ARANGO_PORT}" \
   ARANGO_USER="${ARANGO_USER}" \
   ARANGO_PASSWORD="${ARANGO_PASSWORD}" \
   ARANGO_DB="${ARANGO_DB}" \
-  ARANGO_JS="${ARANGO_JS}" \
   'bash -se' <<'REMOTE'
 set -euo pipefail
 
@@ -125,6 +128,17 @@ if [ -z "$(docker ps -q -f "name=^${ARANGO_CONTAINER}$")" ]; then
   echo "ERROR: ArangoDB container '${ARANGO_CONTAINER}' is not running." >&2
   exit 1
 fi
+
+# The truncation script, embedded literally so it travels over stdin (not the command line).
+read -r -d '' ARANGO_JS <<'JS' || true
+db._collections()
+  .map(function (c) { return c.name(); })
+  .filter(function (n) { return n.charAt(0) !== '_'; })
+  .forEach(function (n) {
+    db._collection(n).truncate();
+    print('   - truncated ' + n);
+  });
+JS
 
 echo "   - truncating collections in database '${ARANGO_DB}'"
 docker exec -i "${ARANGO_CONTAINER}" arangosh \

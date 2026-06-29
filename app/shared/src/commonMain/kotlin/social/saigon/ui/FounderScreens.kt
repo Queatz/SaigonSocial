@@ -284,8 +284,7 @@ internal fun FounderMembersSection(api: SaigonApi) {
 
     Text("Members", fontWeight = FontWeight.Bold)
     Text(
-        "Everyone you've onboarded, with their tier and profile details. Promote or downgrade a " +
-            "member; a tier change issues them a fresh token to sign back in with.",
+        text = "Everyone you've onboarded.",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

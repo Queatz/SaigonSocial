@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -137,7 +138,7 @@ internal fun ProfileScreen(
                     value = availability,
                     onValueChange = { availability = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Times during the week you're often available offline") },
+                    label = { Text("Times during the week when you're often available") },
                     shape = InputFieldShape,
                 )
 
@@ -323,6 +324,7 @@ private fun PasswordSection(api: SaigonApi, profile: ProfileResponse, onUpdated:
             onValueChange = { current = it; error = null },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Current password") },
+            visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
             shape = InputFieldShape,
             enabled = !busy,
@@ -333,6 +335,7 @@ private fun PasswordSection(api: SaigonApi, profile: ProfileResponse, onUpdated:
         onValueChange = { next = it; error = null },
         modifier = Modifier.fillMaxWidth(),
         label = { Text("New password (min 8 characters)") },
+        visualTransformation = PasswordVisualTransformation(),
         singleLine = true,
         shape = InputFieldShape,
         enabled = !busy,
@@ -342,6 +345,7 @@ private fun PasswordSection(api: SaigonApi, profile: ProfileResponse, onUpdated:
         onValueChange = { confirm = it; error = null },
         modifier = Modifier.fillMaxWidth(),
         label = { Text("Confirm new password") },
+        visualTransformation = PasswordVisualTransformation(),
         singleLine = true,
         shape = InputFieldShape,
         enabled = !busy,

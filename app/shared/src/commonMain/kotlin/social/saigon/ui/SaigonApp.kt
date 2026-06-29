@@ -27,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -274,7 +275,11 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                     },
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
-                    subtitle = (screen as? Screen.Room)?.room?.atmosphere?.takeIf { it.isNotBlank() },
+                    subtitle = when (val s = screen) {
+                        is Screen.RoomList -> "Saigon's trusted chat room."
+                        is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
+                        else -> null
+                    },
                     canGoBack = screen != Screen.RoomList,
                     signedIn = token != null,
                     // Don't show the "Sign in" button while the sign-in page is already open.
@@ -594,6 +599,7 @@ internal fun MessageComposer(
     onSend: () -> Unit,
     sendLabel: String,
     placeholder: String,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onDisabledClick: (() -> Unit)? = null,
 ) {
@@ -603,14 +609,14 @@ internal fun MessageComposer(
     if (!enabled) {
         Button(
             onClick = { onDisabledClick?.invoke() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(modifier),
             shape = InputFieldShape,
         ) { Text(placeholder) }
         return
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).then(modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -637,7 +643,26 @@ internal fun MessageComposer(
         IconButton(
             onClick = onSend,
             modifier = Modifier.padding(top = 8.dp),
-        ) { Text("➡️") }
+        ) {
+            // A paper-plane "send" icon. Drawn with Canvas (rather than an emoji glyph or a
+            // Material icon dependency) so it renders regardless of which fonts the Skiko
+            // renderer has loaded, matching the back/home icons in the top bar.
+            val sendColor = MaterialTheme.colorScheme.primary
+            Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
+                val w = size.width
+                val h = size.height
+                val path = Path().apply {
+                    // Outer triangle of the paper plane: from the back tip up to the nose,
+                    // down to the bottom tail, and the notch back to the centre.
+                    moveTo(w * 0.08f, h * 0.12f)
+                    lineTo(w * 0.95f, h * 0.5f)
+                    lineTo(w * 0.08f, h * 0.88f)
+                    lineTo(w * 0.30f, h * 0.5f)
+                    close()
+                }
+                drawPath(path, sendColor)
+            }
+        }
     }
 }
 
