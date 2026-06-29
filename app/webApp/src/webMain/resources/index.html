@@ -34,11 +34,25 @@
         function apply() {
             var el = document.getElementById('app');
             if (!el) return;
-            el.style.height = vv.height + 'px';
+            // Don't pin #app below the layout viewport's own height: that height stays full even
+            // while a keyboard overlays the page (Firefox Android), so it's the value we must grow
+            // back to once the keyboard closes. `visualViewport.height` can briefly report a stale,
+            // larger-than-layout value mid-animation, so clamp to the layout viewport.
+            var full = document.documentElement.clientHeight;
+            var h = Math.min(vv.height, full);
+            el.style.height = h + 'px';
             el.style.transform = 'translateY(' + vv.offsetTop + 'px)';
         }
         vv.addEventListener('resize', apply);
         vv.addEventListener('scroll', apply);
+        // The on-screen keyboard *closing* doesn't reliably emit a visualViewport 'resize' on every
+        // browser (notably Firefox Android), which left #app stuck at the reduced keyboard height
+        // and never grew it back to full screen. Re-measure on the layout-viewport 'resize' and
+        // after focus leaves an input — deferred so the keyboard has finished retracting and the
+        // visual viewport has settled — so the surface always returns to full height.
+        window.addEventListener('resize', apply);
+        window.addEventListener('orientationchange', function () { setTimeout(apply, 100); });
+        document.addEventListener('focusout', function () { setTimeout(apply, 100); });
         apply();
     })();
 </script>
