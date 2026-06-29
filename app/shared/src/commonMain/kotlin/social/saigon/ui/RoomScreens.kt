@@ -1336,7 +1336,7 @@ private fun OccupantList(
                         modifier = Modifier.fillMaxWidth().softShadow(),
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             ProfileIcon(name = person.name, size = 48.dp)
@@ -1675,7 +1675,8 @@ private fun OccupantScroller(
                             onClick = { selected = person },
                             modifier = Modifier.width(180.dp).fillMaxHeight().softShadow(),
                         ) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // Not vertically centered because the containers are equal height.
+                            Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                                 ProfileIcon(name = person.name, size = 48.dp)
                                 Spacer(Modifier.width(6.dp))
                                 Column(modifier = Modifier.weight(1f)) {
