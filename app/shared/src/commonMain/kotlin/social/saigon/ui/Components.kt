@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -100,6 +102,11 @@ internal fun ChatMessage(
     timestamp: Long? = null,
     reversed: Boolean = false,
     showAuthor: Boolean = true,
+    /**
+     * When true the message has been recalled (DESIGN §6, §9): its content is hidden and a
+     * "message recalled" notice with an icon is shown in its place instead of [text].
+     */
+    recalled: Boolean = false,
     onClick: (() -> Unit)? = null,
     onAvatarClick: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
@@ -142,7 +149,20 @@ internal fun ChatMessage(
                         }
                     }
                 }
-                Text(text, fontSize = 15.sp)
+                if (recalled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RecalledIcon()
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "This message was recalled",
+                            fontSize = 14.sp,
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Text(text, fontSize = 15.sp)
+                }
                 footer?.invoke()
             }
         }
@@ -154,6 +174,37 @@ internal fun ChatMessage(
                 } else Modifier,
             ) { ProfileIcon(name = authorName, size = 32.dp) }
         }
+    }
+}
+
+/**
+ * A small "recalled" badge — a circle with a diagonal slash (the universal "prohibited"/withdrawn
+ * mark) — shown next to the "This message was recalled" notice (DESIGN §6, §9). Drawn with Canvas
+ * rather than a glyph so the Skiko renderer never falls back to a "tofu" box, matching how the rest
+ * of the app draws its small icons.
+ */
+@Composable
+internal fun RecalledIcon(size: Dp = 14.dp) {
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier = Modifier.width(size).height(size)) {
+        val stroke = Stroke(width = this.size.minDimension * 0.12f)
+        val inset = stroke.width
+        drawCircle(
+            color = color,
+            radius = this.size.minDimension / 2f - inset,
+            style = stroke,
+        )
+        // The slash, drawn from the lower-left to the upper-right inside the circle.
+        val r = this.size.minDimension / 2f - inset
+        val cx = this.size.width / 2f
+        val cy = this.size.height / 2f
+        val d = r * 0.70710677f // r / sqrt(2): the chord that fits within the circle.
+        drawLine(
+            color = color,
+            start = androidx.compose.ui.geometry.Offset(cx - d, cy + d),
+            end = androidx.compose.ui.geometry.Offset(cx + d, cy - d),
+            strokeWidth = stroke.width,
+        )
     }
 }
 

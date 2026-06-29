@@ -56,6 +56,8 @@ data class OccupantView(
     /** The occupant's persistent user id, used to start a private chat (DESIGN §7). */
     val userId: String = "",
     val name: String,
+    /** The member's persistent display name, shown on the detail sheet alongside their role. */
+    val displayName: String = "",
     val avatarUrl: String = "",
     val role: Role,
     val intents: List<Intent> = emptyList(),
@@ -81,6 +83,8 @@ data class FeedMessage(
     val text: String,
     val createdAt: Long,
     val replyCount: Int = 0,
+    /** True once the author (or the Founder) recalled the message; its [text] is then blank. */
+    val recalled: Boolean = false,
 ) {
     /** The name to render in the feed — the room-scoped name when present, else the raw id. */
     val displayAuthor: String get() = authorName.ifBlank { authorId }
@@ -109,6 +113,31 @@ data class RoomIdentity(
     val roomId: String,
     val name: String,
     val avatarUrl: String = "",
+    /**
+     * Per-room overrides of the main profile facets (DESIGN §4, §5). A null field inherits the
+     * value from the persistent profile; a non-null field (incl. empty list) is a room-scoped
+     * customization Supporters/Founders set via the "Edit your room profile" dialog.
+     */
+    val interests: List<String>? = null,
+    val intents: List<Intent>? = null,
+    val languages: List<String>? = null,
+    val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
+)
+
+/**
+ * Edit the caller's room-scoped identity (`PUT /rooms/{id}/identity`, DESIGN §4, §5). A non-blank
+ * [name] renames the room identity; the remaining fields wholesale-replace the per-room overrides,
+ * where a null clears the override so that facet inherits from the main profile again.
+ */
+@Serializable
+data class RoomIdentityUpdate(
+    val name: String? = null,
+    val interests: List<String>? = null,
+    val intents: List<Intent>? = null,
+    val languages: List<String>? = null,
+    val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
 )
 
 /** The caller's editable persistent profile (`GET /profile/me`, DESIGN §4). */

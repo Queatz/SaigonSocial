@@ -158,6 +158,16 @@ class SaigonApi(
         client.get("$baseUrl/rooms/$roomId/messages/$messageId/thread") { HttpRequestAuth(this) }.body()
 
     /**
+     * Recall a public-chat message (DESIGN §6, §9): the server clears its text and flags it as
+     * recalled, so it renders a "message recalled" notice instead of its content. Only the author or
+     * the Founder may do this; the server rejects anyone else with a friendly [InvalidTokenException].
+     * The message's thread is left untouched. Returns the refreshed, recalled message.
+     */
+    suspend fun recallMessage(roomId: String, messageId: String): FeedMessage =
+        client.post("$baseUrl/rooms/$roomId/messages/$messageId/recall") { HttpRequestAuth(this) }
+            .decodeMember()
+
+    /**
      * The caller's persistent profile (DESIGN §4). Requires a member token. A 401 or 400 from this
      * route means the saved token is no longer usable (expired/revoked, or no longer maps to a
      * member), so we clear it locally and surface a [SessionExpiredException] telling the UI to sign
@@ -272,6 +282,18 @@ class SaigonApi(
     /** "Refresh my name & avatar in this room" (DESIGN §5). Requires a member token. */
     suspend fun refreshIdentity(roomId: String): RoomIdentity =
         client.post("$baseUrl/rooms/$roomId/identity/refresh") { HttpRequestAuth(this) }.decodeMember()
+
+    /**
+     * Save the caller's room-scoped profile edits (DESIGN §4, §5): a custom name plus per-room
+     * overrides of interests/intents/languages/availability/providing. A Supporter/Founder perk;
+     * the server rejects other roles. Requires a member token.
+     */
+    suspend fun updateRoomIdentity(roomId: String, update: RoomIdentityUpdate): RoomIdentity =
+        client.put("$baseUrl/rooms/$roomId/identity") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(update)
+        }.decodeMember()
 
     /** Obtain a read-only Seeker token bound to a device id (DESIGN §3). */
     suspend fun seekerToken(deviceId: String): String =
@@ -447,6 +469,7 @@ class SaigonApi(
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"
         const val SAID_TYPE = "social.saigon.realtime.Outgoing.Said"
         const val REPLIED_TYPE = "social.saigon.realtime.Outgoing.Replied"
+        const val RECALLED_TYPE = "social.saigon.realtime.Outgoing.Recalled"
         const val JOINED_TYPE = "social.saigon.realtime.Outgoing.Joined"
         const val LEFT_TYPE = "social.saigon.realtime.Outgoing.Left"
 
@@ -496,6 +519,13 @@ data class ReplyEvent(
     val replyToId: String? = null,
 )
 
+/** A live message-recall broadcast over the WebSocket (`Outgoing.Recalled`): the named message has
+ * been recalled, so its content should be replaced by the "message recalled" notice on every client
+ * in the room right away (DESIGN §6, §9). The message's thread is unaffected. */
+data class RecallEvent(
+    val messageId: String,
+)
+
 /** A live, room-scoped chat message broadcast over the WebSocket (`Outgoing.Said`). */
 data class ChatMessage(
     val messageId: String,
@@ -524,6 +554,11 @@ class RoomChannel internal constructor(
     suspend fun start(
         onMessage: (ChatMessage) -> Unit,
         onReply: (ReplyEvent) -> Unit = {},
+        /**
+         * Fires when a message in this room is recalled (DESIGN §6, §9), so every client can flip the
+         * message to its "message recalled" notice live, the same way [onReply] updates the feed.
+         */
+        onRecalled: (RecallEvent) -> Unit = {},
         onPrivateChatStarted: (peerId: String, peerName: String?, roomId: String?) -> Unit = { _, _, _ -> },
         /**
          * Fires whenever someone joins or leaves the room (DESIGN §6), so the UI can refresh its
@@ -553,6 +588,11 @@ class RoomChannel internal constructor(
                         text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
                         replyToId = obj["replyToId"]?.jsonPrimitive?.contentOrNull,
+                    ),
+                )
+                SaigonApi.RECALLED_TYPE -> onRecalled(
+                    RecallEvent(
+                        messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     ),
                 )
                 SaigonApi.PRIVATE_STARTED_TYPE -> onPrivateChatStarted(

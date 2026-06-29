@@ -329,6 +329,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                             hasToken = token != null,
                             canStartPrivate = canStartPrivate,
                             selfUserId = profile?.id,
+                            isFounder = canManageRooms,
                             onStartPrivate = { occupant ->
                                 openDirectChat(DirectChat(s.room.id, occupant.userId, occupant.name))
                             },
@@ -416,7 +417,6 @@ private fun TopBar(
     // A subtle gradient sheen across the bar (DESIGN §1) instead of one flat fill.
     Box(modifier = Modifier
         .fillMaxWidth()
-        .padding(bottom = 16.dp)
         .shadow(16.dp, RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
         .clip(RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
         .background(topBarBrush())

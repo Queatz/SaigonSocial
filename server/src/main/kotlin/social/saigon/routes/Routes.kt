@@ -40,6 +40,7 @@ import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.ReportTarget
 import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
+import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.domain.RoomUpdate
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
@@ -304,6 +305,7 @@ fun Application.registerRoutes(
                     text = message.text,
                     createdAt = message.createdAt,
                     replyCount = threadService.replyCount(message.id),
+                    recalled = message.recalled,
                 )
             }
             // Ordering and paging are done by the database (see MessageRepository.page): the feed is
@@ -345,13 +347,15 @@ fun Application.registerRoutes(
                     OccupantView(
                         userId = userId,
                         name = identity.name,
+                        displayName = user.displayName,
                         avatarUrl = identity.avatarUrl,
                         role = user.role,
-                        intents = user.intents,
-                        languages = user.languages,
-                        interests = user.interests,
-                        offlineSchedule = user.offlineSchedule,
-                        providingServices = user.providingServices,
+                        // Per-room overrides win over the main profile; a null override inherits (DESIGN §5).
+                        intents = identity.intents ?: user.intents,
+                        languages = identity.languages ?: user.languages,
+                        interests = identity.interests ?: user.interests,
+                        offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
+                        providingServices = identity.providingServices ?: user.providingServices,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
                         )
@@ -377,13 +381,15 @@ fun Application.registerRoutes(
                 OccupantView(
                     userId = userId,
                     name = identity.name,
+                    displayName = user.displayName,
                     avatarUrl = identity.avatarUrl,
                     role = user.role,
-                    intents = user.intents,
-                    languages = user.languages,
-                    interests = user.interests,
-                    offlineSchedule = user.offlineSchedule,
-                    providingServices = user.providingServices,
+                    // Per-room overrides win over the main profile; a null override inherits (DESIGN §5).
+                    intents = identity.intents ?: user.intents,
+                    languages = identity.languages ?: user.languages,
+                    interests = identity.interests ?: user.interests,
+                    offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
+                    providingServices = identity.providingServices ?: user.providingServices,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
                 ),
@@ -466,6 +472,20 @@ fun Application.registerRoutes(
                 call.respond(identities.refresh(userId, roomId))
             }
 
+            // Edit the caller's room-scoped profile (DESIGN §4, §5): a custom name plus per-room
+            // overrides of interests/intents/languages/availability/providing. A Supporter perk
+            // ("Tailor your profile per room"); Sharers stick to the shared profile + name refresh.
+            put("/rooms/{roomId}/identity") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                require(caller.role == Role.SUPPORTER || caller.role.isAdmin) {
+                    "Only Supporters and the Founder can tailor their profile per room"
+                }
+                val roomId = call.requireRoomId()
+                val update = call.receive<RoomIdentityUpdate>()
+                call.respond(identities.updateProfile(userId, roomId, update))
+            }
+
             // Founder-only room creation/management (DESIGN §6).
             post("/rooms") {
                 val caller = call.caller()
@@ -494,6 +514,42 @@ fun Application.registerRoutes(
                 val roomId = call.requireRoomId()
                 roomService.delete(roomId)
                 call.respond(mapOf("deleted" to roomId))
+            }
+
+            // Recall a public-chat message (DESIGN §6, §9): clear its text and flag it as recalled so
+            // the UI shows a "message recalled" notice in place of the content. Only the message's
+            // own author or the Founder may do this. Recalling never touches the message's thread —
+            // existing replies stay intact and readable.
+            post("/rooms/{roomId}/messages/{messageId}/recall") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val roomId = call.requireRoomId()
+                val messageId = call.parameters["messageId"].orEmpty()
+                require(messageId.isNotBlank()) { "messageId required" }
+                val message = repositories.messages.get(messageId)
+                    ?: throw IllegalArgumentException("That message does not exist.")
+                require(message.roomId == roomId) { "That message is not in this room." }
+                if (message.authorId != userId && !caller.role.isAdmin) {
+                    throw ForbiddenException("Only the author or the Founder can recall a message.")
+                }
+                val recalled = repositories.messages.update(message.copy(text = "", recalled = true))
+                // Tell everyone in the room right away so the message flips to its "recalled" notice
+                // live, the same way new replies propagate (DESIGN §6, §9).
+                chatHub.broadcast(roomId, Outgoing.Recalled(roomId = roomId, messageId = recalled.id))
+                call.respond(
+                    FeedMessage(
+                        id = recalled.id,
+                        roomId = recalled.roomId,
+                        authorId = recalled.authorId,
+                        authorName = recalled.authorName.ifBlank {
+                            authorName(recalled.authorId, roomId, repositories, identities)
+                        },
+                        text = recalled.text,
+                        createdAt = recalled.createdAt,
+                        replyCount = threadService.replyCount(recalled.id),
+                        recalled = recalled.recalled,
+                    ),
+                )
             }
 
             // Founder-only onboarding: no open sign-up, no OTP (DESIGN §2, §3).
@@ -820,6 +876,8 @@ data class OccupantView(
     /** The occupant's persistent user id, used to start a private chat (DESIGN §7). */
     val userId: String = "",
     val name: String,
+    /** The member's persistent display name, shown on the detail sheet alongside their role. */
+    val displayName: String = "",
     val avatarUrl: String,
     val role: Role,
     val intents: List<Intent> = emptyList(),
@@ -867,6 +925,8 @@ data class FeedMessage(
     val text: String,
     val createdAt: Long,
     val replyCount: Int,
+    /** True once the author (or the Founder) recalled the message; its [text] is then blank. */
+    val recalled: Boolean = false,
 )
 
 /** A thread reply enriched with the author's room-scoped display name (DESIGN §5, §9). */

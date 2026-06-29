@@ -129,6 +129,31 @@ data class RoomIdentity(
     val roomId: String,
     val name: String,
     val avatarUrl: String,
+    /**
+     * Per-room overrides of the user's persistent profile facets (DESIGN §4, §5). A null field
+     * means "inherit the value from the main [User] profile"; a non-null field (including an empty
+     * list) is a deliberate room-scoped customization. Supporters/Founders tailor these per room.
+     */
+    val interests: List<String>? = null,
+    val intents: List<Intent>? = null,
+    val languages: List<String>? = null,
+    val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
+)
+
+/**
+ * A change-set for a caller's room-scoped identity (DESIGN §5). [name], when non-blank, renames the
+ * room identity. The remaining fields are per-room overrides: a null field clears the override so
+ * the value inherits from the main [User] profile, while a non-null field pins a room-scoped value.
+ */
+@Serializable
+data class RoomIdentityUpdate(
+    val name: String? = null,
+    val interests: List<String>? = null,
+    val intents: List<Intent>? = null,
+    val languages: List<String>? = null,
+    val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
 )
 
 /**
@@ -147,6 +172,12 @@ data class Message(
      * rows, in which case the name is resolved live.
      */
     val authorName: String = "",
+    /**
+     * Whether the message has been recalled by its author (or the Founder). A recalled message has
+     * its [text] cleared and is shown in the UI with a "message recalled" notice rather than its
+     * original content. Recalling a message does not affect its thread (DESIGN §9).
+     */
+    val recalled: Boolean = false,
 )
 
 /**

@@ -94,6 +94,12 @@ interface MessageRepository {
     fun byRoom(roomId: String): List<Message>
 
     /**
+     * Persist an edit to an existing message, replacing the stored row in place (e.g. when a
+     * message is recalled). Returns the saved message.
+     */
+    fun update(message: Message): Message
+
+    /**
      * A single page of a room's messages for infinite scroll (20 per page). Returns up to [limit]
      * messages ordered newest→oldest; when [before] is non-null only messages strictly older than
      * that createdAt are considered (so the client can page upward through history). The ordering
@@ -244,6 +250,14 @@ class InMemoryMessageRepository : MessageRepository {
         byId[it.id] = it
     }
     override fun get(id: String): Message? = byId[id]
+    override fun update(message: Message): Message = message.also { updated ->
+        byId[updated.id] = updated
+        // Replace the row in its room's list in place so reads (page/byRoom) see the edit.
+        store[updated.roomId]?.let { list ->
+            val idx = list.indexOfFirst { it.id == updated.id }
+            if (idx >= 0) list[idx] = updated
+        }
+    }
     override fun byRoom(roomId: String): List<Message> = store[roomId]?.toList() ?: emptyList()
     override fun page(roomId: String, before: Long?, limit: Int): List<Message> {
         // Mirror the store-level contract: newest→oldest, newest [limit] strictly older than [before].

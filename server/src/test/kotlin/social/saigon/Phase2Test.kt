@@ -79,6 +79,61 @@ class Phase2Test {
     }
 
     @Test
+    fun updateProfileStoresPerRoomOverridesAndCustomName() = runBlocking {
+        val svc = service()
+        svc.getOrCreate("u1", "room1")
+        val updated = svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(
+                name = "Coffee Nomad",
+                interests = listOf("espresso", "vinyl"),
+                intents = listOf(social.saigon.domain.Intent.CASUAL),
+                languages = listOf("vi", "en"),
+                offlineSchedule = listOf("weekends"),
+                providingServices = listOf("barista tips"),
+            ),
+        )
+        assertEquals("Coffee Nomad", updated.name)
+        assertEquals(listOf("espresso", "vinyl"), updated.interests)
+        assertEquals(listOf(social.saigon.domain.Intent.CASUAL), updated.intents)
+        assertEquals(listOf("vi", "en"), updated.languages)
+        assertEquals(listOf("weekends"), updated.offlineSchedule)
+        assertEquals(listOf("barista tips"), updated.providingServices)
+        // Persisted for subsequent fetches.
+        assertEquals(updated, svc.getOrCreate("u1", "room1"))
+    }
+
+    @Test
+    fun refreshKeepsPerRoomOverridesButRegeneratesName() = runBlocking {
+        val svc = service()
+        svc.getOrCreate("u1", "room1")
+        svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(interests = listOf("chess")),
+        )
+        val refreshed = svc.refresh("u1", "room1")
+        // The custom override survives a name/avatar refresh (DESIGN §5).
+        assertEquals(listOf("chess"), refreshed.interests)
+        assertTrue(refreshed.name.isNotBlank())
+    }
+
+    @Test
+    fun updateProfileNullClearsOverrideToInherit() = runBlocking {
+        val svc = service()
+        svc.getOrCreate("u1", "room1")
+        svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(interests = listOf("chess")),
+        )
+        // A null field clears the override so the facet inherits from the main profile again.
+        val cleared = svc.updateProfile("u1", "room1", social.saigon.domain.RoomIdentityUpdate())
+        assertEquals(null, cleared.interests)
+    }
+
+    @Test
     fun identityEndpointsGenerateAndRefresh() = testApplication {
         val authConfig = AuthConfig(secret = "test-secret")
         val token = TokenService(authConfig).issueMemberToken("u1", Role.SHARER)

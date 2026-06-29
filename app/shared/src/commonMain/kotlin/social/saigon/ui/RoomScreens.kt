@@ -450,6 +450,8 @@ internal fun RoomChatScreen(
     hasToken: Boolean,
     canStartPrivate: Boolean,
     selfUserId: String?,
+    /** Whether the signed-in user is the Founder, who may recall anyone's message (DESIGN §6). */
+    isFounder: Boolean = false,
     onStartPrivate: (OccupantView) -> Unit,
     onRecordDirectChat: (DirectChat) -> Unit,
     onIncomingChat: (DirectChat) -> Unit,
@@ -577,6 +579,17 @@ internal fun RoomChatScreen(
                         // every client in the room, not just the member who sent it (DESIGN §9).
                         if (liveReplies.none { it.replyId == ev.replyId }) liveReplies.add(ev)
                     },
+                    onRecalled = { ev ->
+                        // A message was recalled (DESIGN §6, §9): flip it to the "recalled" notice
+                        // live for every client. Done in place so the message keeps its position and
+                        // sent time, and its thread (replyCount) is left untouched.
+                        val idx = messages.indexOfFirst { it.id == ev.messageId }
+                        if (idx >= 0) messages[idx] = messages[idx].copy(text = "", recalled = true)
+                        // Keep an open thread sheet's parent in sync so it shows the notice too.
+                        if (openThread?.id == ev.messageId) {
+                            openThread = openThread?.copy(text = "", recalled = true)
+                        }
+                    },
                     onPrivateChatStarted = { peerId, peerName, originRoomId ->
                         // Someone tapped us to open a private chat (DESIGN §7): notify and record it.
                         // Prefer the room the chat was started from; fall back to the current room.
@@ -609,6 +622,15 @@ internal fun RoomChatScreen(
         return
     }
 
+    // Reload the live "In the room" list, e.g. after the caller refreshes their name or saves a
+    // room-scoped profile edit, so their own card reflects the change (DESIGN §5, §6).
+    val reloadOccupants: () -> Unit = {
+        scope.launch {
+            runCatching { api.occupants(room.id) }.getOrNull()?.let {
+                occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
+            }
+        }
+    }
     // Refresh the caller's room-scoped identity (a fresh anonymous name) and reload the occupant
     // list so the user's own entry in "In the room" picks up the new name (DESIGN §5). Surfaced from
     // the member-detail sheet on the user's own card, replacing the standalone identity bar.
@@ -636,9 +658,9 @@ internal fun RoomChatScreen(
                 }
                 Column(modifier = Modifier.weight(1f).fillMaxHeight().then(
                     if (wide) {
-                        Modifier.padding(vertical = 16.dp)
+                        Modifier.padding(top = 16.dp)
                     } else {
-                        Modifier.padding(horizontal = 16.dp)
+                        Modifier.padding(horizontal = 16.dp).padding(top = 16.dp)
                     }
                 )) {
                     if (!wide) {
@@ -647,8 +669,11 @@ internal fun RoomChatScreen(
                             loading = loading,
                             selfUserId = selfUserId,
                             canStartPrivate = canStartPrivate,
+                            api = api,
+                            roomId = room.id,
                             onTapAvailable = onStartPrivate,
                             onRefreshSelf = onRefreshIdentity,
+                            onIdentityEdited = reloadOccupants,
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -727,8 +752,11 @@ internal fun RoomChatScreen(
                         occupants = occupants,
                         selfUserId = selfUserId,
                         canStartPrivate = canStartPrivate,
+                        api = api,
+                        roomId = room.id,
                         onTapAvailable = onStartPrivate,
                         onRefreshSelf = onRefreshIdentity,
+                        onIdentityEdited = reloadOccupants,
                     )
                 }
             }
@@ -741,6 +769,15 @@ internal fun RoomChatScreen(
                     channel = channel,
                     hasToken = hasToken,
                     liveReplies = liveReplies,
+                    selfUserId = selfUserId,
+                    isFounder = isFounder,
+                    onRecalled = { updated ->
+                        // Reflect the recall in the open feed list so the parent message shows the
+                        // "recalled" notice there too, and keep the open-thread reference in sync.
+                        val idx = messages.indexOfFirst { it.id == updated.id }
+                        if (idx >= 0) messages[idx] = updated
+                        if (openThread?.id == updated.id) openThread = updated
+                    },
                     onSignIn = onSignIn,
                     onClose = { openThread = null; onThreadChange(null) },
                 )
@@ -755,8 +792,11 @@ internal fun RoomChatScreen(
                     person = person,
                     isSelf = isSelf,
                     canStartPrivate = canStartPrivate,
+                    api = api,
+                    roomId = room.id,
                     onStartChat = { selectedOccupant = null; onStartPrivate(person) },
                     onRefresh = onRefreshIdentity,
+                    onEdited = reloadOccupants,
                     onClose = { selectedOccupant = null },
                 )
             }
@@ -780,12 +820,19 @@ private fun OccupantDetailSheet(
     person: OccupantView,
     isSelf: Boolean,
     canStartPrivate: Boolean,
+    api: SaigonApi,
+    roomId: String,
     onStartChat: () -> Unit,
     onRefresh: () -> Unit,
+    onEdited: () -> Unit,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
+    // Supporters/Founders tailor their profile per room ("Edit your room profile"); Sharers only
+    // refresh their anonymous name (DESIGN §4, §5). Tracks whether the edit dialog is open.
+    var editingRoomProfile by remember { mutableStateOf(false) }
+    val canEditRoomProfile = person.role == Role.SUPPORTER || person.role == Role.FOUNDER
     // Animate the sheet shut before clearing the selection, so tapping "Close" slides the sheet
     // down the same way swiping it away or tapping the scrim does — rather than vanishing instantly.
     val animateClose: () -> Unit = {
@@ -812,7 +859,7 @@ private fun OccupantDetailSheet(
                         fontSize = 18.sp,
                     )
                     Text(
-                        person.role.label,
+                        text = "${person.displayName.ifBlank { "Human being" }} • ${person.role.label}",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -864,10 +911,14 @@ private fun OccupantDetailSheet(
             val canChat = canStartPrivate &&
                 (person.role == Role.SUPPORTER || person.role == Role.FOUNDER)
             when {
+                isSelf && canEditRoomProfile -> OutlinedButton(
+                    onClick = { editingRoomProfile = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("✏️ Edit your room profile") }
                 isSelf -> OutlinedButton(
                     onClick = onRefresh,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("🔄 Refresh") }
+                ) { Text("🔄 Refresh your name") }
                 canChat -> Button(
                     onClick = onStartChat,
                     modifier = Modifier.fillMaxWidth(),
@@ -879,6 +930,308 @@ private fun OccupantDetailSheet(
             }
         }
     }
+    if (editingRoomProfile) {
+        EditRoomProfileDialog(
+            api = api,
+            roomId = roomId,
+            onDismiss = { editingRoomProfile = false },
+            onSaved = { editingRoomProfile = false; onEdited() },
+        )
+    }
+}
+
+/**
+ * The "Edit your room profile" dialog (DESIGN §4, §5). A Supporter/Founder perk that lets the
+ * caller tailor their name and profile facets — interests, intents, languages, availability, and
+ * services provided — just for the current room. Each facet starts out inheriting the caller's main
+ * profile; a per-row "Use my profile default" reset drops the room-scoped override so that facet
+ * falls back to the shared profile again. Saving persists the change-set via [SaigonApi.updateRoomIdentity].
+ */
+@Composable
+private fun EditRoomProfileDialog(
+    api: SaigonApi,
+    roomId: String,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var identity by remember(roomId) { mutableStateOf<RoomIdentity?>(null) }
+    var profile by remember(roomId) { mutableStateOf<ProfileResponse?>(null) }
+    var loadError by remember(roomId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(roomId) {
+        loadError = null
+        try {
+            // The main profile supplies the per-row defaults; the room identity carries any
+            // existing overrides (and the current room-scoped name).
+            profile = api.profile()
+            identity = api.identity(roomId)
+        } catch (e: Throwable) {
+            loadError = e.message ?: "Could not load your room profile."
+        }
+    }
+
+    val id = identity
+    val p = profile
+    if (id != null && p != null) {
+        EditRoomProfileForm(api = api, roomId = roomId, identity = id, profile = p, onDismiss = onDismiss, onSaved = onSaved)
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Edit your room profile") },
+            text = {
+                if (loadError != null) {
+                    Text(loadError!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                } else {
+                    LoadingSpinner()
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        )
+    }
+}
+
+/**
+ * The body of [EditRoomProfileDialog], rendered once the room identity and main profile have loaded.
+ * Holds the editable per-room state: each facet tracks whether it is "customized" (a room-scoped
+ * override) or inheriting the main profile, so the reset buttons can drop overrides cleanly and the
+ * save only sends an override for facets the user actually tailored.
+ */
+@Composable
+private fun EditRoomProfileForm(
+    api: SaigonApi,
+    roomId: String,
+    identity: RoomIdentity,
+    profile: ProfileResponse,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(identity.name) }
+
+    // Each facet: a "customized" flag (true once it holds a room-scoped override) plus its working
+    // value, seeded from the override when present, else from the main profile default.
+    var interestsCustom by remember { mutableStateOf(identity.interests != null) }
+    var interestsText by remember {
+        mutableStateOf((identity.interests ?: profile.interests).joinToString(", "))
+    }
+
+    var intentsCustom by remember { mutableStateOf(identity.intents != null) }
+    val intents = remember {
+        mutableStateListOf<Intent>().apply { addAll(identity.intents ?: profile.intents) }
+    }
+
+    var languagesCustom by remember { mutableStateOf(identity.languages != null) }
+    val languages = remember {
+        mutableStateListOf<String>().apply { addAll(identity.languages ?: profile.languages) }
+    }
+
+    var availabilityCustom by remember { mutableStateOf(identity.offlineSchedule != null) }
+    var availabilityText by remember {
+        mutableStateOf((identity.offlineSchedule ?: profile.offlineSchedule).joinToString("; "))
+    }
+
+    var providingCustom by remember { mutableStateOf(identity.providingServices != null) }
+    var providingText by remember {
+        mutableStateOf((identity.providingServices ?: profile.providingServices).joinToString("; "))
+    }
+
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit your room profile") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Tailor how you appear in this room.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // Name: always a room-scoped value. "New name" regenerates a fresh anonymous one.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Name", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        scope.launch {
+                            runCatching { api.refreshIdentity(roomId) }.getOrNull()?.let { name = it.name }
+                        }
+                    }) { Text("🔄 New name", fontSize = 12.sp) }
+                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Your name in this room") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+
+                // Interests (comma-separated free text).
+                RoomFacetHeader(
+                    title = "Interests",
+                    customized = interestsCustom,
+                    onReset = { interestsCustom = false; interestsText = profile.interests.joinToString(", ") },
+                )
+                OutlinedTextField(
+                    value = interestsText,
+                    onValueChange = { interestsText = it; interestsCustom = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Interests (comma-separated)") },
+                    shape = InputFieldShape,
+                )
+
+                // Intents (toggle buttons).
+                RoomFacetHeader(
+                    title = "Here for",
+                    customized = intentsCustom,
+                    onReset = {
+                        intentsCustom = false
+                        intents.clear(); intents.addAll(profile.intents)
+                    },
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    UiConstants.intents.chunked(2).forEach { rowIntents ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowIntents.forEach { option ->
+                                val selected = option in intents
+                                OutlinedButton(
+                                    onClick = {
+                                        if (selected) intents.remove(option) else intents.add(option)
+                                        intentsCustom = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text((if (selected) "✅ " else "") + option.badge, fontSize = 11.sp) }
+                            }
+                        }
+                    }
+                }
+
+                // Languages (toggle buttons).
+                RoomFacetHeader(
+                    title = "Languages",
+                    customized = languagesCustom,
+                    onReset = {
+                        languagesCustom = false
+                        languages.clear(); languages.addAll(profile.languages)
+                    },
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    UiConstants.supportedLanguages.chunked(2).forEach { rowLangs ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowLangs.forEach { code ->
+                                val selected = code in languages
+                                OutlinedButton(
+                                    onClick = {
+                                        if (selected) languages.remove(code) else languages.add(code)
+                                        languagesCustom = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(
+                                        (if (selected) "✅ " else "") + UiConstants.languageLabel(code),
+                                        fontSize = 11.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Availability (semicolon-separated free text).
+                RoomFacetHeader(
+                    title = "Availability",
+                    customized = availabilityCustom,
+                    onReset = {
+                        availabilityCustom = false
+                        availabilityText = profile.offlineSchedule.joinToString("; ")
+                    },
+                )
+                OutlinedTextField(
+                    value = availabilityText,
+                    onValueChange = { availabilityText = it; availabilityCustom = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Times you're often available (semicolon-separated)") },
+                    shape = InputFieldShape,
+                )
+
+                // Providing services (semicolon-separated free text).
+                RoomFacetHeader(
+                    title = "Providing",
+                    customized = providingCustom,
+                    onReset = {
+                        providingCustom = false
+                        providingText = profile.providingServices.joinToString("; ")
+                    },
+                )
+                OutlinedTextField(
+                    value = providingText,
+                    onValueChange = { providingText = it; providingCustom = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Services you're providing (semicolon-separated)") },
+                    shape = InputFieldShape,
+                )
+
+                error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving,
+                onClick = {
+                    error = null
+                    saving = true
+                    scope.launch {
+                        // Only send an override for facets the user customized; others go as null so
+                        // the server clears the override and inherits the main profile (DESIGN §5).
+                        val update = RoomIdentityUpdate(
+                            name = name.trim().ifBlank { null },
+                            interests = if (interestsCustom) {
+                                interestsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            } else null,
+                            intents = if (intentsCustom) intents.toList() else null,
+                            languages = if (languagesCustom) languages.toList() else null,
+                            offlineSchedule = if (availabilityCustom) {
+                                availabilityText.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                            } else null,
+                            providingServices = if (providingCustom) {
+                                providingText.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                            } else null,
+                        )
+                        try {
+                            api.updateRoomIdentity(roomId, update)
+                            onSaved()
+                        } catch (e: Throwable) {
+                            error = e.message ?: "Could not save your room profile."
+                        } finally {
+                            saving = false
+                        }
+                    }
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * A facet section header inside [EditRoomProfileForm]: the facet name plus, when the facet currently
+ * holds a room-scoped override, a "Use my profile default" reset that drops the override.
+ */
+@Composable
+private fun RoomFacetHeader(title: String, customized: Boolean, onReset: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        if (customized) {
+            TextButton(onClick = onReset) { Text("Use my profile", fontSize = 11.sp) }
+        } else {
+            TextButton(onClick = onReset, enabled = false) { Text("From your profile", fontSize = 11.sp) }
+        }
+    }
 }
 
 @Composable
@@ -887,6 +1240,7 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile
         authorName = msg.displayAuthor,
         text = msg.text,
         timestamp = msg.createdAt,
+        recalled = msg.recalled,
         onClick = onOpenThread,
         onAvatarClick = onOpenProfile,
         footer = if (msg.replyCount > 0) {
@@ -936,8 +1290,11 @@ private fun OccupantList(
     occupants: List<OccupantView>,
     selfUserId: String?,
     canStartPrivate: Boolean,
+    api: SaigonApi,
+    roomId: String,
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
+    onIdentityEdited: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -997,8 +1354,13 @@ private fun OccupantList(
                                 OccupantEmojiLine(person)
                             }
                             if (isSelf) {
+                                // Supporters/Founders tailor their room profile (✏️); Sharers
+                                // only refresh their anonymous name (🔄) (DESIGN §4, §5).
+                                val canEditRoomProfile =
+                                    person.role == Role.SUPPORTER || person.role == Role.FOUNDER
+
                                 IconButton(onClick = onRefreshSelf, modifier = Modifier.size(28.dp)) {
-                                    Text("\uD83D\uDD04", fontSize = 16.sp)
+                                    Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 16.sp)
                                 }
                             }
                         }
@@ -1015,8 +1377,11 @@ private fun OccupantList(
                 person = person,
                 isSelf = isSelf,
                 canStartPrivate = canStartPrivate,
+                api = api,
+                roomId = roomId,
                 onStartChat = { selected = null; onTapAvailable(person) },
                 onRefresh = onRefreshSelf,
+                onEdited = onIdentityEdited,
                 onClose = { selected = null },
             )
         }
@@ -1196,8 +1561,11 @@ private fun OccupantScroller(
     loading: Boolean,
     selfUserId: String?,
     canStartPrivate: Boolean,
+    api: SaigonApi,
+    roomId: String,
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
+    onIdentityEdited: () -> Unit,
 ) {
     // Final dedup at the render boundary: guarantee one card per persistent user id regardless of
     // how the list was assembled — a member can briefly hold several live connections during
@@ -1205,6 +1573,9 @@ private fun OccupantScroller(
     val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
     // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
     var selected by remember { mutableStateOf<OccupantView?>(null) }
+    // The self quick-action on each card opens the "Edit your room profile" dialog for
+    // Supporters/Founders (DESIGN §4, §5); null means it is closed.
+    var editingSelf by remember { mutableStateOf(false) }
     // On mobile the people list is an accordion that starts collapsed so it takes up only a single
     // line ("N people in the room") until the user expands it; the Share action and the scroller of
     // member cards are only revealed once expanded (DESIGN §6).
@@ -1283,12 +1654,16 @@ private fun OccupantScroller(
                                         fontSize = 14.sp
                                     )
                                     if (isSelf) {
+                                        // Supporters/Founders tailor their room profile (✏️); Sharers
+                                        // only refresh their anonymous name (🔄) (DESIGN §4, §5).
+                                        val canEditRoomProfile =
+                                            person.role == Role.SUPPORTER || person.role == Role.FOUNDER
                                         IconButton(
-                                            onClick = onRefreshSelf,
+                                            onClick = { if (canEditRoomProfile) editingSelf = true else onRefreshSelf() },
                                             modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Text("\uD83D\uDD04", fontSize = 14.sp)
+                                                Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 14.sp)
                                             }
                                         }
                                     } else if (person.available) {
@@ -1316,9 +1691,20 @@ private fun OccupantScroller(
             person = person,
             isSelf = isSelf,
             canStartPrivate = canStartPrivate,
+            api = api,
+            roomId = roomId,
             onStartChat = { selected = null; onTapAvailable(person) },
             onRefresh = onRefreshSelf,
+            onEdited = onIdentityEdited,
             onClose = { selected = null },
+        )
+    }
+    if (editingSelf) {
+        EditRoomProfileDialog(
+            api = api,
+            roomId = roomId,
+            onDismiss = { editingSelf = false },
+            onSaved = { editingSelf = false; onIdentityEdited() },
         )
     }
 }
@@ -1332,12 +1718,23 @@ private fun ThreadSheet(
     channel: RoomChannel?,
     hasToken: Boolean,
     liveReplies: List<ReplyEvent>,
+    selfUserId: String?,
+    isFounder: Boolean,
+    onRecalled: (FeedMessage) -> Unit,
     onSignIn: () -> Unit,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val replies = remember(message.id) { mutableStateListOf<ThreadReply>() }
     var draft by remember(message.id) { mutableStateOf("") }
+    // The parent message, kept locally so recalling it updates the sheet in place (its content is
+    // replaced by the "message recalled" notice) without affecting the thread below (DESIGN §9).
+    var parent by remember(message.id) { mutableStateOf(message) }
+    var confirmRecall by remember(message.id) { mutableStateOf(false) }
+    var recalling by remember(message.id) { mutableStateOf(false) }
+    // Only the message's own author or the Founder can recall it (DESIGN §6).
+    val canRecall = hasToken && !parent.recalled &&
+        (isFounder || (selfUserId != null && parent.authorId == selfUserId))
     // Track the first load so the sheet shows a spinner instead of flashing the empty state while
     // the replies for a message that clearly has a thread are still being fetched (DESIGN §9).
     var loadingReplies by remember(message.id) { mutableStateOf(true) }
@@ -1404,9 +1801,12 @@ private fun ThreadSheet(
             }
             Spacer(Modifier.height(16.dp))
             ChatMessage(
-                authorName = message.displayAuthor,
-                text = message.text,
-                timestamp = message.createdAt,
+                authorName = parent.displayAuthor,
+                text = parent.text,
+                timestamp = parent.createdAt,
+                recalled = parent.recalled,
+                // Tapping the message offers to recall it, but only for the author or the Founder.
+                onClick = if (canRecall) ({ confirmRecall = true }) else null,
             )
             Spacer(Modifier.height(10.dp))
             Column(
@@ -1458,6 +1858,41 @@ private fun ThreadSheet(
                 onDisabledClick = onSignIn,
             )
         }
+    }
+
+    // Confirm before recalling: recalling clears the message's text and marks it recalled for
+    // everyone, but leaves the thread's replies intact (DESIGN §6, §9).
+    if (confirmRecall) {
+        AlertDialog(
+            onDismissRequest = { if (!recalling) confirmRecall = false },
+            title = { Text("Recall this message?") },
+            text = {
+                Text(
+                    "Its text will be removed and everyone will see that it was recalled. " +
+                        "Replies in the thread are not affected. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !recalling,
+                    onClick = {
+                        recalling = true
+                        scope.launch {
+                            val updated = runCatching { api.recallMessage(roomId, parent.id) }.getOrNull()
+                            recalling = false
+                            confirmRecall = false
+                            if (updated != null) {
+                                parent = updated
+                                onRecalled(updated)
+                            }
+                        }
+                    },
+                ) { Text(if (recalling) "Recalling\u2026" else "Recall") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRecall = false }, enabled = !recalling) { Text("Cancel") }
+            },
+        )
     }
 }
 

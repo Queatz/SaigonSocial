@@ -2,6 +2,7 @@ package social.saigon.identity
 
 import social.saigon.ai.IdentityGenerator
 import social.saigon.domain.RoomIdentity
+import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.repository.RoomIdentityRepository
 
 /**
@@ -35,12 +36,33 @@ class IdentityService(
     suspend fun refresh(userId: String, roomId: String): RoomIdentity =
         generateAndStore(userId, roomId)
 
+    /**
+     * Apply a caller's room-scoped profile edits (DESIGN §4, §5). A non-blank [RoomIdentityUpdate.name]
+     * renames the room identity; the remaining fields wholesale-replace the per-room overrides, with
+     * a null clearing the override so that facet inherits from the main profile again. Creates the
+     * identity first if the caller has never joined the room.
+     */
+    suspend fun updateProfile(userId: String, roomId: String, update: RoomIdentityUpdate): RoomIdentity {
+        val current = getOrCreate(userId, roomId)
+        return identities.put(
+            current.copy(
+                name = update.name?.trim()?.takeIf { it.isNotEmpty() } ?: current.name,
+                interests = update.interests,
+                intents = update.intents,
+                languages = update.languages,
+                offlineSchedule = update.offlineSchedule,
+                providingServices = update.providingServices,
+            ),
+        )
+    }
+
     private suspend fun generateAndStore(userId: String, roomId: String): RoomIdentity {
         val generated = generator.generate("$userId@$roomId")
+        // Preserve any per-room profile overrides across a name/avatar refresh — only the anonymous
+        // name + avatar regenerate; the user's room-scoped customizations stay put (DESIGN §5).
+        val existing = identities.get(userId, roomId)
         return identities.put(
-            RoomIdentity(
-                userId = userId,
-                roomId = roomId,
+            (existing ?: RoomIdentity(userId = userId, roomId = roomId, name = "", avatarUrl = "")).copy(
                 name = generated.name,
                 avatarUrl = generated.avatarUrl,
             ),

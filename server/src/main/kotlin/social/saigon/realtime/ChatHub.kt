@@ -99,6 +99,17 @@ sealed interface Outgoing {
     ) : Outgoing
 
     /**
+     * A message recall broadcast to the room (DESIGN §6, §9). Sent when an author (or the Founder)
+     * recalls a public-chat message so every client can immediately replace its content with the
+     * "message recalled" notice without a refetch. Recalling never touches the message's thread.
+     */
+    @Serializable
+    data class Recalled(
+        val roomId: String,
+        val messageId: String,
+    ) : Outgoing
+
+    /**
      * A private chat has opened (DESIGN §7). Sent to both participants. [peerName] is the other
      * party's room-scoped display name, where known. [roomId] is the room the chat was initiated
      * from, so a recipient who is off-room (or on another screen) can still open it with the right

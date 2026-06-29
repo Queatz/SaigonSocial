@@ -98,7 +98,7 @@ internal fun ProfileScreen(
                     shape = InputFieldShape,
                 )
 
-                Text("Intent", fontWeight = FontWeight.Bold)
+                Text("Here for", fontWeight = FontWeight.Bold)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     UiConstants.intents.chunked(2).forEach { rowIntents ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -270,8 +270,9 @@ private fun BecomeSupporterBubble() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
-                    "Provide services on your provide",
-                    "Create new rooms for your services",
+                    "Provide services on your profile",
+                    "Tailor your profile per room",
+                    "Create new rooms around your services",
                     "Make yourself open to direct chats from people",
                 ).forEach { line ->
                     Text(

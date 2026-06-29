@@ -263,6 +263,7 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
     private val store = ArangoStore(db, ArangoSchema.MESSAGES, Message.serializer()) { it.id }
     override fun add(message: Message): Message = store.put(message)
     override fun get(id: String): Message? = store.get(id)
+    override fun update(message: Message): Message = store.put(message)
     override fun byRoom(roomId: String): List<Message> =
         store.query(
             "FOR d IN ${ArangoSchema.MESSAGES} FILTER d.roomId == @roomId SORT d.createdAt RETURN d",

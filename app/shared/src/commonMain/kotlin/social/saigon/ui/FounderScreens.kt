@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -48,6 +49,7 @@ internal fun FounderInviteSection(api: SaigonApi) {
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val invites = remember { mutableStateListOf<InviteCodeView>() }
+    var pendingDelete by remember { mutableStateOf<InviteCodeView?>(null) }
 
     suspend fun reloadInvites() {
         runCatching { api.invites() }.onSuccess {
@@ -118,21 +120,45 @@ internal fun FounderInviteSection(api: SaigonApi) {
         invites.forEach { invite ->
             InviteRow(
                 invite = invite,
-                onDelete = {
+                onDelete = { pendingDelete = invite },
+            )
+        }
+    }
+
+    pendingDelete?.let { invite ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete invite code") },
+            text = {
+                Text(
+                    "Delete the invite code ${invite.code}? It can no longer be redeemed and this " +
+                        "can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    error = null
                     scope.launch {
                         runCatching { api.deleteInvite(invite.code) }
                             .onSuccess { reloadInvites() }
                             .onFailure { error = it.message ?: "Could not delete that invite code." }
                     }
-                },
-            )
-        }
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
-/** A single founder-visible invite code, with a delete control for codes that haven't been used. */
+/** A single founder-visible invite code, with copy and delete controls for codes that haven't been used. */
 @Composable
 private fun InviteRow(invite: InviteCodeView, onDelete: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    // Briefly confirms the code landed on the clipboard after "Copy" is tapped, then clears itself.
+    var copied by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -147,6 +173,14 @@ private fun InviteRow(invite: InviteCodeView, onDelete: () -> Unit) {
                 )
             }
             if (!invite.redeemed) {
+                TextButton(onClick = {
+                    copyToClipboard(invite.code)
+                    copied = true
+                    scope.launch {
+                        delay(1500)
+                        copied = false
+                    }
+                }) { Text(if (copied) "Copied!" else "Copy") }
                 TextButton(onClick = onDelete) { Text("Delete") }
             }
         }
