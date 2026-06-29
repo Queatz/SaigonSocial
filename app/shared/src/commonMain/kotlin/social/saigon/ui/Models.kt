@@ -101,6 +101,8 @@ data class ThreadReply(
     val authorName: String = "",
     val text: String,
     val createdAt: Long,
+    /** True once the author (or the Founder) recalled the reply; its [text] is then blank. */
+    val recalled: Boolean = false,
 ) {
     /** The name to render in the thread — the room-scoped name when present, else the raw id. */
     val displayAuthor: String get() = authorName.ifBlank { authorId }

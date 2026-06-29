@@ -99,14 +99,18 @@ sealed interface Outgoing {
     ) : Outgoing
 
     /**
-     * A message recall broadcast to the room (DESIGN §6, §9). Sent when an author (or the Founder)
-     * recalls a public-chat message so every client can immediately replace its content with the
-     * "message recalled" notice without a refetch. Recalling never touches the message's thread.
+     * A recall broadcast to the room (DESIGN §6, §9). Sent when an author (or the Founder) recalls
+     * a public-chat message or a thread reply so every client can immediately replace its content
+     * with the "message recalled" notice without a refetch. When [replyId] is null this is a
+     * main-feed message recall ([messageId] names the message); when [replyId] is set it is a
+     * thread-reply recall ([messageId] names the reply's parent message). Recalling a message never
+     * touches its thread, and recalling a reply never touches the rest of the thread.
      */
     @Serializable
     data class Recalled(
         val roomId: String,
         val messageId: String,
+        val replyId: String? = null,
     ) : Outgoing
 
     /**

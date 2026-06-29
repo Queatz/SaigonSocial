@@ -488,6 +488,10 @@ internal fun RoomChatScreen(
     // for every client — not just the member who sent it. Accumulated (rather than a single latest
     // value) so two replies arriving back-to-back are never dropped before the sheet sees them (DESIGN §9).
     val liveReplies = remember(room.id) { mutableStateListOf<ReplyEvent>() }
+    // Ids of thread replies recalled live in this room, so an open thread sheet can flip them to the
+    // "recalled" notice in realtime for every client — mirroring how [liveReplies] surfaces new
+    // replies. Accumulated so back-to-back recalls are never dropped before the sheet sees them (DESIGN §9).
+    val liveRecalledReplyIds = remember(room.id) { mutableStateListOf<String>() }
     // Infinite scroll: page upward by 20, stopping once a short page signals the start of history.
     var loadingMore by remember(room.id) { mutableStateOf(false) }
     var reachedStart by remember(room.id) { mutableStateOf(false) }
@@ -580,14 +584,22 @@ internal fun RoomChatScreen(
                         if (liveReplies.none { it.replyId == ev.replyId }) liveReplies.add(ev)
                     },
                     onRecalled = { ev ->
-                        // A message was recalled (DESIGN §6, §9): flip it to the "recalled" notice
-                        // live for every client. Done in place so the message keeps its position and
-                        // sent time, and its thread (replyCount) is left untouched.
-                        val idx = messages.indexOfFirst { it.id == ev.messageId }
-                        if (idx >= 0) messages[idx] = messages[idx].copy(text = "", recalled = true)
-                        // Keep an open thread sheet's parent in sync so it shows the notice too.
-                        if (openThread?.id == ev.messageId) {
-                            openThread = openThread?.copy(text = "", recalled = true)
+                        // A recall landed (DESIGN §6, §9): flip the affected message or reply to the
+                        // "recalled" notice live for every client.
+                        val replyId = ev.replyId
+                        if (replyId == null) {
+                            // A main-feed message was recalled: update it in place so it keeps its
+                            // position and sent time, leaving its thread (replyCount) untouched.
+                            val idx = messages.indexOfFirst { it.id == ev.messageId }
+                            if (idx >= 0) messages[idx] = messages[idx].copy(text = "", recalled = true)
+                            // Keep an open thread sheet's parent in sync so it shows the notice too.
+                            if (openThread?.id == ev.messageId) {
+                                openThread = openThread?.copy(text = "", recalled = true)
+                            }
+                        } else {
+                            // A thread reply was recalled: surface its id so an open thread sheet can
+                            // flip that one reply to the notice, leaving the rest of the thread intact.
+                            if (liveRecalledReplyIds.none { it == replyId }) liveRecalledReplyIds.add(replyId)
                         }
                     },
                     onPrivateChatStarted = { peerId, peerName, originRoomId ->
@@ -769,6 +781,7 @@ internal fun RoomChatScreen(
                     channel = channel,
                     hasToken = hasToken,
                     liveReplies = liveReplies,
+                    liveRecalledReplyIds = liveRecalledReplyIds,
                     selfUserId = selfUserId,
                     isFounder = isFounder,
                     onRecalled = { updated ->
@@ -975,19 +988,6 @@ private fun EditRoomProfileDialog(
     val p = profile
     if (id != null && p != null) {
         EditRoomProfileForm(api = api, roomId = roomId, identity = id, profile = p, onDismiss = onDismiss, onSaved = onSaved)
-    } else {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("Edit your room profile") },
-            text = {
-                if (loadError != null) {
-                    Text(loadError!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                } else {
-                    LoadingSpinner()
-                }
-            },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-        )
     }
 }
 
@@ -1296,6 +1296,10 @@ private fun OccupantList(
     onRefreshSelf: () -> Unit,
     onIdentityEdited: () -> Unit,
 ) {
+    // The self quick-action on each card opens the "Edit your room profile" dialog for
+    // Supporters/Founders (DESIGN §4, §5); null means it is closed.
+    var editingSelf by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .width(260.dp)
@@ -1359,7 +1363,7 @@ private fun OccupantList(
                                 val canEditRoomProfile =
                                     person.role == Role.SUPPORTER || person.role == Role.FOUNDER
 
-                                IconButton(onClick = onRefreshSelf, modifier = Modifier.size(28.dp)) {
+                                IconButton(onClick = { if (canEditRoomProfile) editingSelf = true else onRefreshSelf() }, modifier = Modifier.size(28.dp)) {
                                     Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 16.sp)
                                 }
                             }
@@ -1383,6 +1387,15 @@ private fun OccupantList(
                 onRefresh = onRefreshSelf,
                 onEdited = onIdentityEdited,
                 onClose = { selected = null },
+            )
+        }
+
+        if (editingSelf) {
+            EditRoomProfileDialog(
+                api = api,
+                roomId = roomId,
+                onDismiss = { editingSelf = false },
+                onSaved = { editingSelf = false; onIdentityEdited() },
             )
         }
     }
@@ -1718,6 +1731,7 @@ private fun ThreadSheet(
     channel: RoomChannel?,
     hasToken: Boolean,
     liveReplies: List<ReplyEvent>,
+    liveRecalledReplyIds: List<String>,
     selfUserId: String?,
     isFounder: Boolean,
     onRecalled: (FeedMessage) -> Unit,
@@ -1727,6 +1741,10 @@ private fun ThreadSheet(
     val scope = rememberCoroutineScope()
     val replies = remember(message.id) { mutableStateListOf<ThreadReply>() }
     var draft by remember(message.id) { mutableStateOf("") }
+    // The reply the user is about to recall, if any: tapping a recallable reply opens a confirm
+    // dialog (same flow as the parent message), and recalling clears its text + flags it (DESIGN §6, §9).
+    var replyToRecall by remember(message.id) { mutableStateOf<ThreadReply?>(null) }
+    var recallingReply by remember(message.id) { mutableStateOf(false) }
     // The parent message, kept locally so recalling it updates the sheet in place (its content is
     // replaced by the "message recalled" notice) without affecting the thread below (DESIGN §9).
     var parent by remember(message.id) { mutableStateOf(message) }
@@ -1774,6 +1792,17 @@ private fun ThreadSheet(
             )
         }
         replies.sortBy { it.createdAt }
+    }
+
+    // Apply live reply recalls broadcast to the room so an open thread flips the affected reply to
+    // the "recalled" notice in realtime for every client — in place, leaving the rest intact (DESIGN §9).
+    LaunchedEffect(liveRecalledReplyIds.size, message.id) {
+        liveRecalledReplyIds.forEach { id ->
+            val idx = replies.indexOfFirst { it.id == id }
+            if (idx >= 0 && !replies[idx].recalled) {
+                replies[idx] = replies[idx].copy(text = "", recalled = true)
+            }
+        }
     }
 
     // Scroll to the bottom so the latest reply is in view: on initial load (once the replies have
@@ -1831,10 +1860,16 @@ private fun ThreadSheet(
                     )
                 }
                 replies.forEach { reply ->
+                    // Only the reply's own author or the Founder can recall it (DESIGN §6).
+                    val canRecallReply = hasToken && !reply.recalled &&
+                        (isFounder || (selfUserId != null && reply.authorId == selfUserId))
                     ChatMessage(
                         authorName = reply.displayAuthor,
                         text = reply.text,
                         timestamp = reply.createdAt,
+                        recalled = reply.recalled,
+                        // Tapping the reply offers to recall it, but only for the author or the Founder.
+                        onClick = if (canRecallReply) ({ replyToRecall = reply }) else null,
                     )
                 }
             }
@@ -1891,6 +1926,47 @@ private fun ThreadSheet(
             },
             dismissButton = {
                 TextButton(onClick = { confirmRecall = false }, enabled = !recalling) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Confirm before recalling a reply: same as a message recall, but scoped to the one reply.
+    // Recalling clears its text and marks it recalled for everyone; the rest of the thread is
+    // untouched (DESIGN §6, §9).
+    replyToRecall?.let { reply ->
+        AlertDialog(
+            onDismissRequest = { if (!recallingReply) replyToRecall = null },
+            title = { Text("Recall this message?") },
+            text = {
+                Text(
+                    "Its text will be removed and everyone will see that it was recalled. " +
+                        "The rest of the thread is not affected. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !recallingReply,
+                    onClick = {
+                        recallingReply = true
+                        scope.launch {
+                            val updated = runCatching {
+                                api.recallReply(roomId, message.id, reply.id)
+                            }.getOrNull()
+                            recallingReply = false
+                            replyToRecall = null
+                            if (updated != null) {
+                                val idx = replies.indexOfFirst { it.id == updated.id }
+                                if (idx >= 0) replies[idx] = updated
+                            }
+                        }
+                    },
+                ) { Text(if (recallingReply) "Recalling\u2026" else "Recall") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { replyToRecall = null },
+                    enabled = !recallingReply,
+                ) { Text("Cancel") }
             },
         )
     }

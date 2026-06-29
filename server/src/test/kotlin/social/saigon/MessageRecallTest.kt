@@ -150,4 +150,97 @@ class MessageRecallTest {
         assertEquals(HttpStatusCode.OK, recall.status)
         assertTrue(repositories.messages.get("m1")!!.recalled)
     }
+
+    @Test
+    fun replyAuthorCanRecallTheirOwnReplyWithoutAffectingTheRestOfTheThread() = testApplication {
+        val repositories = seed()
+        val authConfig = AuthConfig(secret = "test-secret")
+        // "other" authored the reply r1.
+        val token = TokenService(authConfig).issueMemberToken("other", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val recall = client.post("/rooms/room1/messages/m1/replies/r1/recall") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        assertEquals(HttpStatusCode.OK, recall.status)
+        val body = recall.bodyAsText()
+        assertTrue(body.contains("\"recalled\":true"))
+        assertTrue(body.contains("\"text\":\"\""))
+
+        // The stored reply is cleared + flagged.
+        val stored = repositories.threads.get("r1")!!
+        assertTrue(stored.recalled)
+        assertEquals("", stored.text)
+
+        // The parent message is untouched: still readable, not recalled.
+        val parent = repositories.messages.get("m1")!!
+        assertFalse(parent.recalled)
+        assertEquals("secret message", parent.text)
+
+        // The thread read-back shows the reply flagged recalled with its text cleared.
+        val thread = client.get("/rooms/room1/messages/m1/thread")
+        assertEquals(HttpStatusCode.OK, thread.status)
+        assertTrue(thread.bodyAsText().contains("\"recalled\":true"))
+    }
+
+    @Test
+    fun anotherMemberCannotRecallSomeoneElsesReply() = testApplication {
+        val repositories = seed()
+        val authConfig = AuthConfig(secret = "test-secret")
+        // "author" did NOT write reply r1 (that was "other").
+        val token = TokenService(authConfig).issueMemberToken("author", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val recall = client.post("/rooms/room1/messages/m1/replies/r1/recall") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        assertEquals(HttpStatusCode.Forbidden, recall.status)
+        // The reply is left intact.
+        val stored = repositories.threads.get("r1")!!
+        assertFalse(stored.recalled)
+        assertEquals("a reply", stored.text)
+    }
+
+    @Test
+    fun founderCanRecallAnyReply() = testApplication {
+        val repositories = seed()
+        val authConfig = AuthConfig(secret = "test-secret")
+        val token = TokenService(authConfig).issueMemberToken("founder", Role.FOUNDER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val recall = client.post("/rooms/room1/messages/m1/replies/r1/recall") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        assertEquals(HttpStatusCode.OK, recall.status)
+        assertTrue(repositories.threads.get("r1")!!.recalled)
+    }
+
+    @Test
+    fun replyRecallIsBroadcastToEveryoneInTheRoom() = testApplication {
+        val repositories = seed()
+        val authConfig = AuthConfig(secret = "test-secret")
+        val token = TokenService(authConfig).issueMemberToken("other", Role.SHARER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+        val json = Json { ignoreUnknownKeys = true }
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        // A bystander sits in the room over the live socket; recalling a reply must reach them
+        // immediately, the same way message recalls and new replies do (DESIGN §6, §9).
+        wsClient.webSocket("/ws") {
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+            incoming.receive() // Joined
+
+            val recall = client.post("/rooms/room1/messages/m1/replies/r1/recall") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            assertEquals(HttpStatusCode.OK, recall.status)
+
+            val frame = json.decodeFromString(Outgoing.serializer(), (incoming.receive() as Frame.Text).readText())
+            assertTrue(frame is Outgoing.Recalled)
+            frame as Outgoing.Recalled
+            assertEquals("room1", frame.roomId)
+            assertEquals("m1", frame.messageId)
+            assertEquals("r1", frame.replyId)
+        }
+    }
 }

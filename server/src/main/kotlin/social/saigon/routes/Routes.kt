@@ -330,6 +330,7 @@ fun Application.registerRoutes(
                     },
                     text = reply.text,
                     createdAt = reply.createdAt,
+                    recalled = reply.recalled,
                 )
             }
             call.respond(replies)
@@ -547,6 +548,49 @@ fun Application.registerRoutes(
                         text = recalled.text,
                         createdAt = recalled.createdAt,
                         replyCount = threadService.replyCount(recalled.id),
+                        recalled = recalled.recalled,
+                    ),
+                )
+            }
+
+            // Recall a thread reply (DESIGN §6, §9): same as a message recall, but scoped to one
+            // reply inside a thread. Clears the reply's text and flags it recalled so the UI shows
+            // a "message recalled" notice in its place. Only the reply's own author or the Founder
+            // may do this. The rest of the thread (and the parent message) are left untouched.
+            post("/rooms/{roomId}/messages/{messageId}/replies/{replyId}/recall") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val roomId = call.requireRoomId()
+                val messageId = call.parameters["messageId"].orEmpty()
+                val replyId = call.parameters["replyId"].orEmpty()
+                require(replyId.isNotBlank()) { "replyId required" }
+                val reply = repositories.threads.get(replyId)
+                    ?: throw IllegalArgumentException("That reply does not exist.")
+                require(reply.parentMessageId == messageId) { "That reply is not in this thread." }
+                val parent = repositories.messages.get(messageId)
+                    ?: throw IllegalArgumentException("That message does not exist.")
+                require(parent.roomId == roomId) { "That reply is not in this room." }
+                if (reply.authorId != userId && !caller.role.isAdmin) {
+                    throw ForbiddenException("Only the author or the Founder can recall a reply.")
+                }
+                val recalled = repositories.threads.update(reply.copy(text = "", recalled = true))
+                // Tell everyone in the room right away so the reply flips to its "recalled" notice
+                // live, the same way new replies propagate (DESIGN §6, §9).
+                chatHub.broadcast(
+                    roomId,
+                    Outgoing.Recalled(roomId = roomId, messageId = messageId, replyId = recalled.id),
+                )
+                call.respond(
+                    ThreadReplyView(
+                        id = recalled.id,
+                        parentMessageId = recalled.parentMessageId,
+                        replyToId = recalled.replyToId,
+                        authorId = recalled.authorId,
+                        authorName = recalled.authorName.ifBlank {
+                            authorName(recalled.authorId, roomId, repositories, identities)
+                        },
+                        text = recalled.text,
+                        createdAt = recalled.createdAt,
                         recalled = recalled.recalled,
                     ),
                 )
@@ -939,6 +983,8 @@ data class ThreadReplyView(
     val authorName: String,
     val text: String,
     val createdAt: Long,
+    /** True once the author (or the Founder) recalled the reply; its [text] is then blank. */
+    val recalled: Boolean = false,
 )
 
 /** Public pricing table for the economics screen (DESIGN §3, §11). */

@@ -264,16 +264,16 @@ private fun BecomeSupporterBubble() {
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Text(
-                "Talk with the founder team to become a supporter and start accepting new chats from people!",
+                "Talk with the founder team to become a supporter and start accepting direct chats from people!",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
-                    "Provide services on your profile",
-                    "Tailor your profile per room",
-                    "Create new rooms around your services",
-                    "Make yourself open to direct chats from people",
+                    "🤝 Provide services on your profile",
+                    "🎯 Tailor your profile per room",
+                    "🏠 Create rooms for your services",
+                    "💬 Make yourself open to direct chats from people",
                 ).forEach { line ->
                     Text(
                         "• $line",

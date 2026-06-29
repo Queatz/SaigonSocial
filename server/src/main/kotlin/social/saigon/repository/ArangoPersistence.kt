@@ -291,6 +291,8 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
 internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
     private val store = ArangoStore(db, ArangoSchema.THREADS, ThreadReply.serializer()) { it.id }
     override fun add(reply: ThreadReply): ThreadReply = store.put(reply)
+    override fun get(replyId: String): ThreadReply? = store.get(replyId)
+    override fun update(reply: ThreadReply): ThreadReply = store.put(reply)
     override fun byParent(parentMessageId: String): List<ThreadReply> =
         store.query(
             "FOR d IN ${ArangoSchema.THREADS} FILTER d.parentMessageId == @p SORT d.createdAt RETURN d",

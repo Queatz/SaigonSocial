@@ -199,4 +199,10 @@ data class ThreadReply(
      * rows, in which case the name is resolved live.
      */
     val authorName: String = "",
+    /**
+     * Whether the reply has been recalled by its author (or the Founder). A recalled reply has its
+     * [text] cleared and is shown in the UI with a "message recalled" notice rather than its
+     * original content. Recalling a reply does not affect the rest of the thread (DESIGN §9).
+     */
+    val recalled: Boolean = false,
 )

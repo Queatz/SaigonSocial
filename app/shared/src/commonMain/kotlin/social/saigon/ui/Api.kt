@@ -168,6 +168,18 @@ class SaigonApi(
             .decodeMember()
 
     /**
+     * Recall a thread reply (DESIGN §6, §9): like [recallMessage] but scoped to a single reply
+     * inside [messageId]'s thread. The server clears its text and flags it recalled so it renders a
+     * "message recalled" notice instead of its content. Only the reply's author or the Founder may
+     * do this; anyone else is rejected with a friendly [InvalidTokenException]. The rest of the
+     * thread is left untouched. Returns the refreshed, recalled reply.
+     */
+    suspend fun recallReply(roomId: String, messageId: String, replyId: String): ThreadReply =
+        client.post("$baseUrl/rooms/$roomId/messages/$messageId/replies/$replyId/recall") {
+            HttpRequestAuth(this)
+        }.decodeMember()
+
+    /**
      * The caller's persistent profile (DESIGN §4). Requires a member token. A 401 or 400 from this
      * route means the saved token is no longer usable (expired/revoked, or no longer maps to a
      * member), so we clear it locally and surface a [SessionExpiredException] telling the UI to sign
@@ -519,11 +531,15 @@ data class ReplyEvent(
     val replyToId: String? = null,
 )
 
-/** A live message-recall broadcast over the WebSocket (`Outgoing.Recalled`): the named message has
- * been recalled, so its content should be replaced by the "message recalled" notice on every client
- * in the room right away (DESIGN §6, §9). The message's thread is unaffected. */
+/** A live recall broadcast over the WebSocket (`Outgoing.Recalled`): the named message — or, when
+ * [replyId] is set, the named reply inside [messageId]'s thread — has been recalled, so its content
+ * should be replaced by the "message recalled" notice on every client in the room right away
+ * (DESIGN §6, §9). A message recall leaves its thread unaffected; a reply recall leaves the rest of
+ * the thread unaffected. */
 data class RecallEvent(
     val messageId: String,
+    /** The recalled reply's id when this is a thread-reply recall; null for a main-feed message. */
+    val replyId: String? = null,
 )
 
 /** A live, room-scoped chat message broadcast over the WebSocket (`Outgoing.Said`). */
@@ -593,6 +609,7 @@ class RoomChannel internal constructor(
                 SaigonApi.RECALLED_TYPE -> onRecalled(
                     RecallEvent(
                         messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        replyId = obj["replyId"]?.jsonPrimitive?.contentOrNull,
                     ),
                 )
                 SaigonApi.PRIVATE_STARTED_TYPE -> onPrivateChatStarted(

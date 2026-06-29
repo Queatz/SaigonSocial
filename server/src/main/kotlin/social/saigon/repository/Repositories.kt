@@ -186,6 +186,10 @@ interface MetricRepository {
  */
 interface ThreadRepository {
     fun add(reply: ThreadReply): ThreadReply
+    /** A single reply by its id, or null when it is unknown (e.g. its thread was already swept). */
+    fun get(replyId: String): ThreadReply?
+    /** Persist an edited reply (e.g. a recall), replacing the stored row in place. */
+    fun update(reply: ThreadReply): ThreadReply
     fun byParent(parentMessageId: String): List<ThreadReply>
     fun replyCount(parentMessageId: String): Int
     /** All parent message ids that currently have at least one reply. */
@@ -355,6 +359,15 @@ class InMemoryThreadRepository : ThreadRepository {
     private val store = ConcurrentHashMap<String, MutableList<ThreadReply>>()
     override fun add(reply: ThreadReply): ThreadReply = reply.also {
         store.computeIfAbsent(it.parentMessageId) { CopyOnWriteArrayList() }.add(it)
+    }
+    override fun get(replyId: String): ThreadReply? =
+        store.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == replyId } }
+    override fun update(reply: ThreadReply): ThreadReply = reply.also { updated ->
+        // Replace the row in its parent's list in place so reads (byParent) see the edit.
+        store[updated.parentMessageId]?.let { list ->
+            val idx = list.indexOfFirst { it.id == updated.id }
+            if (idx >= 0) list[idx] = updated
+        }
     }
     override fun byParent(parentMessageId: String): List<ThreadReply> =
         store[parentMessageId]?.toList() ?: emptyList()
