@@ -24,6 +24,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import io.ktor.websocket.send
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.serialization.json.Json
@@ -552,6 +553,22 @@ data class ChatMessage(
 )
 
 /**
+ * Run a WebSocket consume loop, treating a dropped connection (lost internet, server restart, the
+ * page navigating away) as a normal end-of-stream instead of letting the resulting
+ * `WebSocketException` reach the coroutine exception handler and crash the app. Coroutine
+ * cancellation is still honored so callers can tear the channel down from `onDispose`.
+ */
+private suspend fun consumeUntilClosed(block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        // Socket interrupted; the UI's DisposableEffect closes/reopens the channel as needed.
+    }
+}
+
+/**
  * An open public-chat WebSocket for a single room. Reads server broadcasts and lets members send
  * plain-text messages (DESIGN §6). Close it when leaving the room — emptying a room drops its
  * ephemeral threads server-side (DESIGN §9).
@@ -582,7 +599,8 @@ class RoomChannel internal constructor(
          */
         onPresenceChanged: (occupants: Int) -> Unit = {},
     ) {
-        session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
+        consumeUntilClosed {
+            session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
             val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 SaigonApi.SAID_TYPE -> onMessage(
@@ -621,6 +639,7 @@ class RoomChannel internal constructor(
                     obj["occupants"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 )
             }
+        }
         }
     }
 
@@ -672,7 +691,8 @@ class NotificationsChannel internal constructor(
     /** Consume server frames, surfacing each chat-started notice to [onChatStarted]. Suspends until
      * the socket closes. */
     suspend fun start(onChatStarted: (ChatStartedNotice) -> Unit) {
-        session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
+        consumeUntilClosed {
+            session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
             val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
             if (obj["type"]?.jsonPrimitive?.contentOrNull == SaigonApi.PRIVATE_STARTED_TYPE) {
                 onChatStarted(
@@ -683,6 +703,7 @@ class NotificationsChannel internal constructor(
                     ),
                 )
             }
+        }
         }
     }
 
@@ -738,7 +759,8 @@ class PrivateChatChannel internal constructor(
             put("roomId", roomId)
             put("targetUserId", targetUserId)
         })))
-        session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
+        consumeUntilClosed {
+            session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
             val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 SaigonApi.PRIVATE_STARTED_TYPE -> {
@@ -770,6 +792,7 @@ class PrivateChatChannel internal constructor(
                     obj["reason"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 )
             }
+        }
         }
     }
 
