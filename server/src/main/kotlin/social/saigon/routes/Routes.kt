@@ -266,10 +266,11 @@ fun Application.registerRoutes(
                     ),
                 )
             }
-            // Sorted by most people active, descending (DESIGN §6). The latest message (if any) is
+            // Newest rooms first (sorted by creation time, descending), so a freshly created room
+            // shows at the top of the list rather than the bottom. The latest message (if any) is
             // loaded together with each room so the home list can show "time ago" + a preview line
             // without a second round-trip.
-            val rooms = matches.map { room ->
+            val rooms = matches.sortedByDescending { it.createdAt }.map { room ->
                 val last = repositories.messages.page(room.id, null, 1).firstOrNull()
                 RoomSummary(
                     id = room.id,
@@ -283,7 +284,7 @@ fun Application.registerRoutes(
                     },
                     lastMessageAt = last?.createdAt,
                 )
-            }.sortedByDescending { it.occupants }
+            }
             call.respond(rooms)
         }
 

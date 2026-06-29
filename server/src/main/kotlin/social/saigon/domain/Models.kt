@@ -103,6 +103,8 @@ data class Room(
     /** Free-text atmosphere/vibe set by the founder. */
     val atmosphere: String = "",
     val createdBy: String,
+    /** Creation time (epoch millis), so the room list can show the newest rooms first. */
+    val createdAt: Long = 0L,
 )
 
 /**

@@ -1414,6 +1414,7 @@ private fun OccupantList(
  */
 @Composable
 private fun OccupantEmojiLine(person: OccupantView) {
+    return
     val emojis = person.languages.map { UiConstants.languageEmoji(it) } +
         person.intents.map { it.emoji }
     if (emojis.isNotEmpty()) {

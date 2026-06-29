@@ -45,7 +45,7 @@ private val seededRooms = listOf(
 fun seedInitialData(repositories: Repositories) {
     seedFounder(repositories)
     ensureEveryAccountHasPassword(repositories)
-    seededRooms.forEach { seed ->
+    seededRooms.forEachIndexed { index, seed ->
         if (repositories.rooms.get(seed.id) == null) {
             repositories.rooms.create(
                 Room(
@@ -54,6 +54,10 @@ fun seedInitialData(repositories: Repositories) {
                     emoji = seed.emoji,
                     atmosphere = seed.atmosphere,
                     createdBy = FOUNDER_ID,
+                    // Small, descending timestamps keep the opening rooms in their listed order
+                    // while any newly created room (stamped with the real epoch millis) sorts above
+                    // them at the top of the list.
+                    createdAt = (seededRooms.size - index).toLong(),
                 ),
             )
         }

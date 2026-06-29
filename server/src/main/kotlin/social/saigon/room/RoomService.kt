@@ -34,6 +34,7 @@ class RoomService(private val rooms: RoomRepository) {
                 emoji = emoji,
                 atmosphere = request.atmosphere.trim(),
                 createdBy = founderId,
+                createdAt = System.currentTimeMillis(),
             ),
         )
     }
