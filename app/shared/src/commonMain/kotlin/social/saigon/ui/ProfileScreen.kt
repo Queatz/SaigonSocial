@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,11 +76,18 @@ internal fun ProfileScreen(
             val intents = remember(p.id) { p.intents.toMutableStateList() }
             val languages = remember(p.id) { p.languages.toMutableStateList() }
             var availability by remember(p.id) { mutableStateOf(p.offlineSchedule.joinToString("; ")) }
+            var providingServices by remember(p.id) { mutableStateOf(p.providingServices.joinToString("; ")) }
+            // Availability + providing services are Supporter perks (DESIGN §3, §7); Founders share them too.
+            val isSupporter = p.role == Role.SUPPORTER || p.role == Role.FOUNDER
 
             Column(
                 modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                if (p.role == Role.SHARER) {
+                    BecomeSupporterBubble()
+                }
+
                 Text("${p.displayName} · ${p.role.label}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 OutlinedTextField(
@@ -134,13 +143,23 @@ internal fun ProfileScreen(
                     }
                 }
 
-                OutlinedTextField(
-                    value = availability,
-                    onValueChange = { availability = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Times during the week when you're often available") },
-                    shape = InputFieldShape,
-                )
+                if (isSupporter) {
+                    Text("Supporter", fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = availability,
+                        onValueChange = { availability = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Times during the week when you're often available") },
+                        shape = InputFieldShape,
+                    )
+                    OutlinedTextField(
+                        value = providingServices,
+                        onValueChange = { providingServices = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Services you're providing (semicolon-separated)") },
+                        shape = InputFieldShape,
+                    )
+                }
 
                 status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
 
@@ -153,7 +172,16 @@ internal fun ProfileScreen(
                                 interests = introduction.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                                 intents = intents.toList(),
                                 languages = languages.toList(),
-                                offlineSchedule = availability.split(";").map { it.trim() }.filter { it.isNotEmpty() },
+                                offlineSchedule = if (isSupporter) {
+                                    availability.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                                } else {
+                                    null
+                                },
+                                providingServices = if (isSupporter) {
+                                    providingServices.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                                } else {
+                                    null
+                                },
                             )
                             status = try {
                                 profile = api.updateProfile(update)
@@ -205,6 +233,51 @@ internal fun ProfileScreen(
                         dismissButton = {
                             TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") }
                         },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * An accept-coloured info banner shown at the top of a Sharer's profile, nudging them toward the
+ * Supporter tier. Supporters/Founders already have these capabilities, and Seekers can't reach this
+ * screen, so it only renders for Sharers. The forest-green primary container reads as the platform's
+ * "accept"/go colour.
+ */
+@Composable
+private fun BecomeSupporterBubble() {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "Become a supporter!",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                "Talk with the founder team to become a supporter and start accepting new chats from people!",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(
+                    "Provide services on your provide",
+                    "Create new rooms for your services",
+                    "Make yourself open to direct chats from people",
+                ).forEach { line ->
+                    Text(
+                        "• $line",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }

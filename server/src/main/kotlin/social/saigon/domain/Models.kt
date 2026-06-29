@@ -73,6 +73,8 @@ data class User(
     val languages: List<String> = emptyList(),
     /** Optional availability windows. */
     val offlineSchedule: List<String> = emptyList(),
+    /** Services the Supporter offers to others, shown on their occupant detail sheet. */
+    val providingServices: List<String> = emptyList(),
     /** Private emoji tally aggregated from received reactions. Visible only to the user. */
     val emojiStats: Map<String, Int> = emptyMap(),
     /** Unix epoch millis a Supporter subscription expires; null for non-supporters. */

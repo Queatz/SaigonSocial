@@ -807,7 +807,7 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
+                        if (isSelf) "You are ${person.name}" else person.name,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                     )
@@ -851,6 +851,12 @@ private fun OccupantDetailSheet(
                 Text("Availability", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(person.offlineSchedule.joinToString(" · "), fontSize = 14.sp)
+            }
+            if (person.providingServices.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Providing", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(person.providingServices.joinToString(" · "), fontSize = 14.sp)
             }
             Spacer(Modifier.height(20.dp))
             // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
@@ -976,7 +982,7 @@ private fun OccupantList(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
+                                        if (isSelf) "You are ${person.name}" else person.name,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -1221,6 +1227,8 @@ private fun OccupantScroller(
         ) {
             if (loading && people.isEmpty()) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                // Keep the chevron pinned to the right while the spinner is shown.
+                Spacer(Modifier.weight(1f))
             } else {
                 Text(
                     text = if (expanded) "In the room" else occupantSummary(people.size),
@@ -1269,7 +1277,7 @@ private fun OccupantScroller(
                                     ProfileIcon(name = person.name, size = 28.dp)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        if (isSelf) "You are \"${person.name}\" in this room" else person.name,
+                                        if (isSelf) "You are ${person.name}" else person.name,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f),
                                         fontSize = 14.sp

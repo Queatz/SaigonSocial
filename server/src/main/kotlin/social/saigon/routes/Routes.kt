@@ -351,6 +351,7 @@ fun Application.registerRoutes(
                         languages = user.languages,
                         interests = user.interests,
                         offlineSchedule = user.offlineSchedule,
+                        providingServices = user.providingServices,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
                         )
@@ -382,6 +383,7 @@ fun Application.registerRoutes(
                     languages = user.languages,
                     interests = user.interests,
                     offlineSchedule = user.offlineSchedule,
+                    providingServices = user.providingServices,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
                 ),
@@ -826,6 +828,8 @@ data class OccupantView(
     val interests: List<String> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
+    /** Services a Supporter offers, shown under "Providing" on the detail sheet. */
+    val providingServices: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )
@@ -840,6 +844,7 @@ data class ProfileResponse(
     val intents: List<Intent> = emptyList(),
     val languages: List<String>,
     val offlineSchedule: List<String>,
+    val providingServices: List<String> = emptyList(),
     val supporterUntil: Long?,
     val capabilities: List<Capability>,
     /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
@@ -1028,6 +1033,7 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     intents = intents,
     languages = languages,
     offlineSchedule = offlineSchedule,
+    providingServices = providingServices,
     supporterUntil = supporterUntil,
     capabilities = CapabilityMatrix.capabilities(role).toList(),
     handle = handle,

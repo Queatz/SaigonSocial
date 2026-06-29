@@ -64,6 +64,8 @@ data class OccupantView(
     val interests: List<String> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
+    /** Services a Supporter offers, shown under "Providing" on the detail sheet. */
+    val providingServices: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )
@@ -119,6 +121,7 @@ data class ProfileResponse(
     val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
     val offlineSchedule: List<String> = emptyList(),
+    val providingServices: List<String> = emptyList(),
     val supporterUntil: Long? = null,
     val capabilities: List<String> = emptyList(),
     /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
@@ -139,6 +142,7 @@ data class ProfileUpdate(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
 )
 
 /** Founder/Supporter request to create a new room (`POST /rooms`, DESIGN §6). */

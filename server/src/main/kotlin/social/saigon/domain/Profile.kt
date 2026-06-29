@@ -104,4 +104,5 @@ data class ProfileUpdate(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    val providingServices: List<String>? = null,
 )
