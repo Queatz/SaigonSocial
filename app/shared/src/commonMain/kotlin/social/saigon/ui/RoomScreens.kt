@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1783,7 +1784,11 @@ private fun ThreadSheet(
     // Track the first load so the sheet shows a spinner instead of flashing the empty state while
     // the replies for a message that clearly has a thread are still being fetched (DESIGN §9).
     var loadingReplies by remember(message.id) { mutableStateOf(true) }
-    val sheetState = rememberModalBottomSheetState()
+    // Always open fully expanded: at the default partially-expanded (half-screen) detent the
+    // composer at the bottom of the sheet sits below the fold, which — combined with the soft
+    // keyboard — would hide it. Fully expanding lets the sheet use the whole height the Compose
+    // surface gives it (DESIGN §9).
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Scroll state for the reply list so the thread can pin to the latest reply, mirroring how the
     // room's message list scrolls to the bottom on load and on new messages (DESIGN §6, §9).
     val repliesScroll = rememberScrollState()
@@ -1847,78 +1852,98 @@ private fun ThreadSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null,
     ) {
-        // Everything below the sheet's drag handle; the reply list scrolls on its own. The handle is
-        // rendered inline (not via the dragHandle slot) so it carries no "Drag handle" tooltip/semantics.
-        PlainDragHandle()
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Thread", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                ShareButton()
-            }
-            Spacer(Modifier.height(16.dp))
-            ChatMessage(
-                authorName = parent.displayAuthor,
-                text = parent.text,
-                timestamp = parent.createdAt,
-                recalled = parent.recalled,
-                // Tapping the message offers to recall it, but only for the author or the Founder.
-                onClick = if (canRecall) ({ confirmRecall = true }) else null,
-            )
-            Spacer(Modifier.height(10.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth().height(220.dp).verticalScroll(repliesScroll),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (loadingReplies) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        LoadingSpinner(modifier = Modifier.width(18.dp).height(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Loading replies\u2026",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+        // Constrain the sheet body to the height the sheet is actually allotted, so that when the
+        // soft keyboard shrinks the Compose surface (see index.html's visualViewport binding) the
+        // reply list yields its space and the composer stays visible above the keyboard instead of
+        // being pushed off the bottom of the sheet (DESIGN §9).
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
+                // The reply list scrolls on its own. The handle is rendered inline (not via the
+                // dragHandle slot) so it carries no "Drag handle" tooltip/semantics.
+                PlainDragHandle()
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("Thread", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        ShareButton()
                     }
-                } else if (replies.isEmpty()) {
-                    Text(
-                        "No replies yet.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                replies.forEach { reply ->
-                    // Only the reply's own author or the Founder can recall it (DESIGN §6).
-                    val canRecallReply = hasToken && !reply.recalled &&
-                        (isFounder || (selfUserId != null && reply.authorId == selfUserId))
+                    Spacer(Modifier.height(16.dp))
                     ChatMessage(
-                        authorName = reply.displayAuthor,
-                        text = reply.text,
-                        timestamp = reply.createdAt,
-                        recalled = reply.recalled,
-                        // Tapping the reply offers to recall it, but only for the author or the Founder.
-                        onClick = if (canRecallReply) ({ replyToRecall = reply }) else null,
+                        authorName = parent.displayAuthor,
+                        text = parent.text,
+                        timestamp = parent.createdAt,
+                        recalled = parent.recalled,
+                        // Tapping the message offers to recall it, but only for the author or the Founder.
+                        onClick = if (canRecall) ({ confirmRecall = true }) else null,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    // The reply list takes whatever vertical space is left after the header, parent
+                    // message and composer (which are measured first), capped at 220.dp. When the
+                    // surface shrinks for the keyboard, this is the part that gives up room so the
+                    // composer below stays on screen.
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(repliesScroll),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (loadingReplies) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                LoadingSpinner(modifier = Modifier.width(18.dp).height(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Loading replies\u2026",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else if (replies.isEmpty()) {
+                            Text(
+                                "No replies yet.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        replies.forEach { reply ->
+                            // Only the reply's own author or the Founder can recall it (DESIGN §6).
+                            val canRecallReply = hasToken && !reply.recalled &&
+                                (isFounder || (selfUserId != null && reply.authorId == selfUserId))
+                            ChatMessage(
+                                authorName = reply.displayAuthor,
+                                text = reply.text,
+                                timestamp = reply.createdAt,
+                                recalled = reply.recalled,
+                                // Tapping the reply offers to recall it, but only for the author or the Founder.
+                                onClick = if (canRecallReply) ({ replyToRecall = reply }) else null,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    MessageComposer(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        onSend = {
+                            val text = draft.trim()
+                            if (text.isNotEmpty()) {
+                                // Just send: the server broadcasts the reply back to the whole room, and the
+                                // live-reply effect above appends it in realtime — same path every other
+                                // client sees, so the sender's own reply stays in sync too (DESIGN §9).
+                                scope.launch { runCatching { channel?.reply(message.id, text) } }
+                                draft = ""
+                            }
+                        },
+                        sendLabel = "Reply",
+                        placeholder = if (hasToken) "Reply" else "Sign in to reply",
+                        enabled = hasToken,
+                        onDisabledClick = onSignIn,
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            MessageComposer(
-                value = draft,
-                onValueChange = { draft = it },
-                onSend = {
-                    val text = draft.trim()
-                    if (text.isNotEmpty()) {
-                        // Just send: the server broadcasts the reply back to the whole room, and the
-                        // live-reply effect above appends it in realtime — same path every other
-                        // client sees, so the sender's own reply stays in sync too (DESIGN §9).
-                        scope.launch { runCatching { channel?.reply(message.id, text) } }
-                        draft = ""
-                    }
-                },
-                sendLabel = "Reply",
-                placeholder = if (hasToken) "Reply" else "Sign in to reply",
-                enabled = hasToken,
-                onDisabledClick = onSignIn,
-            )
         }
     }
 
