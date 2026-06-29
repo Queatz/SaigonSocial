@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -164,7 +165,7 @@ internal fun RoomListScreen(
                     // user can see their open conversations and find chats others started with them.
                     if (directChatCount > 0) {
                         item {
-                            Card(onClick = onOpenDirectChats, modifier = Modifier.fillMaxWidth()) {
+                            Card(onClick = onOpenDirectChats, modifier = Modifier.fillMaxWidth().softShadow()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -234,7 +235,7 @@ internal fun RoomListScreen(
                     }
                     items(rooms!!) { room ->
                         Column {
-                            Card(onClick = { onOpen(room) }, modifier = Modifier.fillMaxWidth()) {
+                            Card(onClick = { onOpen(room) }, modifier = Modifier.fillMaxWidth().softShadow()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1332,13 +1333,13 @@ private fun OccupantList(
                     val isSelf = selfUserId != null && person.userId == selfUserId
                     Card(
                         onClick = { selected = person },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().softShadow(),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ProfileIcon(name = person.name, size = 32.dp)
+                            ProfileIcon(name = person.name, size = 48.dp)
                             Spacer(Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1356,6 +1357,7 @@ private fun OccupantList(
                                     }
                                 }
                                 OccupantEmojiLine(person)
+                                OccupantInterestsLine(person)
                             }
                             if (isSelf) {
                                 // Supporters/Founders tailor their room profile (✏️); Sharers
@@ -1412,6 +1414,23 @@ private fun OccupantEmojiLine(person: OccupantView) {
         person.intents.map { it.emoji }
     if (emojis.isNotEmpty()) {
         Text(emojis.joinToString(" "), fontSize = 12.sp)
+    }
+}
+
+/**
+ * Single-line summary of an occupant's interests, shown beneath [OccupantEmojiLine] in the
+ * member-list cards. Truncated with an ellipsis so a long list never wraps past one line. Shared
+ * by both the desktop [OccupantList] and the mobile [OccupantScroller] so the two stay in sync.
+ */
+@Composable
+private fun OccupantInterestsLine(person: OccupantView) {
+    if (person.interests.isNotEmpty()) {
+        Text(
+            person.interests.joinToString(" \u2022 "),
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1504,7 +1523,7 @@ private fun RoomNavPanel(
                     val current = r.id == currentRoomId
                     Card(
                         onClick = { if (!current) onOpenRoom(r) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().softShadow(),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(10.dp),
@@ -1654,40 +1673,44 @@ private fun OccupantScroller(
                         val isSelf = selfUserId != null && person.userId == selfUserId
                         Card(
                             onClick = { selected = person },
-                            modifier = Modifier.width(180.dp).fillMaxHeight(),
+                            modifier = Modifier.width(180.dp).fillMaxHeight().softShadow(),
                         ) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ProfileIcon(name = person.name, size = 28.dp)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        if (isSelf) "You are ${person.name}" else person.name,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.weight(1f),
-                                        fontSize = 14.sp
-                                    )
-                                    if (isSelf) {
-                                        // Supporters/Founders tailor their room profile (✏️); Sharers
-                                        // only refresh their anonymous name (🔄) (DESIGN §4, §5).
-                                        val canEditRoomProfile =
-                                            person.role == Role.SUPPORTER || person.role == Role.FOUNDER
-                                        IconButton(
-                                            onClick = { if (canEditRoomProfile) editingSelf = true else onRefreshSelf() },
-                                            modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 14.sp)
-                                            }
-                                        }
-                                    } else if (person.available) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                ProfileIcon(name = person.name, size = 48.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            "\uD83D\uDFE2",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.primary,
+                                            if (isSelf) "You are ${person.name}" else person.name,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 14.sp
                                         )
+                                        if (isSelf) {
+                                            // Supporters/Founders tailor their room profile (✏️); Sharers
+                                            // only refresh their anonymous name (🔄) (DESIGN §4, §5).
+                                            val canEditRoomProfile =
+                                                person.role == Role.SUPPORTER || person.role == Role.FOUNDER
+                                            IconButton(
+                                                onClick = { if (canEditRoomProfile) editingSelf = true else onRefreshSelf() },
+                                                modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 14.sp)
+                                                }
+                                            }
+                                        } else if (person.available) {
+                                            Text(
+                                                "\uD83D\uDFE2",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
                                     }
+
+                                    OccupantEmojiLine(person)
+                                    OccupantInterestsLine(person)
                                 }
-                                OccupantEmojiLine(person)
                             }
                         }
                     }

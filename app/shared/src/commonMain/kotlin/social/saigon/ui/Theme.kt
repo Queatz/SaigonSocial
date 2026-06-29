@@ -14,9 +14,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.DefaultShadowColor
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import kotlin.math.pow
@@ -255,3 +257,7 @@ fun Modifier.subtleGrain(
         }
     }
 }
+
+@Composable
+fun Modifier.softShadow(shape: Shape = SaigonShapes.medium) =
+    this.shadow(2.dp, shape, spotColor = DefaultShadowColor.copy(alpha = 0.25f))

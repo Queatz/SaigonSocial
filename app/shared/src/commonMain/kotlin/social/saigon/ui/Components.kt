@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.DefaultShadowColor
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontStyle
@@ -125,14 +127,16 @@ internal fun ChatMessage(
             Spacer(Modifier.width(8.dp))
         }
         val bubbleShape = RoundedCornerShape(12.dp)
-        val bubbleColor = if (reversed) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant
+        val bubbleColor = if (reversed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
         Surface(
             color = bubbleColor,
             shape = bubbleShape,
             modifier = Modifier
                 .widthIn(max = 480.dp)
-                .then(if (onClick != null) Modifier.clip(bubbleShape).clickable(onClick = onClick) else Modifier),
+                .softShadow(bubbleShape)
+                .then(
+                    if (onClick != null) Modifier.clip(bubbleShape).clickable(onClick = onClick) else Modifier
+                ),
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 val ago = timestamp?.let { timeAgo(it) }.orEmpty()
