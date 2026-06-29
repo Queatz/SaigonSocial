@@ -10,6 +10,21 @@ html, body {
     color: #333333;
 }
 
+/* The Compose host element. Pinned to the top of the viewport so the JS in index.html can size it
+   to `window.visualViewport` (height + translateY(offsetTop)); the Compose canvas then shrinks to
+   the area above the soft keyboard instead of staying as tall as the layout viewport. The default
+   full height (and the centering) keep the pre-app loading spinner centred before Compose mounts. */
+#app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    text-align: center;
+    align-content: center;
+}
+
 /* The pre-app loading spinner inherits the page's `color` for its moving arc
    (via `stroke="currentColor"`), so it stays visible in both themes. */
 .loading-spinner-track {

@@ -3,20 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <base href="/">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <title>Saigon Social</title>
     <link rel="icon" type="image/png" href="/icon.png">
     <link type="text/css" rel="stylesheet" href="/styles.css">
 </head>
-<body style="text-align: center; align-content: center">
-<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 50 50" role="presentation">
-    <circle class="loading-spinner-track" cx="25" cy="25" r="20" stroke-width="4" fill="none"/>
-    <circle cx="25" cy="25" r="20" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"
-            stroke-dasharray="90 125">
-        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s"
-                          repeatCount="indefinite"/>
-    </circle>
-</svg>
+<body>
+<!-- Compose mounts its canvas into #app (see main.kt). The host's height is bound to the visual
+     viewport below, so the on-screen keyboard shrinks the Compose surface instead of covering the
+     bottom input on browsers (e.g. Firefox Android) that overlay the keyboard. -->
+<div id="app">
+    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 50 50" role="presentation">
+        <circle class="loading-spinner-track" cx="25" cy="25" r="20" stroke-width="4" fill="none"/>
+        <circle cx="25" cy="25" r="20" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"
+                stroke-dasharray="90 125">
+            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s"
+                              repeatCount="indefinite"/>
+        </circle>
+    </svg>
+</div>
+<script type="application/javascript">
+    // Keep the Compose host (#app) sized to the *visual* viewport rather than the (taller) layout
+    // viewport, so the soft keyboard never paints over the bottom input. When the keyboard opens,
+    // `visualViewport.height` shrinks; mirroring it onto #app makes Compose re-lay-out above the
+    // keyboard. `offsetTop` keeps the surface aligned when the visual viewport is panned. A no-op
+    // on browsers without the VisualViewport API, where #app keeps its CSS-driven full height.
+    (function () {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        function apply() {
+            var el = document.getElementById('app');
+            if (!el) return;
+            el.style.height = vv.height + 'px';
+            el.style.transform = 'translateY(' + vv.offsetTop + 'px)';
+        }
+        vv.addEventListener('resize', apply);
+        vv.addEventListener('scroll', apply);
+        apply();
+    })();
+</script>
 <script type="application/javascript" src="/webApp.js"></script>
 </body>
 </html>
