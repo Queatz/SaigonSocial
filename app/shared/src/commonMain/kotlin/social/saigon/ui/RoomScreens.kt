@@ -54,6 +54,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -79,6 +82,101 @@ internal fun peopleCount(count: Int): String = when (count) {
 }
 
 // --- Room list (DESIGN §6) ---
+
+/**
+ * A single room entry shown in the rooms list and in the desktop nav panel (DESIGN §6): emoji,
+ * name, atmosphere, latest-message preview, and a trailing time/people count. The current room is
+ * highlighted and not clickable. Edit/Delete management actions are only rendered when
+ * [canManageRooms] is true, so the same card can be reused where those actions don't belong.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RoomCardItem(
+    room: RoomSummary,
+    onOpen: (RoomSummary) -> Unit,
+    signedIn: Boolean = true,
+    /** When this matches [room]'s id, the card is highlighted and tapping it does nothing. */
+    currentRoomId: String? = null,
+    canManageRooms: Boolean = false,
+    onEdit: (RoomSummary) -> Unit = {},
+    onDelete: (RoomSummary) -> Unit = {},
+) {
+    val current = currentRoomId != null && room.id == currentRoomId
+    Column {
+        Card(
+            onClick = { if (!current) onOpen(room) },
+            modifier = Modifier.fillMaxWidth().softShadow()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(room.emoji, fontSize = 28.sp)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        room.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = if (current) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        room.atmosphere,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // The latest message preview, "Sender: text", below the
+                    // atmosphere line (loaded with the room list). Shown only when
+                    // the room actually has a message.
+                    room.lastMessageText?.let { text ->
+                        val sender = room.lastMessageSender?.takeIf { it.isNotBlank() }
+                        Text(
+                            text = buildAnnotatedString {
+                                if (sender != null) {
+                                    // Bold the sender's name to make it stand out
+                                    // from the message text on the preview line.
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                        append("$sender: ")
+                                    }
+                                }
+                                append(text)
+                            },
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // For signed-out visitors, surface the primary call-to-action on every
+                    // room so it's obvious that opening a chat is the main thing to do.
+                    if (!signedIn) {
+                        Button(
+                            onClick = { onOpen(room) },
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                        ) {
+                            Text("Open chat")
+                        }
+                    }
+                }
+                // Time since the last message, or the people count when the room
+                // has no message yet.
+                Text(
+                    room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        if (canManageRooms) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onEdit(room) }) { Text("✏️ Edit") }
+                TextButton(onClick = { onDelete(room) }) { Text("🗑 Delete") }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,7 +264,10 @@ internal fun RoomListScreen(
                     // user can see their open conversations and find chats others started with them.
                     if (directChatCount > 0) {
                         item {
-                            Card(onClick = onOpenDirectChats, modifier = Modifier.fillMaxWidth().softShadow()) {
+                            Card(
+                                onClick = onOpenDirectChats,
+                                modifier = Modifier.fillMaxWidth().softShadow()
+                            ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -235,71 +336,14 @@ internal fun RoomListScreen(
                         }
                     }
                     items(rooms!!) { room ->
-                        Column {
-                            Card(onClick = { onOpen(room) }, modifier = Modifier.fillMaxWidth().softShadow()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(room.emoji, fontSize = 28.sp)
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(room.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                        Text(
-                                            room.atmosphere,
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        // The latest message preview, "Sender: text", below the
-                                        // atmosphere line (loaded with the room list). Shown only when
-                                        // the room actually has a message.
-                                        room.lastMessageText?.let { text ->
-                                            val sender = room.lastMessageSender?.takeIf { it.isNotBlank() }
-                                            Text(
-                                                text = buildAnnotatedString {
-                                                    if (sender != null) {
-                                                        // Bold the sender's name to make it stand out
-                                                        // from the message text on the preview line.
-                                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                                            append("$sender: ")
-                                                        }
-                                                    }
-                                                    append(text)
-                                                },
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                        // For signed-out visitors, surface the primary call-to-action on every
-                                        // room so it's obvious that opening a chat is the main thing to do.
-                                        if (!signedIn) {
-                                            Button(
-                                                onClick = { onOpen(room) },
-                                                modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-                                            ) {
-                                                Text("Open chat")
-                                            }
-                                        }
-                                    }
-                                    // Time since the last message, or the people count when the room
-                                    // has no message yet.
-                                    Text(
-                                        room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.secondary,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                }
-                            }
-                            if (canManageRooms) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(onClick = { editing = room }) { Text("✏️ Edit") }
-                                    TextButton(onClick = { deleting = room }) { Text("🗑 Delete") }
-                                }
-                            }
-                        }
+                        RoomCardItem(
+                            room = room,
+                            onOpen = onOpen,
+                            signedIn = signedIn,
+                            canManageRooms = canManageRooms,
+                            onEdit = { editing = it },
+                            onDelete = { deleting = it },
+                        )
                     }
                 }
             }
@@ -389,6 +433,11 @@ private fun RoomFormDialog(
     // The room URL (id) can only be chosen at creation time; existing rooms keep their id.
     var id by remember { mutableStateOf("") }
     val isCreate = initial == null
+    // Explicit focus order so Tab/Shift-Tab moves between the fields in a predictable cycle.
+    val nameFocus = remember { FocusRequester() }
+    val emojiFocus = remember { FocusRequester() }
+    val atmosphereFocus = remember { FocusRequester() }
+    val idFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -400,6 +449,10 @@ private fun RoomFormDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(nameFocus)
+                        .focusProperties { next = emojiFocus },
                     label = { Text("Name") },
                     singleLine = true,
                     shape = InputFieldShape,
@@ -407,6 +460,10 @@ private fun RoomFormDialog(
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(emojiFocus)
+                        .focusProperties { previous = nameFocus; next = atmosphereFocus },
                     label = { Text("Emoji") },
                     singleLine = true,
                     shape = InputFieldShape,
@@ -414,13 +471,25 @@ private fun RoomFormDialog(
                 OutlinedTextField(
                     value = atmosphere,
                     onValueChange = { atmosphere = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(atmosphereFocus)
+                        .focusProperties {
+                            previous = emojiFocus
+                            next = if (isCreate) idFocus else nameFocus
+                        },
                     label = { Text("Atmosphere (optional)") },
+                    singleLine = true,
                     shape = InputFieldShape,
                 )
                 if (isCreate) {
                     OutlinedTextField(
                         value = id,
                         onValueChange = { id = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(idFocus)
+                            .focusProperties { previous = atmosphereFocus; next = nameFocus },
                         label = { Text("URL (optional)") },
                         singleLine = true,
                         shape = InputFieldShape,
@@ -921,7 +990,7 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.height(16.dp))
                 Text("Providing", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
-                Text(person.providingServices.joinToString(" · "), fontSize = 14.sp)
+                Text(person.providingServices.joinToString("\n") { " · $it" }, fontSize = 14.sp)
             }
             Spacer(Modifier.height(20.dp))
             // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
@@ -1307,7 +1376,7 @@ private fun OccupantList(
 
     Box(
         modifier = Modifier
-            .width(260.dp)
+            .width(300.dp)
             .fillMaxHeight()
     ) {
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
@@ -1508,7 +1577,7 @@ private fun RoomNavPanel(
 ) {
     Box(
         modifier = Modifier
-            .width(260.dp)
+            .width(300.dp)
             .fillMaxHeight()
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -1525,33 +1594,13 @@ private fun RoomNavPanel(
             Spacer(Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(rooms) { r ->
-                    val current = r.id == currentRoomId
-                    Card(
-                        onClick = { if (!current) onOpenRoom(r) },
-                        modifier = Modifier.fillMaxWidth().softShadow(),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(r.emoji, fontSize = 22.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    r.name,
-                                    fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = if (current) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    peopleCount(r.occupants),
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
+                    // Reuse the shared room card here, but without the Edit/Delete management
+                    // actions — switching rooms from the nav panel is the only action offered.
+                    RoomCardItem(
+                        room = r,
+                        onOpen = onOpenRoom,
+                        currentRoomId = currentRoomId,
+                    )
                 }
             }
         }

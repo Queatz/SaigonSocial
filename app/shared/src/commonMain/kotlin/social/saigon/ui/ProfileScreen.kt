@@ -270,10 +270,10 @@ private fun BecomeSupporterBubble() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
-                    "🤝 Provide services on your profile",
-                    "🎯 Tailor your profile per room",
-                    "🏠 Create rooms for your services",
-                    "💬 Make yourself open to direct chats from people",
+                    "🤝 Provide your services on your profile",
+                    "🎯 Tailor your profile in each room",
+                    "🏠 Create rooms your own rooms",
+                    "💬 Accept direct chats from people",
                 ).forEach { line ->
                     Text(
                         "• $line",
