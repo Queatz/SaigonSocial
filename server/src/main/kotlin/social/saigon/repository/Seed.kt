@@ -96,14 +96,6 @@ private fun seedFounder(repositories: Repositories) {
                 passwordSetAt = System.currentTimeMillis(),
             ),
         )
-    } else {
-        repositories.users.update(
-            existing.copy(
-                handle = existing.handle ?: FOUNDER_HANDLE,
-                passwordHash = founderHash,
-                passwordSetAt = System.currentTimeMillis(),
-            ),
-        )
     }
 }
 

@@ -41,4 +41,31 @@ class PersistenceAndFounderTest {
             .filter { it.role != Role.SEEKER }
             .forEach { assertNotNull(it.passwordHash, "account ${it.id} must have a password") }
     }
+
+    @Test
+    fun seedingDoesNotReseedOrOverwriteExistingFounder() {
+        val repositories = Repositories()
+        seedInitialData(repositories)
+
+        val founder = repositories.users.all().firstOrNull { it.role == Role.FOUNDER }
+        assertNotNull(founder, "founder should exist")
+
+        // Modify founder's password and handle
+        val updatedFounder = founder.copy(
+            handle = "modified_founder",
+            passwordHash = PasswordHasher.hash("new_password"),
+            passwordSetAt = 12345L
+        )
+        repositories.users.update(updatedFounder)
+
+        // Seed again
+        seedInitialData(repositories)
+
+        // Verify founder details are preserved and not overwritten
+        val afterSeed = repositories.users.get(founder.id)
+        assertNotNull(afterSeed)
+        kotlin.test.assertEquals("modified_founder", afterSeed.handle, "handle must be preserved")
+        assertTrue(PasswordHasher.verify("new_password", afterSeed.passwordHash!!), "password must be preserved")
+        kotlin.test.assertEquals(12345L, afterSeed.passwordSetAt, "passwordSetAt must be preserved")
+    }
 }

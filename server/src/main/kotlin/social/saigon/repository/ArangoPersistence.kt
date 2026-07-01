@@ -23,6 +23,9 @@ import social.saigon.domain.RoomSearch
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
+import social.saigon.domain.PrivateChat
+import social.saigon.domain.PrivateMessage
+import social.saigon.domain.FinalEmojiSession
 import kotlinx.serialization.Serializable
 import kotlin.jvm.java
 
@@ -45,9 +48,13 @@ object ArangoSchemaExtra {
     const val PAYMENTS = "Payments"
     const val INVITES = "Invites"
     const val THREAD_DISMISSALS = "ThreadDismissals"
+    const val PRIVATE_CHATS = "PrivateChats"
+    const val PRIVATE_MESSAGES = "PrivateMessages"
+    const val FINAL_EMOJIS = "FinalEmojis"
 
     val documentCollections: List<String> = listOf(
-        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS, INVITES, THREAD_DISMISSALS
+        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS, INVITES, THREAD_DISMISSALS,
+        PRIVATE_CHATS, PRIVATE_MESSAGES, FINAL_EMOJIS
     )
 }
 
@@ -175,8 +182,8 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     roomSearches = ArangoRoomSearchRepository(db),
     messages = ArangoMessageRepository(db),
     threads = ArangoThreadRepository(db),
-    privateChats = InMemoryPrivateChatRepository(),
-    finalEmojis = InMemoryFinalEmojiRepository(),
+    privateChats = ArangoPrivateChatRepository(db),
+    finalEmojis = ArangoFinalEmojiRepository(db),
     moderation = ArangoModerationRepository(db),
     payments = ArangoPaymentRepository(db),
     metrics = ArangoMetricRepository(db),
@@ -412,4 +419,59 @@ internal class ArangoInviteCodeRepository(db: ArangoDatabase) : InviteCodeReposi
                 "SORT d.createdAt DESC RETURN d",
         )
     override fun delete(code: String) = store.delete(key(code))
+}
+
+internal class ArangoPrivateChatRepository(db: ArangoDatabase) : PrivateChatRepository {
+    private val chatsStore = ArangoStore(db, ArangoSchemaExtra.PRIVATE_CHATS, PrivateChat.serializer()) { it.id }
+    private val messagesStore = ArangoStore(db, ArangoSchemaExtra.PRIVATE_MESSAGES, PrivateMessage.serializer()) { it.id }
+
+    override fun create(chat: PrivateChat): PrivateChat = chatsStore.put(chat)
+
+    override fun get(id: String): PrivateChat? = chatsStore.get(id)
+
+    override fun findOpen(userA: String, userB: String, roomId: String): PrivateChat? {
+        return chatsStore.query(
+            "FOR d IN ${ArangoSchemaExtra.PRIVATE_CHATS} " +
+                "FILTER d.roomId == @roomId AND " +
+                "((d.initiatorId == @userA AND d.targetId == @userB) OR (d.initiatorId == @userB AND d.targetId == @userA)) " +
+                "LIMIT 1 RETURN d",
+            mapOf("roomId" to roomId, "userA" to userA, "userB" to userB)
+        ).firstOrNull()
+    }
+
+    override fun addMessage(message: PrivateMessage): PrivateMessage = messagesStore.put(message)
+
+    override fun messages(chatId: String): List<PrivateMessage> {
+        return messagesStore.query(
+            "FOR d IN ${ArangoSchemaExtra.PRIVATE_MESSAGES} FILTER d.chatId == @chatId SORT d.createdAt RETURN d",
+            mapOf("chatId" to chatId)
+        )
+    }
+
+    override fun end(id: String): PrivateChat? {
+        val chat = get(id) ?: return null
+        val messageKeys = messagesStore.queryStrings(
+            "FOR d IN ${ArangoSchemaExtra.PRIVATE_MESSAGES} FILTER d.chatId == @chatId RETURN d._key",
+            mapOf("chatId" to id)
+        )
+        messageKeys.forEach { messagesStore.delete(it) }
+        chatsStore.delete(id)
+        return chat
+    }
+}
+
+internal class ArangoFinalEmojiRepository(db: ArangoDatabase) : FinalEmojiRepository {
+    private val store = ArangoStore(db, ArangoSchemaExtra.FINAL_EMOJIS, FinalEmojiSession.serializer()) { it.chatId }
+
+    override fun create(session: FinalEmojiSession): FinalEmojiSession = store.put(session)
+
+    override fun get(chatId: String): FinalEmojiSession? = store.get(chatId)
+
+    override fun update(session: FinalEmojiSession): FinalEmojiSession = store.put(session)
+
+    override fun remove(chatId: String): FinalEmojiSession? {
+        val session = get(chatId) ?: return null
+        store.delete(chatId)
+        return session
+    }
 }

@@ -786,15 +786,11 @@ fun Application.registerRoutes(
 
             // Founder-only name change (MEMBER_MANAGEMENT.md): set a member's display name on their
             // behalf. The display name is how the Founder ties an account to the verified person
-            // IRL, so only the Founder may change it. The Founder's own name is changed from their
-            // own profile, not here.
+            // IRL, so only the Founder may change it. The Founder can also change their own name here.
             patch("/founder/members/{id}/name") {
                 val founderId = requireFounder(call.caller())
                 val userId = call.parameters["id"].orEmpty()
                 require(userId.isNotBlank()) { "id required" }
-                require(userId != founderId) {
-                    "Use your own profile to change the Founder name."
-                }
                 val req = call.receive<SetNameRequest>()
                 val displayName = req.displayName.trim()
                 require(displayName.isNotBlank()) { "A name is required." }

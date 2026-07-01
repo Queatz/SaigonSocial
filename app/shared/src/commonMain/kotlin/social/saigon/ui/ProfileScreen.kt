@@ -203,6 +203,10 @@ internal fun ProfileScreen(
                     PasswordSection(api = api, profile = p, onUpdated = { profile = it })
                 }
 
+                Accordion(title = "Your name") {
+                    NameSection(api = api, profile = p, onUpdated = { profile = it })
+                }
+
                 if (p.role == Role.FOUNDER) {
                     Accordion(title = "Create an invite code") {
                         FounderInviteSection(api)
@@ -296,7 +300,7 @@ private fun EmojiStatsSection(api: SaigonApi, profileId: String) {
     LaunchedEffect(profileId) {
         stats = runCatching { api.emojiStats() }.getOrDefault(emptyMap())
     }
-    Accordion(title = "Your emoji stats") {
+    Accordion(title = "Direct chat emoji stats") {
         val current = stats
         when {
             current == null -> LoadingSpinner()
@@ -452,4 +456,66 @@ private fun PasswordSection(api: SaigonApi, profile: ProfileResponse, onUpdated:
             }
         },
     ) { Text(if (profile.passwordSet) "Update password" else "Save password") }
+}
+
+/**
+ * "Your name" section on the profile.
+ *
+ * Explains to the user their display name. If they are a Founder, allows them to change it.
+ */
+@Composable
+private fun NameSection(api: SaigonApi, profile: ProfileResponse, onUpdated: (ProfileResponse) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var name by remember(profile.displayName) { mutableStateOf(profile.displayName) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    val isFounder = profile.role == Role.FOUNDER
+
+    Text(
+        if (isFounder) {
+            "As a Founder, you can change your display name here."
+        } else {
+            "This is your display name. Only the founder can change your display name on your behalf to match your verified IRL identity."
+        },
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    OutlinedTextField(
+        value = name,
+        onValueChange = { name = it; error = null; status = null },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Display name") },
+        singleLine = true,
+        shape = InputFieldShape,
+        enabled = isFounder && !busy,
+    )
+
+    if (isFounder) {
+        error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+        status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !busy && name.isNotBlank() && name.trim() != profile.displayName,
+            onClick = {
+                error = null
+                status = null
+                busy = true
+                scope.launch {
+                    try {
+                        val updated = api.setMemberName(profile.id, name.trim())
+                        onUpdated(profile.copy(displayName = updated.displayName))
+                        status = "Name updated."
+                    } catch (e: Throwable) {
+                        error = e.message ?: "Could not change your name."
+                    } finally {
+                        busy = false
+                    }
+                }
+            },
+        ) { Text("Change name") }
+    }
 }

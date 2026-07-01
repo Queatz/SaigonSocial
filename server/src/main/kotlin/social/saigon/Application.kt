@@ -33,13 +33,16 @@ import social.saigon.repository.arangoRepositories
 import social.saigon.repository.connectArango
 import social.saigon.repository.seedInitialData
 import social.saigon.routes.registerRoutes
+import com.arangodb.ArangoDatabase
 
 fun main() {
     // ArangoDB is the single source of truth for all durable state (DESIGN §12). It is mandatory:
     // connectArango fails loudly — both locally and in deployment — if the database is unreachable,
     // rather than silently degrading to file/in-memory storage that wiped accounts on restart.
     // Connection settings come from the ARANGO_* environment variables (sensible local defaults).
-    val repositories = arangoRepositories(connectArango(ArangoConfig.fromEnv()))
+    val db = connectArango(ArangoConfig.fromEnv())
+    System.getProperties()["social.saigon.arangoDatabase"] = db
+    val repositories = arangoRepositories(db)
     seedInitialData(repositories)
 
     // Founder-managed access with no open sign-up (DESIGN §2). The founder is not pre-created: the
@@ -62,7 +65,7 @@ fun main() {
  * Dependencies can be overridden in tests; production values are read from the environment.
  */
 fun Application.module(
-    repositories: Repositories = Repositories(),
+    repositories: Repositories = (System.getProperties()["social.saigon.arangoDatabase"] as? ArangoDatabase)?.let { arangoRepositories(it) } ?: Repositories(),
     chatHub: ChatHub = ChatHub(),
     identityGenerator: IdentityGenerator = QwenIdentityGenerator(apiKey = System.getenv("QWEN_API_KEY")),
     authConfig: AuthConfig = AuthConfig(

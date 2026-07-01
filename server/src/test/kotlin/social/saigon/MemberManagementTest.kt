@@ -250,7 +250,7 @@ class MemberManagementTest {
     }
 
     @Test
-    fun founderChangesAMembersNameButNotTheirOwn() = testApplication {
+    fun founderChangesAMembersNameAndTheirOwn() = testApplication {
         val repositories = Repositories()
         repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "Founder"))
         repositories.users.create(User(id = "linh", role = Role.SHARER, displayName = "Linh", sharerPaidAt = 1L))
@@ -267,14 +267,14 @@ class MemberManagementTest {
         // The name is trimmed and persisted.
         assertEquals("Linh Nguyen", repositories.users.get("linh")!!.displayName)
 
-        // The founder changes their own name from their own profile, not here.
+        // The founder can now change their own name too.
         val self = client.patch("/founder/members/founder/name") {
             header(HttpHeaders.Authorization, "Bearer $founderToken")
             contentType(ContentType.Application.Json)
             setBody("""{"displayName":"New Founder"}""")
         }
-        assertEquals(HttpStatusCode.BadRequest, self.status)
-        assertEquals("Founder", repositories.users.get("founder")!!.displayName)
+        assertEquals(HttpStatusCode.OK, self.status)
+        assertEquals("New Founder", repositories.users.get("founder")!!.displayName)
 
         // A blank name is rejected.
         val blank = client.patch("/founder/members/linh/name") {
