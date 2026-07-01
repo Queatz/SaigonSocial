@@ -91,7 +91,7 @@ class SaigonApi(
     suspend fun rooms(query: String? = null): List<RoomSummary> =
         client.get("$baseUrl/rooms") {
             HttpRequestAuth(this)
-            query?.takeIf { it.isNotBlank() }?.let { url.parameters.append("q", it) }
+            query?.trim('.', ',')?.trim()?.takeIf { it.isNotBlank() }?.let { url.parameters.append("q", it) }
         }.body()
 
     /**
