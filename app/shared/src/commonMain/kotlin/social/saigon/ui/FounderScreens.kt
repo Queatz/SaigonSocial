@@ -180,7 +180,7 @@ private fun InviteRow(invite: InviteCodeView, onDelete: () -> Unit) {
             }
             if (!invite.redeemed) {
                 TextButton(onClick = {
-                    copyToClipboard(invite.code)
+                    copyToClipboard("https://saigon.social/invite/${invite.code}")
                     copied = true
                     scope.launch {
                         delay(1500)

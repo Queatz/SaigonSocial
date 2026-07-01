@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -153,7 +154,11 @@ private fun RoomCardItem(
                     if (!signedIn) {
                         Button(
                             onClick = { onOpen(room) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                            modifier = Modifier
+                                .widthIn(max = 240.dp)
+                                .fillMaxWidth()
+                                .padding(top = 24.dp)
+                                .align(Alignment.CenterHorizontally),
                         ) {
                             Text("Open chat")
                         }
@@ -188,6 +193,7 @@ internal fun RoomListScreen(
     directChatCount: Int = 0,
     onOpenDirectChats: () -> Unit = {},
     signedIn: Boolean = false,
+    userDisplayName: String? = null,
 ) {
     val scope = rememberCoroutineScope()
     var rooms by remember { mutableStateOf<List<RoomSummary>?>(null) }
@@ -288,6 +294,15 @@ internal fun RoomListScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+                    if (userDisplayName != null) {
+                        item {
+                            Text(
+                                text = "Hi, $userDisplayName, how's it going?",
+                                style = MaterialTheme.typography.displaySmall,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
                         }
                     }
                     item {

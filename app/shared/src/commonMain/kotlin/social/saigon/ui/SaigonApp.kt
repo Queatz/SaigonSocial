@@ -76,6 +76,7 @@ private sealed interface Screen {
     /** A room / public chat. [threadId], when set, opens that message's thread sheet (DESIGN §9). */
     data class Room(val room: RoomSummary, val threadId: String? = null) : Screen
     data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
+    data class Invite(val code: String) : Screen
     data object DirectChats : Screen
     data object Profile : Screen
     data object Members : Screen
@@ -96,6 +97,8 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     is Screen.Room ->
         if (screen.threadId != null) "/room/${screen.room.id}/thread/${screen.threadId}"
         else "/room/${screen.room.id}"
+        
+    is Screen.Invite -> "/invite/${screen.code}"
 
     is Screen.Private -> "/chat/${screen.roomId}/${screen.targetUserId}"
     Screen.DirectChats -> null
@@ -136,6 +139,9 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
         // room screen needs the full RoomSummary; an unknown path falls back to the home screen.
         suspend fun screenForPath(path: String): Screen {
             val segments = path.trim('/').split('/').filter { it.isNotEmpty() }
+            if (segments.firstOrNull() == "invite" && segments.size >= 2) {
+                return Screen.Invite(segments[1])
+            }
             // A private chat (DESIGN §7) is "/chat/{roomId}/{userId}". It keeps the room it started
             // from so the peer's room-scoped identity name (DESIGN §5) resolves the same way after a
             // reload; the peer's display name isn't in the URL, so recover it from the open direct-
@@ -266,6 +272,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                 TopBar(
                     title = when (val s = screen) {
                         Screen.RoomList -> "Saigon.Social"
+                        is Screen.Invite -> "Complete your account"
                         is Screen.Room -> "${s.room.emoji} ${s.room.name}"
                         is Screen.Private -> "Chat with ${s.peerName}"
                         Screen.DirectChats -> "Direct chats"
@@ -311,6 +318,20 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when (val s = screen) {
+                        is Screen.Invite -> MaxWidthContainer {
+                            InvitePanel(
+                                api = api,
+                                initialCode = s.code,
+                                onToken = { 
+                                    token = it 
+                                    // Navigate to room list on success
+                                    if (it != null) {
+                                        screen = Screen.RoomList
+                                    }
+                                }
+                            )
+                        }
+
                         Screen.RoomList -> MaxWidthContainer {
                             RoomListScreen(
                                 api = api,
@@ -320,6 +341,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                                 directChatCount = directChats.size,
                                 onOpenDirectChats = { screen = Screen.DirectChats },
                                 signedIn = token != null,
+                                userDisplayName = profile?.displayName,
                             )
                         }
 

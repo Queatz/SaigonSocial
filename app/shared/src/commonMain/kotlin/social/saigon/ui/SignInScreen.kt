@@ -68,11 +68,28 @@ internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
     }
 }
 
+@Composable
+internal fun InvitePanel(api: SaigonApi, initialCode: String, onToken: (String?) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("You've been invited", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text(
+            "Welcome to Saigon.Social! Complete your account below.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        CreateAccountSection(api = api, initialCode = initialCode, onToken = onToken)
+    }
+}
+
 /** Redeem an invite code to create an account by choosing a username + password. */
 @Composable
-private fun CreateAccountSection(api: SaigonApi, onToken: (String?) -> Unit) {
+private fun CreateAccountSection(api: SaigonApi, initialCode: String = "", onToken: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
-    var code by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf(initialCode) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
