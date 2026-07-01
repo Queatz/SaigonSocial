@@ -51,7 +51,6 @@ class IdentityService(
                 intents = update.intents,
                 languages = update.languages,
                 offlineSchedule = update.offlineSchedule,
-                providingServices = update.providingServices,
             ),
         )
     }

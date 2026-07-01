@@ -73,8 +73,8 @@ data class User(
     val languages: List<String> = emptyList(),
     /** Optional availability windows. */
     val offlineSchedule: List<String> = emptyList(),
-    /** Services the Supporter offers to others, shown on their occupant detail sheet. */
-    val providingServices: List<String> = emptyList(),
+    /** Ids of the [Service]s this Supporter provides. Each service is created from a room. */
+    val services: List<String> = emptyList(),
     /** Private emoji tally aggregated from received reactions. Visible only to the user. */
     val emojiStats: Map<String, Int> = emptyMap(),
     /** Unix epoch millis a Supporter subscription expires; null for non-supporters. */
@@ -140,7 +140,6 @@ data class RoomIdentity(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
-    val providingServices: List<String>? = null,
 )
 
 /**
@@ -155,7 +154,6 @@ data class RoomIdentityUpdate(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
-    val providingServices: List<String>? = null,
 )
 
 /**
@@ -221,4 +219,56 @@ data class ThreadSummary(
     val lastReplyText: String? = null,
     val lastReplyAuthorName: String? = null,
     val lastReplyAt: Long? = null,
+)
+
+/**
+ * A top-level service a Supporter provides. A service always belongs to a room: it is created from
+ * a room, and every UI that shows a service also shows the room it lives in.
+ */
+@Serializable
+data class Service(
+    val id: String,
+    /** The [User] (a Supporter) who provides the service. */
+    val providerId: String,
+    /** The [Room] the service was created from and belongs to. */
+    val roomId: String,
+    /** A single emoji icon for the service. */
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+    val createdAt: Long = 0L,
+)
+
+/**
+ * Public feedback left on a [Service]. Anyone may leave feedback; it is visible to everyone. Only
+ * the service provider, the author of the feedback, or a Founder may delete it (hard delete).
+ */
+@Serializable
+data class Feedback(
+    val id: String,
+    val serviceId: String,
+    /** The [User] who wrote the feedback. */
+    val userId: String,
+    /** A single emoji summarising the feedback, aggregated in the UI. */
+    val emoji: String,
+    val message: String = "",
+    val createdAt: Long = 0L,
+)
+
+/** Lifecycle of a [InviteRequest] handled manually by the Founder. */
+@Serializable
+enum class InviteStatus { PENDING, RESOLVED, DISMISSED }
+
+/**
+ * A "Request an Invite" submission from the sign-in screen. Stored for the Founder to review; no
+ * account is created automatically. The Founder resolves or dismisses each request manually.
+ */
+@Serializable
+data class InviteRequest(
+    val id: String,
+    val name: String,
+    val zaloNumber: String,
+    val description: String = "",
+    val status: InviteStatus = InviteStatus.PENDING,
+    val createdAt: Long = 0L,
 )

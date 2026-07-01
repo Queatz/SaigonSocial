@@ -2,8 +2,10 @@ package social.saigon.repository
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import social.saigon.domain.Feedback
 import social.saigon.domain.FinalEmojiSession
 import social.saigon.domain.InviteCode
+import social.saigon.domain.InviteRequest
 import social.saigon.domain.Message
 import social.saigon.domain.MetricEvent
 import social.saigon.domain.Payment
@@ -13,6 +15,7 @@ import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
 import social.saigon.domain.RoomSearch
+import social.saigon.domain.Service
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
@@ -33,10 +36,16 @@ object ArangoSchema {
     const val EMOJIS = "Emojis"
     const val METRICS = "Metrics"
     const val ROOM_SEARCHES = "RoomSearches"
+    const val SERVICES = "Services"
+    const val FEEDBACK = "Feedback"
+    const val INVITE_REQUESTS = "InviteRequests"
 
     /** Document collections provisioned on startup. */
     val documentCollections: List<String> =
-        listOf(USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS, ROOM_SEARCHES)
+        listOf(
+            USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS, ROOM_SEARCHES,
+            SERVICES, FEEDBACK, INVITE_REQUESTS,
+        )
 }
 
 interface UserRepository {
@@ -199,6 +208,65 @@ interface ThreadRepository {
     fun dismiss(userId: String, parentMessageId: String)
     fun isDismissed(userId: String, parentMessageId: String): Boolean
     fun clearDismissal(parentMessageId: String)
+}
+
+/**
+ * Services (top-level entity). Each [Service] belongs to a room and is provided by a Supporter.
+ */
+interface ServiceRepository {
+    fun create(service: Service): Service
+    fun get(id: String): Service?
+    fun all(): List<Service>
+    fun byProvider(providerId: String): List<Service>
+    /** Delete a service by id. Idempotent. */
+    fun delete(id: String)
+}
+
+/**
+ * Public feedback on services. Anyone may add; hard-deletable by provider/author/founder.
+ */
+interface FeedbackRepository {
+    fun create(feedback: Feedback): Feedback
+    fun get(id: String): Feedback?
+    fun byService(serviceId: String): List<Feedback>
+    fun delete(id: String)
+}
+
+/**
+ * "Request an invite" submissions handled manually by the Founder.
+ */
+interface InviteRequestRepository {
+    fun create(request: InviteRequest): InviteRequest
+    fun get(id: String): InviteRequest?
+    fun update(request: InviteRequest): InviteRequest
+    fun all(): List<InviteRequest>
+}
+
+class InMemoryServiceRepository : ServiceRepository {
+    private val store = ConcurrentHashMap<String, Service>()
+    override fun create(service: Service): Service = service.also { store[it.id] = it }
+    override fun get(id: String): Service? = store[id]
+    override fun all(): List<Service> = store.values.toList()
+    override fun byProvider(providerId: String): List<Service> =
+        store.values.filter { it.providerId == providerId }
+    override fun delete(id: String) { store.remove(id) }
+}
+
+class InMemoryFeedbackRepository : FeedbackRepository {
+    private val store = ConcurrentHashMap<String, Feedback>()
+    override fun create(feedback: Feedback): Feedback = feedback.also { store[it.id] = it }
+    override fun get(id: String): Feedback? = store[id]
+    override fun byService(serviceId: String): List<Feedback> =
+        store.values.filter { it.serviceId == serviceId }.sortedByDescending { it.createdAt }
+    override fun delete(id: String) { store.remove(id) }
+}
+
+class InMemoryInviteRequestRepository : InviteRequestRepository {
+    private val store = ConcurrentHashMap<String, InviteRequest>()
+    override fun create(request: InviteRequest): InviteRequest = request.also { store[it.id] = it }
+    override fun get(id: String): InviteRequest? = store[id]
+    override fun update(request: InviteRequest): InviteRequest = request.also { store[it.id] = it }
+    override fun all(): List<InviteRequest> = store.values.toList()
 }
 
 class InMemoryUserRepository : UserRepository {
@@ -412,4 +480,7 @@ class Repositories(
     val payments: PaymentRepository = InMemoryPaymentRepository(),
     val metrics: MetricRepository = InMemoryMetricRepository(),
     val invites: InviteCodeRepository = InMemoryInviteCodeRepository(),
+    val services: ServiceRepository = InMemoryServiceRepository(),
+    val feedback: FeedbackRepository = InMemoryFeedbackRepository(),
+    val inviteRequests: InviteRequestRepository = InMemoryInviteRequestRepository(),
 )

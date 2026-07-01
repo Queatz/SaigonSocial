@@ -76,8 +76,7 @@ internal fun ProfileScreen(
             val intents = remember(p.id) { p.intents.toMutableStateList() }
             val languages = remember(p.id) { p.languages.toMutableStateList() }
             var availability by remember(p.id) { mutableStateOf(p.offlineSchedule.joinToString("; ")) }
-            var providingServices by remember(p.id) { mutableStateOf(p.providingServices.joinToString("; ")) }
-            // Availability + providing services are Supporter perks (DESIGN §3, §7); Founders share them too.
+            // Availability is a Supporter perk (DESIGN §3, §7); Founders share it too.
             val isSupporter = p.role == Role.SUPPORTER || p.role == Role.FOUNDER
 
             Column(
@@ -152,13 +151,6 @@ internal fun ProfileScreen(
                         label = { Text("Times during the week when you're often available") },
                         shape = InputFieldShape,
                     )
-                    OutlinedTextField(
-                        value = providingServices,
-                        onValueChange = { providingServices = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Services you're providing (semicolon-separated)") },
-                        shape = InputFieldShape,
-                    )
                 }
 
                 status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
@@ -174,11 +166,6 @@ internal fun ProfileScreen(
                                 languages = languages.toList(),
                                 offlineSchedule = if (isSupporter) {
                                     availability.split(";").map { it.trim() }.filter { it.isNotEmpty() }
-                                } else {
-                                    null
-                                },
-                                providingServices = if (isSupporter) {
-                                    providingServices.split(";").map { it.trim() }.filter { it.isNotEmpty() }
                                 } else {
                                     null
                                 },
@@ -208,6 +195,9 @@ internal fun ProfileScreen(
                 }
 
                 if (p.role == Role.FOUNDER) {
+                    Accordion(title = "Invite requests") {
+                        FounderInviteRequestsSection(api)
+                    }
                     Accordion(title = "Create an invite code") {
                         FounderInviteSection(api)
                     }

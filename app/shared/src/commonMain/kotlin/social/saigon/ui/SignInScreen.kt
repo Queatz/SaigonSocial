@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -60,12 +61,120 @@ internal fun SignInPanel(api: SaigonApi, onToken: (String?) -> Unit) {
 
         SignInSection(api = api, onToken = onToken)
 
+        HorizontalDivider()
+
+        RequestInviteSection(api = api)
+
         if (founderClaimable) {
             HorizontalDivider()
 
             FounderClaimSection(api = api, onToken = onToken)
         }
     }
+}
+
+/**
+ * "Request an Invite" at the bottom of the sign-in screen. Opens a dialog collecting the person's
+ * full name, Zalo number, and a short description of the services they'd like to provide. On submit
+ * it stores a pending invite request server-side (no account is created) and shows a success note —
+ * the founder follows up manually (e.g. via Zalo).
+ */
+@Composable
+private fun RequestInviteSection(api: SaigonApi) {
+    var showDialog by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
+
+    Text("Not a member yet?", fontWeight = FontWeight.Bold)
+    if (submitted) {
+        Text(
+            "Thanks! We've received your request and will reach out to you on Zalo.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    OutlinedButton(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { showDialog = true },
+    ) { Text("Request an Invite") }
+
+    if (showDialog) {
+        RequestInviteDialog(
+            api = api,
+            onDismiss = { showDialog = false },
+            onSubmitted = { showDialog = false; submitted = true },
+        )
+    }
+}
+
+@Composable
+private fun RequestInviteDialog(api: SaigonApi, onDismiss: () -> Unit, onSubmitted: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var zalo by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Request an Invite") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Tell us a little about you. The founder will reach out on Zalo — no account is created automatically.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Full name") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = zalo,
+                    onValueChange = { zalo = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Zalo number") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Services you'd like to provide") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && name.isNotBlank() && zalo.isNotBlank(),
+                onClick = {
+                    error = null
+                    busy = true
+                    scope.launch {
+                        try {
+                            api.requestInvite(name.trim(), zalo.trim(), description.trim())
+                            onSubmitted()
+                        } catch (e: Throwable) {
+                            error = e.message ?: "Could not submit your request."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text("Submit") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

@@ -12,7 +12,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import social.saigon.domain.Feedback
 import social.saigon.domain.InviteCode
+import social.saigon.domain.InviteRequest
 import social.saigon.domain.Message
 import social.saigon.domain.MetricEvent
 import social.saigon.domain.Payment
@@ -20,6 +22,7 @@ import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
 import social.saigon.domain.RoomSearch
+import social.saigon.domain.Service
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
@@ -188,6 +191,9 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     payments = ArangoPaymentRepository(db),
     metrics = ArangoMetricRepository(db),
     invites = ArangoInviteCodeRepository(db),
+    services = ArangoServiceRepository(db),
+    feedback = ArangoFeedbackRepository(db),
+    inviteRequests = ArangoInviteRequestRepository(db),
 )
 
 /**
@@ -474,4 +480,37 @@ internal class ArangoFinalEmojiRepository(db: ArangoDatabase) : FinalEmojiReposi
         store.delete(chatId)
         return session
     }
+}
+
+internal class ArangoServiceRepository(db: ArangoDatabase) : ServiceRepository {
+    private val store = ArangoStore(db, ArangoSchema.SERVICES, Service.serializer()) { it.id }
+    override fun create(service: Service): Service = store.put(service)
+    override fun get(id: String): Service? = store.get(id)
+    override fun all(): List<Service> = store.all()
+    override fun byProvider(providerId: String): List<Service> =
+        store.query(
+            "FOR d IN ${ArangoSchema.SERVICES} FILTER d.providerId == @p RETURN d",
+            mapOf("p" to providerId),
+        )
+    override fun delete(id: String) = store.delete(id)
+}
+
+internal class ArangoFeedbackRepository(db: ArangoDatabase) : FeedbackRepository {
+    private val store = ArangoStore(db, ArangoSchema.FEEDBACK, Feedback.serializer()) { it.id }
+    override fun create(feedback: Feedback): Feedback = store.put(feedback)
+    override fun get(id: String): Feedback? = store.get(id)
+    override fun byService(serviceId: String): List<Feedback> =
+        store.query(
+            "FOR d IN ${ArangoSchema.FEEDBACK} FILTER d.serviceId == @s SORT d.createdAt DESC RETURN d",
+            mapOf("s" to serviceId),
+        )
+    override fun delete(id: String) = store.delete(id)
+}
+
+internal class ArangoInviteRequestRepository(db: ArangoDatabase) : InviteRequestRepository {
+    private val store = ArangoStore(db, ArangoSchema.INVITE_REQUESTS, InviteRequest.serializer()) { it.id }
+    override fun create(request: InviteRequest): InviteRequest = store.put(request)
+    override fun get(id: String): InviteRequest? = store.get(id)
+    override fun update(request: InviteRequest): InviteRequest = store.put(request)
+    override fun all(): List<InviteRequest> = store.all()
 }

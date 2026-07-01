@@ -33,7 +33,6 @@ class ProfileService(private val users: UserRepository) {
         val languages = update.languages?.let(::normalizeLanguages) ?: user.languages
         val schedule = update.offlineSchedule?.let(::normalizeSchedule) ?: user.offlineSchedule
         val intents = update.intents?.distinct() ?: user.intents
-        val providingServices = update.providingServices?.let(::normalizeServices) ?: user.providingServices
 
         return users.update(
             user.copy(
@@ -41,7 +40,6 @@ class ProfileService(private val users: UserRepository) {
                 languages = languages,
                 offlineSchedule = schedule,
                 intents = intents,
-                providingServices = providingServices,
             ),
         )
     }
@@ -88,9 +86,6 @@ class ProfileService(private val users: UserRepository) {
 
     private fun normalizeSchedule(schedule: List<String>): List<String> =
         schedule.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-
-    private fun normalizeServices(services: List<String>): List<String> =
-        services.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     companion object {
         /** Auto-suggest seed list (DESIGN §4 examples + common Saigon interests). */

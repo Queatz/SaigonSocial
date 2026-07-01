@@ -66,8 +66,6 @@ data class OccupantView(
     val interests: List<String> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
-    /** Services a Supporter offers, shown under "Providing" on the detail sheet. */
-    val providingServices: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )
@@ -124,7 +122,6 @@ data class RoomIdentity(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
-    val providingServices: List<String>? = null,
 )
 
 /**
@@ -139,7 +136,6 @@ data class RoomIdentityUpdate(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
-    val providingServices: List<String>? = null,
 )
 
 /** The caller's editable persistent profile (`GET /profile/me`, DESIGN §4). */
@@ -152,7 +148,6 @@ data class ProfileResponse(
     val intents: List<Intent> = emptyList(),
     val languages: List<String> = emptyList(),
     val offlineSchedule: List<String> = emptyList(),
-    val providingServices: List<String> = emptyList(),
     val supporterUntil: Long? = null,
     val capabilities: List<String> = emptyList(),
     /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
@@ -173,7 +168,6 @@ data class ProfileUpdate(
     val intents: List<Intent>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
-    val providingServices: List<String>? = null,
 )
 
 /** Founder/Supporter request to create a new room (`POST /rooms`, DESIGN §6). */
@@ -356,4 +350,83 @@ data class ThreadSummary(
     val lastReplyText: String? = null,
     val lastReplyAuthorName: String? = null,
     val lastReplyAt: Long? = null,
+)
+
+/** A service as shown in the `/services` search and detail screens (`GET /services`). */
+@Serializable
+data class ServiceView(
+    val id: String,
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+    val roomId: String,
+    /** The room the service lives in — always displayed wherever a service is shown. */
+    val roomName: String,
+    val providerId: String,
+    val providerName: String,
+    val providerRole: Role = Role.SHARER,
+    val providerLanguages: List<String> = emptyList(),
+    val providerInterests: List<String> = emptyList(),
+    val createdAt: Long = 0L,
+)
+
+/** Create a service from a room (`POST /rooms/{id}/services`). */
+@Serializable
+data class ServiceCreate(
+    val roomId: String,
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+)
+
+/** Public feedback on a service (`GET /services/{id}/feedback`). */
+@Serializable
+data class FeedbackView(
+    val id: String,
+    val serviceId: String,
+    val userId: String,
+    val authorName: String,
+    val authorRole: Role = Role.SHARER,
+    val emoji: String,
+    val message: String = "",
+    val createdAt: Long = 0L,
+)
+
+/** Leave feedback on a service (`POST /services/{id}/feedback`). */
+@Serializable
+data class FeedbackCreate(val emoji: String, val message: String = "")
+
+/** Contact a service provider with an opening message (`POST /services/{id}/contact`). */
+@Serializable
+data class ContactProviderRequest(val message: String)
+
+/** The direct chat opened by contacting a provider, so the client can navigate straight to it. */
+@Serializable
+data class ContactProviderResponse(
+    val roomId: String,
+    val providerId: String,
+    val providerName: String,
+)
+
+/** Lifecycle of an invite request. Serialized by name to match the server `InviteStatus`. */
+@Serializable
+enum class InviteStatus { PENDING, RESOLVED, DISMISSED }
+
+/** Submit a "Request an Invite" from the sign-in screen (`POST /invite-requests`). */
+@Serializable
+data class InviteRequestCreate(
+    val name: String,
+    val zaloNumber: String,
+    val description: String = "",
+)
+
+/** A pending invite request in the Founder's admin panel (`GET /founder/invite-requests`). */
+@Serializable
+data class InviteRequestView(
+    val id: String,
+    val name: String,
+    val zaloNumber: String,
+    val description: String = "",
+    val status: InviteStatus = InviteStatus.PENDING,
+    val createdAt: Long = 0L,
 )

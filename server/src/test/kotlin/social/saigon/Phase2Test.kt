@@ -91,7 +91,6 @@ class Phase2Test {
                 intents = listOf(social.saigon.domain.Intent.CASUAL),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("weekends"),
-                providingServices = listOf("barista tips"),
             ),
         )
         assertEquals("Coffee Nomad", updated.name)
@@ -99,7 +98,6 @@ class Phase2Test {
         assertEquals(listOf(social.saigon.domain.Intent.CASUAL), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("weekends"), updated.offlineSchedule)
-        assertEquals(listOf("barista tips"), updated.providingServices)
         // Persisted for subsequent fetches.
         assertEquals(updated, svc.getOrCreate("u1", "room1"))
     }

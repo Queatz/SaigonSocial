@@ -82,6 +82,12 @@ private sealed interface Screen {
     data object Profile : Screen
     data object Members : Screen
     data object RoomSearches : Screen
+
+    /** The `/services` search screen (issue §5). */
+    data object Services : Screen
+
+    /** A single service's detail screen (issue §6), deep-linkable as "/services/{id}". */
+    data class ServiceDetail(val serviceId: String) : Screen
 }
 
 /**
@@ -107,6 +113,8 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.Profile -> null
     Screen.Members -> null
     Screen.RoomSearches -> null
+    Screen.Services -> "/services"
+    is Screen.ServiceDetail -> "/services/${screen.serviceId}"
 }
 
 @Composable
@@ -146,6 +154,9 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
             val segments = path.trim('/').split('/').filter { it.isNotEmpty() }
             if (segments.firstOrNull() == "invite" && segments.size >= 2) {
                 return Screen.Invite(segments[1])
+            }
+            if (segments.firstOrNull() == "services") {
+                return if (segments.size >= 2) Screen.ServiceDetail(segments[1]) else Screen.Services
             }
             // A private chat (DESIGN §7) is "/chat/{roomId}/{userId}". It keeps the room it started
             // from so the peer's room-scoped identity name (DESIGN §5) resolves the same way after a
@@ -318,6 +329,8 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                         Screen.Members -> "Members"
                         Screen.RoomSearches -> "Room searches"
+                        Screen.Services -> "Services"
+                        is Screen.ServiceDetail -> "Service"
                     },
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
@@ -334,10 +347,11 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                     // The members directory is opened from the profile, so Back returns there;
                     // every other screen falls back to the room list.
                     onBack = {
-                        screen = if (screen == Screen.Members || screen == Screen.RoomSearches) {
-                            Screen.Profile
-                        } else {
-                            Screen.RoomList
+                        val current = screen
+                        screen = when {
+                            current == Screen.Members || current == Screen.RoomSearches -> Screen.Profile
+                            current is Screen.ServiceDetail -> Screen.Services
+                            else -> Screen.RoomList
                         }
                     },
                     onProfile = { screen = Screen.Profile },
@@ -381,6 +395,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                                 onOpenDirectChats = { screen = Screen.DirectChats },
                                 threadReplyCount = threadReplies.size,
                                 onOpenThreadReplies = { screen = Screen.ThreadReplies },
+                                onOpenServices = { screen = Screen.Services },
                                 signedIn = token != null,
                                 userDisplayName = profile?.displayName,
                             )
@@ -481,6 +496,28 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                         Screen.Members -> MaxWidthContainer { FounderMembersScreen(api) }
 
                         Screen.RoomSearches -> MaxWidthContainer { FounderRoomSearchesScreen(api) }
+
+                        Screen.Services -> MaxWidthContainer {
+                            ServiceSearchScreen(
+                                api = api,
+                                onOpenService = { screen = Screen.ServiceDetail(it) },
+                            )
+                        }
+
+                        is Screen.ServiceDetail -> MaxWidthContainer {
+                            ServiceDetailScreen(
+                                api = api,
+                                serviceId = s.serviceId,
+                                selfUserId = profile?.id,
+                                isFounder = canManageRooms,
+                                canContact = canStartPrivate,
+                                onOpenDirectChat = { res ->
+                                    openDirectChat(
+                                        DirectChat(res.roomId, res.providerId, res.providerName),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }

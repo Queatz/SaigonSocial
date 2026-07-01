@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -28,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -265,6 +268,120 @@ internal fun FounderRoomSearchesSection(api: SaigonApi) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         else -> searches.forEach { search -> RoomSearchRow(search) }
+    }
+}
+
+/**
+ * Founder-only "Request an Invite" management (issue §4). Lists every *pending* invite request with
+ * the person's name, Zalo number, description, status, and date, and a count badge of how many are
+ * pending. Each request can be Dismissed or Resolved; once actioned it drops off the list (the
+ * server never returns dismissed/resolved requests). Entirely hidden from non-Founders — it is only
+ * ever rendered inside the Founder-gated section of the profile screen, and the API rejects the
+ * underlying routes for anyone else.
+ */
+@Composable
+internal fun FounderInviteRequestsSection(api: SaigonApi) {
+    val scope = rememberCoroutineScope()
+    val requests = remember { mutableStateListOf<InviteRequestView>() }
+    var loaded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun reload() {
+        error = null
+        try {
+            val list = api.inviteRequests()
+            requests.clear()
+            requests.addAll(list)
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load invite requests"
+        } finally {
+            loaded = true
+        }
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text("Invite requests", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (requests.isNotEmpty()) CountBadge(requests.size)
+    }
+    Text(
+        "People who asked to join from the sign-in screen. Contact them on Zalo, then resolve or " +
+            "dismiss the request.",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+
+    when {
+        !loaded -> LoadingSpinner()
+        requests.isEmpty() -> Text(
+            "No pending invite requests.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        else -> requests.forEach { request ->
+            InviteRequestRow(
+                request = request,
+                onResolve = {
+                    scope.launch {
+                        runCatching { api.resolveInviteRequest(request.id) }
+                            .onSuccess { requests.remove(request) }
+                            .onFailure { error = it.message ?: "Could not resolve that request." }
+                    }
+                },
+                onDismiss = {
+                    scope.launch {
+                        runCatching { api.dismissInviteRequest(request.id) }
+                            .onSuccess { requests.remove(request) }
+                            .onFailure { error = it.message ?: "Could not dismiss that request." }
+                    }
+                },
+            )
+        }
+    }
+}
+
+/** A small pill showing a count (e.g. the number of pending invite requests). */
+@Composable
+private fun CountBadge(count: Int) {
+    Text(
+        count.toString(),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onPrimary,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/** A single pending invite request row with Dismiss/Resolve actions. */
+@Composable
+private fun InviteRequestRow(
+    request: InviteRequestView,
+    onResolve: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(request.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Zalo: ${request.zaloNumber}", fontSize = 13.sp)
+            if (request.description.isNotBlank()) {
+                Text(request.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(
+                "${request.status.name.lowercase()} · ${timeAgo(request.createdAt)}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Dismiss") }
+                Button(onClick = onResolve, modifier = Modifier.weight(1f)) { Text("Resolve") }
+            }
+        }
     }
 }
 

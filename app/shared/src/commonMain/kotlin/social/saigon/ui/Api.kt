@@ -278,6 +278,83 @@ class SaigonApi(
         return response.body()
     }
 
+    // --- Services, feedback, and invite requests ---
+
+    /** Public: search services by name (case-insensitive partial match). Blank [query] lists all. */
+    suspend fun services(query: String? = null): List<ServiceView> =
+        client.get("$baseUrl/services") {
+            HttpRequestAuth(this)
+            query?.trim()?.takeIf { it.isNotBlank() }?.let { url.parameters.append("q", it) }
+        }.body()
+
+    /** Public: a single service's full detail, or null when it can't be found. */
+    suspend fun service(id: String): ServiceView? {
+        val response = client.get("$baseUrl/services/$id") { HttpRequestAuth(this) }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Public: the feedback left on a service (aggregated by emoji in the UI). */
+    suspend fun serviceFeedback(serviceId: String): List<FeedbackView> =
+        client.get("$baseUrl/services/$serviceId/feedback") { HttpRequestAuth(this) }.body()
+
+    /** Create a service from a room (Supporters only, server-validated). Requires a member token. */
+    suspend fun createService(roomId: String, emoji: String, name: String, description: String): ServiceView =
+        client.post("$baseUrl/rooms/$roomId/services") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(ServiceCreate(roomId, emoji, name, description))
+        }.decodeMember()
+
+    /** Leave public feedback on a service. Requires a member token. */
+    suspend fun addFeedback(serviceId: String, emoji: String, message: String): FeedbackView =
+        client.post("$baseUrl/services/$serviceId/feedback") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(FeedbackCreate(emoji, message))
+        }.decodeMember()
+
+    /** Delete feedback (provider, author, or Founder). Requires a member token. */
+    suspend fun deleteFeedback(feedbackId: String): Unit =
+        client.delete("$baseUrl/feedback/$feedbackId") { HttpRequestAuth(this) }.let { }
+
+    /**
+     * Contact a service provider with an opening [message]: opens (or reuses) a direct chat scoped
+     * to the service's room, posts the message, and returns the chat coordinates so the client can
+     * navigate straight into the conversation (DESIGN §7). Requires a member token.
+     */
+    suspend fun contactProvider(serviceId: String, message: String): ContactProviderResponse =
+        client.post("$baseUrl/services/$serviceId/contact") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(ContactProviderRequest(message))
+        }.decodeMember()
+
+    /** Public: submit a "Request an Invite" from the sign-in screen (no account is created). */
+    suspend fun requestInvite(name: String, zaloNumber: String, description: String) {
+        val response = client.post("$baseUrl/invite-requests") {
+            contentType(ContentType.Application.Json)
+            setBody(InviteRequestCreate(name, zaloNumber, description))
+        }
+        if (!response.status.isSuccess()) {
+            throw InvalidTokenException(
+                response.bodyAsTextSafe().takeIf { it.isNotBlank() }
+                    ?: "Could not submit your request. Please try again.",
+            )
+        }
+    }
+
+    /** Founder-only: the pending invite requests (resolved/dismissed are never listed). */
+    suspend fun inviteRequests(): List<InviteRequestView> =
+        client.get("$baseUrl/founder/invite-requests") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Founder-only: mark an invite request resolved. */
+    suspend fun resolveInviteRequest(id: String): Unit =
+        client.post("$baseUrl/founder/invite-requests/$id/resolve") { HttpRequestAuth(this) }.let { }
+
+    /** Founder-only: dismiss an invite request. */
+    suspend fun dismissInviteRequest(id: String): Unit =
+        client.post("$baseUrl/founder/invite-requests/$id/dismiss") { HttpRequestAuth(this) }.let { }
+
     /** Founder-only: mint a single-use invite code for a new member of the given [role]. */
     suspend fun createInvite(role: Role): InviteCodeResponse =
         client.post("$baseUrl/founder/invites") {

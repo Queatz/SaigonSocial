@@ -30,8 +30,11 @@ import social.saigon.domain.Capability
 import social.saigon.domain.CapabilityMatrix
 import social.saigon.domain.EconomicStatus
 import social.saigon.domain.EmojiOptions
+import social.saigon.domain.Feedback
 import social.saigon.domain.ForbiddenException
 import social.saigon.domain.Intent
+import social.saigon.domain.InviteRequest
+import social.saigon.domain.InviteStatus
 import social.saigon.domain.LaunchConfig
 import social.saigon.domain.Message
 import social.saigon.domain.PlainText
@@ -42,6 +45,7 @@ import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
 import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.domain.RoomUpdate
+import social.saigon.domain.Service
 import social.saigon.domain.ThreadSummary
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
@@ -115,6 +119,80 @@ data class ChangeUsernameRequest(val username: String)
  */
 @Serializable
 data class SetPasswordRequest(val newPassword: String, val currentPassword: String? = null)
+
+/** Create a service from a room. The provider is always the authenticated caller. */
+@Serializable
+data class ServiceCreate(
+    val roomId: String,
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+)
+
+/** A service enriched with its room name and provider details for list + detail screens. */
+@Serializable
+data class ServiceView(
+    val id: String,
+    val emoji: String,
+    val name: String,
+    val description: String,
+    val roomId: String,
+    val roomName: String,
+    val providerId: String,
+    val providerName: String,
+    val providerRole: Role,
+    val providerLanguages: List<String> = emptyList(),
+    val providerInterests: List<String> = emptyList(),
+    val createdAt: Long,
+)
+
+/** Public feedback on a service, with the author's display name + role (for the badge). */
+@Serializable
+data class FeedbackView(
+    val id: String,
+    val serviceId: String,
+    val userId: String,
+    val authorName: String,
+    val authorRole: Role,
+    val emoji: String,
+    val message: String,
+    val createdAt: Long,
+)
+
+/** Add feedback to a service. */
+@Serializable
+data class FeedbackCreate(val emoji: String, val message: String = "")
+
+/** Submit a "Request an Invite" from the sign-in screen (public, no account is created). */
+@Serializable
+data class InviteRequestCreate(
+    val name: String,
+    val zaloNumber: String,
+    val description: String = "",
+)
+
+/** Founder-facing view of a pending invite request. */
+@Serializable
+data class InviteRequestView(
+    val id: String,
+    val name: String,
+    val zaloNumber: String,
+    val description: String,
+    val status: InviteStatus,
+    val createdAt: Long,
+)
+
+/** Contact a service provider with an opening message. */
+@Serializable
+data class ContactProviderRequest(val message: String)
+
+/** The direct chat opened by contacting a provider, so the client can navigate straight to it. */
+@Serializable
+data class ContactProviderResponse(
+    val roomId: String,
+    val providerId: String,
+    val providerName: String,
+)
 
 /**
  * Phase 0 HTTP + WebSocket surface. Higher phases hang their routes off this same wiring.
@@ -358,7 +436,6 @@ fun Application.registerRoutes(
                         languages = identity.languages ?: user.languages,
                         interests = identity.interests ?: user.interests,
                         offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
-                        providingServices = identity.providingServices ?: user.providingServices,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
                         )
@@ -392,11 +469,58 @@ fun Application.registerRoutes(
                     languages = identity.languages ?: user.languages,
                     interests = identity.interests ?: user.interests,
                     offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
-                    providingServices = identity.providingServices ?: user.providingServices,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
                 ),
             )
+        }
+
+        // --- Services (top-level entity) ---
+
+        // Public: browse/search services by name (case-insensitive partial match). Each result
+        // carries the room name + provider details so the search cards can render everything.
+        get("/services") {
+            val q = call.request.queryParameters["q"].orEmpty().trim().lowercase()
+            val services = repositories.services.all()
+                .filter { q.isEmpty() || it.name.lowercase().contains(q) }
+                .sortedByDescending { it.createdAt }
+                .map { it.toServiceView(repositories) }
+            call.respond(services)
+        }
+
+        // Public: a single service's full detail.
+        get("/services/{id}") {
+            val id = call.parameters["id"].orEmpty()
+            val service = repositories.services.get(id)
+                ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such service")); return@get }
+            call.respond(service.toServiceView(repositories))
+        }
+
+        // Public: feedback for a service (aggregated client-side by emoji).
+        get("/services/{id}/feedback") {
+            val id = call.parameters["id"].orEmpty()
+            val feedback = repositories.feedback.byService(id).map { it.toFeedbackView(repositories) }
+            call.respond(feedback)
+        }
+
+        // Public: submit a "Request an Invite" (DESIGN — no account is created automatically).
+        post("/invite-requests") {
+            val req = call.receive<InviteRequestCreate>()
+            val name = req.name.trim()
+            val zalo = req.zaloNumber.trim()
+            require(name.isNotBlank()) { "A full name is required." }
+            require(zalo.isNotBlank()) { "A Zalo number is required." }
+            repositories.inviteRequests.create(
+                InviteRequest(
+                    id = UUID.randomUUID().toString(),
+                    name = name,
+                    zaloNumber = zalo,
+                    description = req.description.trim(),
+                    status = InviteStatus.PENDING,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            call.respond(HttpStatusCode.OK, mapOf("ok" to true))
         }
 
         authenticate(AUTH_JWT) {
@@ -732,6 +856,135 @@ fun Application.registerRoutes(
                 call.respond(mapOf("deleted" to invite.code))
             }
 
+            // --- Services & Feedback (authenticated writes) ---
+
+            // Create a service from a room. The provider is the caller and must be a Supporter
+            // (server-side validation): only Supporters/Founder offer services. The new service id
+            // is appended to the provider's `services` list.
+            post("/rooms/{roomId}/services") {
+                val userId = requireMember(call.caller())
+                val roomId = call.requireRoomId()
+                val room = repositories.rooms.get(roomId)
+                    ?: throw IllegalArgumentException("That room does not exist.")
+                val user = repositories.users.get(userId)
+                    ?: throw IllegalArgumentException("Unknown user")
+                require(user.role == Role.SUPPORTER || user.role == Role.FOUNDER) {
+                    "Only Supporters can provide services."
+                }
+                val req = call.receive<ServiceCreate>()
+                require(req.emoji.isNotBlank()) { "An emoji is required." }
+                require(req.name.isNotBlank()) { "A service name is required." }
+                val service = repositories.services.create(
+                    Service(
+                        id = UUID.randomUUID().toString(),
+                        providerId = userId,
+                        roomId = room.id,
+                        emoji = req.emoji.trim(),
+                        name = req.name.trim(),
+                        description = req.description.trim(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                repositories.users.update(user.copy(services = user.services + service.id))
+                call.respond(service.toServiceView(repositories))
+            }
+
+            // Add public feedback to a service. Any member may leave feedback.
+            post("/services/{id}/feedback") {
+                val userId = requireMember(call.caller())
+                val serviceId = call.parameters["id"].orEmpty()
+                repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                val req = call.receive<FeedbackCreate>()
+                require(req.emoji.isNotBlank()) { "An emoji is required." }
+                val feedback = repositories.feedback.create(
+                    Feedback(
+                        id = UUID.randomUUID().toString(),
+                        serviceId = serviceId,
+                        userId = userId,
+                        emoji = req.emoji.trim(),
+                        message = req.message.trim(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                call.respond(feedback.toFeedbackView(repositories))
+            }
+
+            // Delete feedback (hard delete). Allowed for the service provider, the Founder, or the
+            // author of the feedback.
+            delete("/feedback/{id}") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val feedbackId = call.parameters["id"].orEmpty()
+                val feedback = repositories.feedback.get(feedbackId)
+                    ?: throw IllegalArgumentException("That feedback does not exist.")
+                val service = repositories.services.get(feedback.serviceId)
+                val isProvider = service?.providerId == userId
+                val isAuthor = feedback.userId == userId
+                val isFounder = caller.role.isAdmin
+                require(isProvider || isAuthor || isFounder) {
+                    "You cannot delete this feedback."
+                }
+                repositories.feedback.delete(feedbackId)
+                call.respond(mapOf("deleted" to feedbackId))
+            }
+
+            // Contact a service provider: open (or reuse) a direct chat scoped to the service's
+            // room and post the caller's opening message, then return the chat coordinates so the
+            // client can navigate straight to the conversation (DESIGN §7).
+            post("/services/{id}/contact") {
+                val userId = requireMember(call.caller())
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                val req = call.receive<ContactProviderRequest>()
+                val message = req.message.trim()
+                require(message.isNotBlank()) { "A message is required." }
+                val chat = privateChatService.openOrStart(userId, service.providerId, service.roomId)
+                privateChatService.post(chat.id, userId, message)
+                val providerName = identities.getOrCreate(service.providerId, service.roomId).name
+                call.respond(
+                    ContactProviderResponse(
+                        roomId = service.roomId,
+                        providerId = service.providerId,
+                        providerName = providerName,
+                    ),
+                )
+            }
+
+            // --- Founder-only invite request management ---
+
+            // Founder-only: pending invite requests (dismissed/resolved are never listed). The count
+            // of this list backs the admin badge.
+            get("/founder/invite-requests") {
+                requireFounder(call.caller())
+                val pending = repositories.inviteRequests.all()
+                    .filter { it.status == InviteStatus.PENDING }
+                    .sortedByDescending { it.createdAt }
+                    .map { InviteRequestView(it.id, it.name, it.zaloNumber, it.description, it.status, it.createdAt) }
+                call.respond(pending)
+            }
+
+            // Founder-only: mark an invite request resolved (the founder handled it manually).
+            post("/founder/invite-requests/{id}/resolve") {
+                requireFounder(call.caller())
+                val id = call.parameters["id"].orEmpty()
+                val request = repositories.inviteRequests.get(id)
+                    ?: throw IllegalArgumentException("That invite request does not exist.")
+                repositories.inviteRequests.update(request.copy(status = InviteStatus.RESOLVED))
+                call.respond(mapOf("id" to id, "status" to InviteStatus.RESOLVED.name))
+            }
+
+            // Founder-only: dismiss an invite request.
+            post("/founder/invite-requests/{id}/dismiss") {
+                requireFounder(call.caller())
+                val id = call.parameters["id"].orEmpty()
+                val request = repositories.inviteRequests.get(id)
+                    ?: throw IllegalArgumentException("That invite request does not exist.")
+                repositories.inviteRequests.update(request.copy(status = InviteStatus.DISMISSED))
+                call.respond(mapOf("id" to id, "status" to InviteStatus.DISMISSED.name))
+            }
+
             // Founder-only manual tier change (MEMBER_MANAGEMENT.md B): comp a member up to Supporter,
             // downgrade to Sharer, or demote to Seeker — no payment is recorded. Because the JWT
             // carries the role, a fresh token reflecting the new tier is returned so the member can
@@ -968,8 +1221,6 @@ data class OccupantView(
     val interests: List<String> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
-    /** Services a Supporter offers, shown under "Providing" on the detail sheet. */
-    val providingServices: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
 )
@@ -984,7 +1235,6 @@ data class ProfileResponse(
     val intents: List<Intent> = emptyList(),
     val languages: List<String>,
     val offlineSchedule: List<String>,
-    val providingServices: List<String> = emptyList(),
     val supporterUntil: Long?,
     val capabilities: List<Capability>,
     /** The login-only handle used as the username for password sign-in (PASSWORD_AUTH.md §2C). */
@@ -1177,13 +1427,47 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     intents = intents,
     languages = languages,
     offlineSchedule = offlineSchedule,
-    providingServices = providingServices,
     supporterUntil = supporterUntil,
     capabilities = CapabilityMatrix.capabilities(role).toList(),
     handle = handle,
     // Never expose the hash itself — only whether a password exists (PASSWORD_AUTH.md §2E).
     passwordSet = passwordHash != null,
 )
+
+/** Enrich a [Service] with its room name and provider details for the client (search + detail). */
+private fun Service.toServiceView(repositories: Repositories): ServiceView {
+    val room = repositories.rooms.get(roomId)
+    val provider = repositories.users.get(providerId)
+    return ServiceView(
+        id = id,
+        emoji = emoji,
+        name = name,
+        description = description,
+        roomId = roomId,
+        roomName = room?.name ?: roomId,
+        providerId = providerId,
+        providerName = provider?.displayName ?: providerId,
+        providerRole = provider?.role ?: Role.SHARER,
+        providerLanguages = provider?.languages ?: emptyList(),
+        providerInterests = provider?.interests ?: emptyList(),
+        createdAt = createdAt,
+    )
+}
+
+/** Enrich a [Feedback] with the author's display name + role (for the name badge). */
+private fun Feedback.toFeedbackView(repositories: Repositories): FeedbackView {
+    val author = repositories.users.get(userId)
+    return FeedbackView(
+        id = id,
+        serviceId = serviceId,
+        userId = userId,
+        authorName = author?.displayName ?: userId,
+        authorRole = author?.role ?: Role.SHARER,
+        emoji = emoji,
+        message = message,
+        createdAt = createdAt,
+    )
+}
 
 /**
  * Resolve a message/reply author's room-scoped display name (DESIGN §5) so the public feed and

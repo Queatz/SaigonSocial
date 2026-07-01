@@ -194,6 +194,7 @@ internal fun RoomListScreen(
     onOpenDirectChats: () -> Unit = {},
     threadReplyCount: Int = 0,
     onOpenThreadReplies: () -> Unit = {},
+    onOpenServices: () -> Unit = {},
     signedIn: Boolean = false,
     userDisplayName: String? = null,
 ) {
@@ -332,6 +333,27 @@ internal fun RoomListScreen(
                                         fontWeight = FontWeight.Medium,
                                     )
                                 }
+                            }
+                        }
+                    }
+                    // Entry to the city-wide service directory (issue §5), open to everyone.
+                    item {
+                        Card(
+                            onClick = onOpenServices,
+                            modifier = Modifier.fillMaxWidth().softShadow(),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("🔧", fontSize = 24.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = "Browse services",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
                         }
                     }
@@ -964,6 +986,7 @@ private fun OccupantDetailSheet(
     // Supporters/Founders tailor their profile per room ("Edit your room profile"); Sharers only
     // refresh their anonymous name (DESIGN §4, §5). Tracks whether the edit dialog is open.
     var editingRoomProfile by remember { mutableStateOf(false) }
+    var offeringService by remember { mutableStateOf(false) }
     val canEditRoomProfile = person.role == Role.SUPPORTER || person.role == Role.FOUNDER
     // Animate the sheet shut before clearing the selection, so tapping "Close" slides the sheet
     // down the same way swiping it away or tapping the scrim does — rather than vanishing instantly.
@@ -986,7 +1009,8 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isSelf) "You are ${person.name}" else person.name,
+                        if (isSelf) "You are ${nameWithBadge(person.name, person.role)}"
+                        else nameWithBadge(person.name, person.role),
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                     )
@@ -1031,22 +1055,23 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.height(4.dp))
                 Text(person.offlineSchedule.joinToString(" · "), fontSize = 14.sp)
             }
-            if (person.providingServices.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                Text("Providing", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Spacer(Modifier.height(4.dp))
-                Text(person.providingServices.joinToString("\n") { " · $it" }, fontSize = 14.sp)
-            }
             Spacer(Modifier.height(20.dp))
             // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
             // Supporter/Founder, or simply close for everyone else.
             val canChat = canStartPrivate &&
                 (person.role == Role.SUPPORTER || person.role == Role.FOUNDER)
             when {
-                isSelf && canEditRoomProfile -> OutlinedButton(
-                    onClick = { editingRoomProfile = true },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("✏️ Edit your room profile") }
+                isSelf && canEditRoomProfile -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { editingRoomProfile = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("✏️ Edit your room profile") }
+                    // A service always belongs to the room it's created from (issue §1).
+                    Button(
+                        onClick = { offeringService = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("➕ Offer a service here") }
+                }
                 isSelf -> OutlinedButton(
                     onClick = onRefresh,
                     modifier = Modifier.fillMaxWidth(),
@@ -1054,7 +1079,7 @@ private fun OccupantDetailSheet(
                 canChat -> Button(
                     onClick = onStartChat,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Chat with ${person.name}") }
+                ) { Text("Chat with ${nameWithBadge(person.name, person.role)}") }
                 else -> OutlinedButton(
                     onClick = animateClose,
                     modifier = Modifier.fillMaxWidth(),
@@ -1070,6 +1095,91 @@ private fun OccupantDetailSheet(
             onSaved = { editingRoomProfile = false; onEdited() },
         )
     }
+    if (offeringService) {
+        CreateServiceDialog(
+            api = api,
+            roomId = roomId,
+            onDismiss = { offeringService = false },
+            onCreated = { offeringService = false },
+        )
+    }
+}
+
+/**
+ * Create a service from the current room (issue §1). A service always belongs to the room it's
+ * created from, so the [roomId] is fixed here; the caller (a Supporter/Founder) supplies an emoji
+ * icon, a name, and an optional description. On success the service is persisted and appears in the
+ * `/services` search.
+ */
+@Composable
+private fun CreateServiceDialog(
+    api: SaigonApi,
+    roomId: String,
+    onDismiss: () -> Unit,
+    onCreated: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var emoji by remember { mutableStateOf("🔧") }
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Offer a service") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Emoji icon") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Service name") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Description") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && emoji.isNotBlank() && name.isNotBlank(),
+                onClick = {
+                    error = null
+                    busy = true
+                    scope.launch {
+                        try {
+                            api.createService(roomId, emoji.trim(), name.trim(), description.trim())
+                            onCreated()
+                        } catch (e: Throwable) {
+                            error = e.message ?: "Could not create the service."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
@@ -1148,11 +1258,6 @@ private fun EditRoomProfileForm(
     var availabilityCustom by remember { mutableStateOf(identity.offlineSchedule != null) }
     var availabilityText by remember {
         mutableStateOf((identity.offlineSchedule ?: profile.offlineSchedule).joinToString("; "))
-    }
-
-    var providingCustom by remember { mutableStateOf(identity.providingServices != null) }
-    var providingText by remember {
-        mutableStateOf((identity.providingServices ?: profile.providingServices).joinToString("; "))
     }
 
     var saving by remember { mutableStateOf(false) }
@@ -1278,23 +1383,6 @@ private fun EditRoomProfileForm(
                     shape = InputFieldShape,
                 )
 
-                // Providing services (semicolon-separated free text).
-                RoomFacetHeader(
-                    title = "Providing",
-                    customized = providingCustom,
-                    onReset = {
-                        providingCustom = false
-                        providingText = profile.providingServices.joinToString("; ")
-                    },
-                )
-                OutlinedTextField(
-                    value = providingText,
-                    onValueChange = { providingText = it; providingCustom = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Services you're providing (semicolon-separated)") },
-                    shape = InputFieldShape,
-                )
-
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1316,9 +1404,6 @@ private fun EditRoomProfileForm(
                             languages = if (languagesCustom) languages.toList() else null,
                             offlineSchedule = if (availabilityCustom) {
                                 availabilityText.split(";").map { it.trim() }.filter { it.isNotEmpty() }
-                            } else null,
-                            providingServices = if (providingCustom) {
-                                providingText.split(";").map { it.trim() }.filter { it.isNotEmpty() }
                             } else null,
                         )
                         try {
