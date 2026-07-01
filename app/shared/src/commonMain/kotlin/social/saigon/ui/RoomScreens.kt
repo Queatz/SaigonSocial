@@ -386,7 +386,7 @@ internal fun RoomListScreen(
                     val searching = search.trim().isNotEmpty()
                     item {
                         Text(
-                            text = if (searching) "Results" else "Popular",
+                            text = if (searching) "Results" else "Popular rooms",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(top = 16.dp)
@@ -599,6 +599,7 @@ internal fun RoomChatScreen(
     onOpenDirectChat: (DirectChat) -> Unit,
     onOpenRoom: (RoomSummary) -> Unit,
     onSignIn: () -> Unit,
+    onOpenService: (String) -> Unit = {},
     initialThreadId: String? = null,
     onThreadChange: (String?) -> Unit = {},
 ) {
@@ -827,6 +828,7 @@ internal fun RoomChatScreen(
                             onTapAvailable = onStartPrivate,
                             onRefreshSelf = onRefreshIdentity,
                             onIdentityEdited = reloadOccupants,
+                            onOpenService = onOpenService,
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -910,6 +912,7 @@ internal fun RoomChatScreen(
                         onTapAvailable = onStartPrivate,
                         onRefreshSelf = onRefreshIdentity,
                         onIdentityEdited = reloadOccupants,
+                        onOpenService = onOpenService,
                     )
                 }
             }
@@ -933,6 +936,22 @@ internal fun RoomChatScreen(
                         if (openThread?.id == updated.id) openThread = updated
                     },
                     onSignIn = onSignIn,
+                    onOpenProfile = { authorId ->
+                        // Only one sheet at a time: close the thread first, then open the tapped
+                        // author's profile sheet, resolving the live occupant (freshest "available"
+                        // flag) or fetching them by id if they've since left (DESIGN §5, §6).
+                        openThread = null
+                        onThreadChange(null)
+                        val present = occupants.firstOrNull { it.userId == authorId }
+                        if (present != null) {
+                            selectedOccupant = present
+                        } else {
+                            scope.launch {
+                                runCatching { api.occupant(room.id, authorId) }
+                                    .getOrNull()?.let { selectedOccupant = it }
+                            }
+                        }
+                    },
                     onClose = { openThread = null; onThreadChange(null) },
                 )
             }
@@ -951,6 +970,7 @@ internal fun RoomChatScreen(
                     onStartChat = { selectedOccupant = null; onStartPrivate(person) },
                     onRefresh = onRefreshIdentity,
                     onEdited = reloadOccupants,
+                    onOpenService = onOpenService,
                     onClose = { selectedOccupant = null },
                 )
             }
@@ -979,6 +999,7 @@ private fun OccupantDetailSheet(
     onStartChat: () -> Unit,
     onRefresh: () -> Unit,
     onEdited: () -> Unit,
+    onOpenService: (String) -> Unit,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -988,6 +1009,14 @@ private fun OccupantDetailSheet(
     var editingRoomProfile by remember { mutableStateOf(false) }
     var offeringService by remember { mutableStateOf(false) }
     val canEditRoomProfile = person.role == Role.SUPPORTER || person.role == Role.FOUNDER
+    // The services this member provides in this room, shown under a "Providing" section. Reloaded
+    // whenever the member creates a new one (via [servicesReload]) so it appears without reopening.
+    val services = remember(person.userId, roomId) { mutableStateListOf<ServiceView>() }
+    var servicesReload by remember(person.userId, roomId) { mutableStateOf(0) }
+    LaunchedEffect(person.userId, roomId, servicesReload) {
+        runCatching { api.services(providerId = person.userId, roomId = roomId) }
+            .getOrNull()?.let { services.clear(); services.addAll(it) }
+    }
     // Animate the sheet shut before clearing the selection, so tapping "Close" slides the sheet
     // down the same way swiping it away or tapping the scrim does — rather than vanishing instantly.
     val animateClose: () -> Unit = {
@@ -1038,7 +1067,7 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.height(16.dp))
                 Text("Here for", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
-                person.intents.forEach { Text(it.badge, fontSize = 14.sp) }
+                person.intents.forEach { Text(it, fontSize = 14.sp) }
             }
             if (person.languages.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1054,6 +1083,35 @@ private fun OccupantDetailSheet(
                 Text("Availability", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(person.offlineSchedule.joinToString(" · "), fontSize = 14.sp)
+            }
+            if (services.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Providing", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    services.forEach { service ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
+                                    fontSize = 14.sp,
+                                )
+                                Text(
+                                    UiConstants.vnd(service.price) +
+                                        if (service.description.isNotBlank()) " • ${service.description}" else "",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Button(onClick = { onOpenService(service.id) }) { Text("Buy") }
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(20.dp))
             // CTA adapts to who is shown: refresh your own identity, start a chat with a reachable
@@ -1100,7 +1158,7 @@ private fun OccupantDetailSheet(
             api = api,
             roomId = roomId,
             onDismiss = { offeringService = false },
-            onCreated = { offeringService = false },
+            onCreated = { offeringService = false; servicesReload++ },
         )
     }
 }
@@ -1122,6 +1180,7 @@ private fun CreateServiceDialog(
     var emoji by remember { mutableStateOf("🔧") }
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -1156,6 +1215,15 @@ private fun CreateServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { new -> price = new.filter { it.isDigit() }; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Price (VND)") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1167,7 +1235,7 @@ private fun CreateServiceDialog(
                     busy = true
                     scope.launch {
                         try {
-                            api.createService(roomId, emoji.trim(), name.trim(), description.trim())
+                            api.createService(roomId, emoji.trim(), name.trim(), description.trim(), price.toIntOrNull() ?: 0)
                             onCreated()
                         } catch (e: Throwable) {
                             error = e.message ?: "Could not create the service."
@@ -1247,7 +1315,7 @@ private fun EditRoomProfileForm(
 
     var intentsCustom by remember { mutableStateOf(identity.intents != null) }
     val intents = remember {
-        mutableStateListOf<Intent>().apply { addAll(identity.intents ?: profile.intents) }
+        mutableStateListOf<String>().apply { addAll(identity.intents ?: profile.intents) }
     }
 
     var languagesCustom by remember { mutableStateOf(identity.languages != null) }
@@ -1319,7 +1387,9 @@ private fun EditRoomProfileForm(
                     },
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    UiConstants.intents.chunked(2).forEach { rowIntents ->
+                    // Show the launch set plus any custom badges already on this identity/profile,
+                    // so room-scoped custom "Here for" badges remain selectable here too (DESIGN §4, §5).
+                    (UiConstants.intents + intents).distinct().chunked(2).forEach { rowIntents ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowIntents.forEach { option ->
                                 val selected = option in intents
@@ -1329,7 +1399,7 @@ private fun EditRoomProfileForm(
                                         intentsCustom = true
                                     },
                                     modifier = Modifier.weight(1f),
-                                ) { Text((if (selected) "✅ " else "") + option.badge, fontSize = 11.sp) }
+                                ) { Text((if (selected) "✅ " else "") + option, fontSize = 11.sp) }
                             }
                         }
                     }
@@ -1345,7 +1415,9 @@ private fun EditRoomProfileForm(
                     },
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    UiConstants.supportedLanguages.chunked(2).forEach { rowLangs ->
+                    // Show the launch set plus any custom languages already on this identity/profile,
+                    // so room-scoped custom languages remain selectable here too (DESIGN §4, §5).
+                    (UiConstants.supportedLanguages + languages).distinct().chunked(2).forEach { rowLangs ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowLangs.forEach { code ->
                                 val selected = code in languages
@@ -1499,6 +1571,7 @@ private fun OccupantList(
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
     onIdentityEdited: () -> Unit,
+    onOpenService: (String) -> Unit = {},
 ) {
     // The self quick-action on each card opens the "Edit your room profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
@@ -1591,6 +1664,7 @@ private fun OccupantList(
                 onStartChat = { selected = null; onTapAvailable(person) },
                 onRefresh = onRefreshSelf,
                 onEdited = onIdentityEdited,
+                onOpenService = onOpenService,
                 onClose = { selected = null },
             )
         }
@@ -1615,7 +1689,7 @@ private fun OccupantList(
 private fun OccupantEmojiLine(person: OccupantView) {
     return
     val emojis = person.languages.map { UiConstants.languageEmoji(it) } +
-        person.intents.map { it.emoji }
+        person.intents.map { UiConstants.intentEmoji(it) }
     if (emojis.isNotEmpty()) {
         Text(emojis.joinToString(" "), fontSize = 12.sp)
     }
@@ -1643,7 +1717,7 @@ private fun OccupantInterestsLine(person: OccupantView) {
  * shareable URL and a "Copy link" button so members can hand the room/thread link to someone else.
  */
 @Composable
-private fun ShareButton() {
+internal fun ShareButton() {
     val scope = rememberCoroutineScope()
     val router = remember { UrlRouter() }
     var showDialog by remember { mutableStateOf(false) }
@@ -1782,6 +1856,7 @@ private fun OccupantScroller(
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
     onIdentityEdited: () -> Unit,
+    onOpenService: (String) -> Unit = {},
 ) {
     // Final dedup at the render boundary: guarantee one card per persistent user id regardless of
     // how the list was assembled — a member can briefly hold several live connections during
@@ -1917,6 +1992,7 @@ private fun OccupantScroller(
             onStartChat = { selected = null; onTapAvailable(person) },
             onRefresh = onRefreshSelf,
             onEdited = onIdentityEdited,
+            onOpenService = onOpenService,
             onClose = { selected = null },
         )
     }
@@ -1944,6 +2020,7 @@ private fun ThreadSheet(
     isFounder: Boolean,
     onRecalled: (FeedMessage) -> Unit,
     onSignIn: () -> Unit,
+    onOpenProfile: (authorId: String) -> Unit = {},
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -2059,6 +2136,8 @@ private fun ThreadSheet(
                         recalled = parent.recalled,
                         // Tapping the message offers to recall it, but only for the author or the Founder.
                         onClick = if (canRecall) ({ confirmRecall = true }) else null,
+                        // Tapping the avatar closes the thread and opens the author's profile sheet.
+                        onAvatarClick = { onOpenProfile(parent.authorId) },
                     )
                     Spacer(Modifier.height(10.dp))
                     // The reply list takes whatever vertical space is left after the header, parent
@@ -2100,6 +2179,8 @@ private fun ThreadSheet(
                                 recalled = reply.recalled,
                                 // Tapping the reply offers to recall it, but only for the author or the Founder.
                                 onClick = if (canRecallReply) ({ replyToRecall = reply }) else null,
+                                // Tapping the avatar closes the thread and opens the author's profile sheet.
+                                onAvatarClick = { onOpenProfile(reply.authorId) },
                             )
                         }
                     }

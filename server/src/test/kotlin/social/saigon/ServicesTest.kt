@@ -1,8 +1,10 @@
 package social.saigon
 
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -111,6 +113,67 @@ class ServicesTest {
         val feedback = client.get("/services/$serviceId/feedback")
         assertEquals(HttpStatusCode.OK, feedback.status)
         assertTrue(feedback.bodyAsText().contains("Great teacher"))
+    }
+
+    @Test
+    fun serviceSupportsPriceEditUnlistRelistDeleteAndSearchTracking() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "founder", role = Role.FOUNDER, displayName = "F"))
+        repositories.users.create(User(id = "sup", role = Role.SUPPORTER, displayName = "Minh"))
+        repositories.rooms.create(Room(id = "r1", name = "Room 1", emoji = "🏠", createdBy = "sup"))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val ts = TokenService(authConfig)
+        val supToken = ts.issueMemberToken("sup", Role.SUPPORTER)
+        val founderToken = ts.issueMemberToken("founder", Role.FOUNDER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // Create with a price (stored as an integer VND amount).
+        val created = client.post("/rooms/r1/services") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"roomId":"r1","emoji":"🎸","name":"Guitar lessons","price":50000}""")
+        }
+        assertEquals(HttpStatusCode.OK, created.status)
+        val body = created.bodyAsText()
+        assertTrue(body.contains("\"price\":50000"))
+        val serviceId = extractId(body)
+
+        // Edit the price (and name) as the provider.
+        val edited = client.put("/services/$serviceId") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"emoji":"🎸","name":"Guitar lessons","description":"","price":75000}""")
+        }
+        assertEquals(HttpStatusCode.OK, edited.status)
+        assertTrue(edited.bodyAsText().contains("\"price\":75000"))
+
+        // Unlist: hidden from the public search but still returned in the provider's own list.
+        client.post("/services/$serviceId/unlist") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+        }.let { assertEquals(HttpStatusCode.OK, it.status) }
+        assertFalse(client.get("/services?q=guitar").bodyAsText().contains("Guitar lessons"))
+        val mine = client.get("/services/mine") { header(HttpHeaders.Authorization, "Bearer $supToken") }
+        assertTrue(mine.bodyAsText().contains("Guitar lessons"))
+
+        // Relist restores it to the public search.
+        client.post("/services/$serviceId/relist") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+        }.let { assertEquals(HttpStatusCode.OK, it.status) }
+        assertTrue(client.get("/services?q=guitar").bodyAsText().contains("Guitar lessons"))
+
+        // The by-name search above is recorded for the founder.
+        val searches = client.get("/founder/service-searches") {
+            header(HttpHeaders.Authorization, "Bearer $founderToken")
+        }
+        assertEquals(HttpStatusCode.OK, searches.status)
+        assertTrue(searches.bodyAsText().contains("guitar"))
+
+        // Delete removes it and drops it from the provider's services list.
+        client.delete("/services/$serviceId") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+        }.let { assertEquals(HttpStatusCode.OK, it.status) }
+        assertFalse(repositories.users.get("sup")!!.services.contains(serviceId))
+        assertEquals(HttpStatusCode.NotFound, client.get("/services/$serviceId").status)
     }
 
     @Test

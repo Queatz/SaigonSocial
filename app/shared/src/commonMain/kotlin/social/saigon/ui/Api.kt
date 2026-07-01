@@ -280,11 +280,21 @@ class SaigonApi(
 
     // --- Services, feedback, and invite requests ---
 
-    /** Public: search services by name (case-insensitive partial match). Blank [query] lists all. */
-    suspend fun services(query: String? = null): List<ServiceView> =
+    /**
+     * Public: search services by name (case-insensitive partial match). Blank [query] lists all.
+     * Optionally scope to a single [providerId] (their "Providing"/"Services provided" lists) and/or
+     * a single [roomId].
+     */
+    suspend fun services(
+        query: String? = null,
+        providerId: String? = null,
+        roomId: String? = null,
+    ): List<ServiceView> =
         client.get("$baseUrl/services") {
             HttpRequestAuth(this)
             query?.trim()?.takeIf { it.isNotBlank() }?.let { url.parameters.append("q", it) }
+            providerId?.takeIf { it.isNotBlank() }?.let { url.parameters.append("provider", it) }
+            roomId?.takeIf { it.isNotBlank() }?.let { url.parameters.append("room", it) }
         }.body()
 
     /** Public: a single service's full detail, or null when it can't be found. */
@@ -298,12 +308,48 @@ class SaigonApi(
         client.get("$baseUrl/services/$serviceId/feedback") { HttpRequestAuth(this) }.body()
 
     /** Create a service from a room (Supporters only, server-validated). Requires a member token. */
-    suspend fun createService(roomId: String, emoji: String, name: String, description: String): ServiceView =
+    suspend fun createService(
+        roomId: String,
+        emoji: String,
+        name: String,
+        description: String,
+        price: Int = 0,
+    ): ServiceView =
         client.post("$baseUrl/rooms/$roomId/services") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(ServiceCreate(roomId, emoji, name, description))
+            setBody(ServiceCreate(roomId, emoji, name, description, price))
         }.decodeMember()
+
+    /** The caller's own services across all rooms, including unlisted ones. Requires a member token. */
+    suspend fun myServices(): List<ServiceView> =
+        client.get("$baseUrl/services/mine") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Edit a service (provider or Founder). Requires a member token. */
+    suspend fun updateService(
+        serviceId: String,
+        emoji: String,
+        name: String,
+        description: String,
+        price: Int,
+    ): ServiceView =
+        client.put("$baseUrl/services/$serviceId") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(ServiceUpdate(emoji, name, description, price))
+        }.decodeMember()
+
+    /** Unlist a service (make it invisible in the public search). Requires a member token. */
+    suspend fun unlistService(serviceId: String): ServiceView =
+        client.post("$baseUrl/services/$serviceId/unlist") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Relist a previously unlisted service. Requires a member token. */
+    suspend fun relistService(serviceId: String): ServiceView =
+        client.post("$baseUrl/services/$serviceId/relist") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Delete a service (provider or Founder). Requires a member token. */
+    suspend fun deleteService(serviceId: String): Unit =
+        client.delete("$baseUrl/services/$serviceId") { HttpRequestAuth(this) }.let { }
 
     /** Leave public feedback on a service. Requires a member token. */
     suspend fun addFeedback(serviceId: String, emoji: String, message: String): FeedbackView =
@@ -453,6 +499,16 @@ class SaigonApi(
      */
     suspend fun roomSearches(limit: Int = 100): List<RoomSearchView> =
         client.get("$baseUrl/founder/room-searches") {
+            HttpRequestAuth(this)
+            url.parameters.append("limit", limit.toString())
+        }.decodeMember()
+
+    /**
+     * Founder-only: the most recent service searches, newest first, so the founder can see what
+     * services people are looking for. [limit] caps the result (1–500).
+     */
+    suspend fun serviceSearches(limit: Int = 100): List<RoomSearchView> =
+        client.get("$baseUrl/founder/service-searches") {
             HttpRequestAuth(this)
             url.parameters.append("limit", limit.toString())
         }.decodeMember()

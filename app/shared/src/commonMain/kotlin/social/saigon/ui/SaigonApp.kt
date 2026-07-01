@@ -82,6 +82,10 @@ private sealed interface Screen {
     data object Profile : Screen
     data object Members : Screen
     data object RoomSearches : Screen
+    data object ServiceSearches : Screen
+
+    /** The caller's own "Services provided" list, reached from their profile. */
+    data object MyServices : Screen
 
     /** The `/services` search screen (issue §5). */
     data object Services : Screen
@@ -113,6 +117,8 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.Profile -> null
     Screen.Members -> null
     Screen.RoomSearches -> null
+    Screen.ServiceSearches -> null
+    Screen.MyServices -> null
     Screen.Services -> "/services"
     is Screen.ServiceDetail -> "/services/${screen.serviceId}"
 }
@@ -329,6 +335,8 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                         Screen.Members -> "Members"
                         Screen.RoomSearches -> "Room searches"
+                        Screen.ServiceSearches -> "Service searches"
+                        Screen.MyServices -> "Services provided"
                         Screen.Services -> "Services"
                         is Screen.ServiceDetail -> "Service"
                     },
@@ -349,7 +357,9 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                     onBack = {
                         val current = screen
                         screen = when {
-                            current == Screen.Members || current == Screen.RoomSearches -> Screen.Profile
+                            current == Screen.Members || current == Screen.RoomSearches ||
+                                current == Screen.ServiceSearches ||
+                                current == Screen.MyServices -> Screen.Profile
                             current is Screen.ServiceDetail -> Screen.Services
                             else -> Screen.RoomList
                         }
@@ -424,6 +434,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                             onOpenDirectChat = { openDirectChat(it) },
                             onOpenRoom = { screen = Screen.Room(it) },
                             onSignIn = { screen = Screen.Profile },
+                            onOpenService = { screen = Screen.ServiceDetail(it) },
                             initialThreadId = s.threadId,
                             onThreadChange = { threadId ->
                                 val current = screen
@@ -485,17 +496,29 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
 
                         Screen.Profile -> MaxWidthContainer {
                             ProfileScreen(
-                                api,
-                                token,
+                                api = api,
+                                token = token,
                                 onToken = { token = it },
                                 onViewMembers = { screen = Screen.Members },
                                 onViewRoomSearches = { screen = Screen.RoomSearches },
+                                onViewServiceSearches = { screen = Screen.ServiceSearches },
+                                onViewMyServices = { screen = Screen.MyServices },
+                            )
+                        }
+
+                        Screen.MyServices -> MaxWidthContainer {
+                            MyServicesScreen(
+                                api = api,
+                                selfUserId = profile?.id,
+                                onOpenService = { screen = Screen.ServiceDetail(it) },
                             )
                         }
 
                         Screen.Members -> MaxWidthContainer { FounderMembersScreen(api) }
 
                         Screen.RoomSearches -> MaxWidthContainer { FounderRoomSearchesScreen(api) }
+
+                        Screen.ServiceSearches -> MaxWidthContainer { FounderServiceSearchesScreen(api) }
 
                         Screen.Services -> MaxWidthContainer {
                             ServiceSearchScreen(
@@ -516,6 +539,8 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                                         DirectChat(res.roomId, res.providerId, res.providerName),
                                     )
                                 },
+                                onSignIn = { screen = Screen.Profile },
+                                onDeleted = { screen = Screen.Services },
                             )
                         }
                     }

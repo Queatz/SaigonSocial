@@ -272,6 +272,66 @@ internal fun FounderRoomSearchesSection(api: SaigonApi) {
 }
 
 /**
+ * Stand-alone page hosting the founder-only list of recent service searches
+ * ([FounderServiceSearchesSection]), reached via the "Service searches" button on the profile
+ * screen.
+ */
+@Composable
+internal fun FounderServiceSearchesScreen(api: SaigonApi) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FounderServiceSearchesSection(api)
+    }
+}
+
+/**
+ * Founder-only list of the latest service searches. Every time someone searches the service list by
+ * name, the query is recorded server-side; surfacing the most recent searches here lets the founder
+ * understand what kinds of services people are looking for (mirrors [FounderRoomSearchesSection]).
+ */
+@Composable
+internal fun FounderServiceSearchesSection(api: SaigonApi) {
+    val searches = remember { mutableStateListOf<RoomSearchView>() }
+    var loaded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        error = null
+        try {
+            val list = api.serviceSearches()
+            searches.clear()
+            searches.addAll(list)
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load service searches"
+        } finally {
+            loaded = true
+        }
+    }
+
+    Text("Service searches", fontWeight = FontWeight.Bold)
+    Text(
+        "The latest searches people ran against the service list, newest first. Use them to " +
+            "understand what kinds of services people are looking for.",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+
+    when {
+        !loaded -> LoadingSpinner()
+        searches.isEmpty() -> Text(
+            "No service searches yet.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        else -> searches.forEach { search -> RoomSearchRow(search) }
+    }
+}
+
+/**
  * Founder-only "Request an Invite" management (issue §4). Lists every *pending* invite request with
  * the person's name, Zalo number, description, status, and date, and a count badge of how many are
  * pending. Each request can be Dismissed or Resolved; once actioned it drops off the list (the
@@ -302,15 +362,15 @@ internal fun FounderInviteRequestsSection(api: SaigonApi) {
     LaunchedEffect(Unit) { reload() }
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text("Invite requests", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(
+            "People who asked to join from the sign-in screen. Contact them on Zalo, then resolve " +
+                "or dismiss the request.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
         if (requests.isNotEmpty()) CountBadge(requests.size)
     }
-    Text(
-        "People who asked to join from the sign-in screen. Contact them on Zalo, then resolve or " +
-            "dismiss the request.",
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 
     error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
 
@@ -657,7 +717,7 @@ private fun MemberRow(
                     }
                 }
             }
-            member.intents.forEach { Text(it.badge, fontSize = 12.sp) }
+            member.intents.forEach { Text(it, fontSize = 12.sp) }
             if (member.languages.isNotEmpty()) {
                 Text(
                     "Languages: " + member.languages.joinToString(" · ") { UiConstants.languageLabel(it) },

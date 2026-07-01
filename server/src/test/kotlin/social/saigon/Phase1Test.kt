@@ -7,7 +7,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import social.saigon.domain.Capability
 import social.saigon.domain.CapabilityMatrix
-import social.saigon.domain.Intent
 import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.Role
 import social.saigon.domain.User
@@ -50,14 +49,14 @@ class Phase1Test {
             "u1",
             ProfileUpdate(
                 interests = listOf("guitar", " coffee ", "guitar"),
-                intents = listOf(Intent.DEEP_TALK),
+                intents = listOf("🧠 Deep Talk"),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("Mon-Fri 7-9 PM"),
             ),
         )
         // Trimmed + de-duplicated.
         assertEquals(listOf("guitar", "coffee"), updated.interests)
-        assertEquals(listOf(Intent.DEEP_TALK), updated.intents)
+        assertEquals(listOf("🧠 Deep Talk"), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("Mon-Fri 7-9 PM"), updated.offlineSchedule)
     }
@@ -66,10 +65,10 @@ class Phase1Test {
     fun nullFieldsLeaveExistingValuesUntouched() {
         val (svc, repo) = service()
         sharer(repo)
-        svc.update("u1", ProfileUpdate(interests = listOf("books"), intents = listOf(Intent.CASUAL)))
+        svc.update("u1", ProfileUpdate(interests = listOf("books"), intents = listOf("☕ Casual")))
         val updated = svc.update("u1", ProfileUpdate(languages = listOf("ko")))
         assertEquals(listOf("books"), updated.interests)
-        assertEquals(listOf(Intent.CASUAL), updated.intents)
+        assertEquals(listOf("☕ Casual"), updated.intents)
         assertEquals(listOf("ko"), updated.languages)
     }
 
@@ -83,12 +82,16 @@ class Phase1Test {
     }
 
     @Test
-    fun rejectsUnsupportedLanguage() {
+    fun acceptsCustomLanguage() {
+        // Languages are now free-text (like intents): Supporters/Founders can add their own beyond
+        // the launch set, so a custom code is accepted, only trimmed and de-duplicated.
         val (svc, repo) = service()
         sharer(repo)
-        assertFailsWith<IllegalArgumentException> {
-            svc.update("u1", ProfileUpdate(languages = listOf("xx")))
-        }
+        val updated = svc.update(
+            "u1",
+            ProfileUpdate(languages = listOf("vi", " Tagalog ", "Tagalog")),
+        )
+        assertEquals(listOf("vi", "Tagalog"), updated.languages)
     }
 
     @Test

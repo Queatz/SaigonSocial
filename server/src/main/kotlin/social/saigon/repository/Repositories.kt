@@ -16,6 +16,7 @@ import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
 import social.saigon.domain.RoomSearch
 import social.saigon.domain.Service
+import social.saigon.domain.ServiceSearch
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
 import social.saigon.domain.Warning
@@ -36,6 +37,7 @@ object ArangoSchema {
     const val EMOJIS = "Emojis"
     const val METRICS = "Metrics"
     const val ROOM_SEARCHES = "RoomSearches"
+    const val SERVICE_SEARCHES = "ServiceSearches"
     const val SERVICES = "Services"
     const val FEEDBACK = "Feedback"
     const val INVITE_REQUESTS = "InviteRequests"
@@ -44,7 +46,7 @@ object ArangoSchema {
     val documentCollections: List<String> =
         listOf(
             USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS, ROOM_SEARCHES,
-            SERVICES, FEEDBACK, INVITE_REQUESTS,
+            SERVICE_SEARCHES, SERVICES, FEEDBACK, INVITE_REQUESTS,
         )
 }
 
@@ -216,10 +218,24 @@ interface ThreadRepository {
 interface ServiceRepository {
     fun create(service: Service): Service
     fun get(id: String): Service?
+    /** Persist an edited service (name/description/price/listed), replacing the stored row. */
+    fun update(service: Service): Service
     fun all(): List<Service>
     fun byProvider(providerId: String): List<Service>
     /** Delete a service by id. Idempotent. */
     fun delete(id: String)
+}
+
+/**
+ * Recorded service searches. Append-only: every by-name search of the service list is stored so
+ * the founder can understand what kinds of services people are looking for (mirrors
+ * [RoomSearchRepository]).
+ */
+interface ServiceSearchRepository {
+    fun add(search: ServiceSearch): ServiceSearch
+    /** Recent searches, newest first, capped at [limit]. */
+    fun recent(limit: Int): List<ServiceSearch>
+    fun all(): List<ServiceSearch>
 }
 
 /**
@@ -246,10 +262,19 @@ class InMemoryServiceRepository : ServiceRepository {
     private val store = ConcurrentHashMap<String, Service>()
     override fun create(service: Service): Service = service.also { store[it.id] = it }
     override fun get(id: String): Service? = store[id]
+    override fun update(service: Service): Service = service.also { store[it.id] = it }
     override fun all(): List<Service> = store.values.toList()
     override fun byProvider(providerId: String): List<Service> =
         store.values.filter { it.providerId == providerId }
     override fun delete(id: String) { store.remove(id) }
+}
+
+class InMemoryServiceSearchRepository : ServiceSearchRepository {
+    private val store = CopyOnWriteArrayList<ServiceSearch>()
+    override fun add(search: ServiceSearch): ServiceSearch = search.also { store.add(it) }
+    override fun recent(limit: Int): List<ServiceSearch> =
+        store.sortedByDescending { it.createdAt }.take(limit)
+    override fun all(): List<ServiceSearch> = store.toList()
 }
 
 class InMemoryFeedbackRepository : FeedbackRepository {
@@ -472,6 +497,7 @@ class Repositories(
     val rooms: RoomRepository = InMemoryRoomRepository(),
     val identities: RoomIdentityRepository = InMemoryRoomIdentityRepository(),
     val roomSearches: RoomSearchRepository = InMemoryRoomSearchRepository(),
+    val serviceSearches: ServiceSearchRepository = InMemoryServiceSearchRepository(),
     val messages: MessageRepository = InMemoryMessageRepository(),
     val threads: ThreadRepository = InMemoryThreadRepository(),
     val privateChats: PrivateChatRepository = InMemoryPrivateChatRepository(),

@@ -136,7 +136,9 @@ class Phase5Test {
 
         // Only participants may post; plain text is enforced.
         assertFailsWith<IllegalArgumentException> { svc.post(chat.id, "stranger", "hi") }
-        assertFailsWith<IllegalArgumentException> { svc.post(chat.id, "a", "bad\nframe") }
+        // Newlines are allowed so messages can span lines; other control chars are still rejected.
+        svc.post(chat.id, "a", "line one\nline two")
+        assertFailsWith<IllegalArgumentException> { svc.post(chat.id, "a", "bad\u0000frame") }
 
         // Either party can end instantly; the target (B) ends here.
         val ended = svc.end(chat.id, "b")

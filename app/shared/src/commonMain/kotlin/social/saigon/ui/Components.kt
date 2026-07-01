@@ -132,6 +132,9 @@ internal fun ChatMessage(
             color = bubbleColor,
             shape = bubbleShape,
             modifier = Modifier
+                // Take only the width left over after the fixed-size avatar + spacer, so a long
+                // message shrinks its own bubble instead of squishing the profile icon beside it.
+                .weight(1f, fill = false)
                 .widthIn(max = 480.dp)
                 .softShadow(bubbleShape)
                 .then(

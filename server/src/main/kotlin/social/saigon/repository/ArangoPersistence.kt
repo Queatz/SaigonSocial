@@ -22,6 +22,7 @@ import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
 import social.saigon.domain.RoomSearch
+import social.saigon.domain.ServiceSearch
 import social.saigon.domain.Service
 import social.saigon.domain.ThreadReply
 import social.saigon.domain.User
@@ -183,6 +184,7 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     rooms = ArangoRoomRepository(db),
     identities = ArangoRoomIdentityRepository(db),
     roomSearches = ArangoRoomSearchRepository(db),
+    serviceSearches = ArangoServiceSearchRepository(db),
     messages = ArangoMessageRepository(db),
     threads = ArangoThreadRepository(db),
     privateChats = ArangoPrivateChatRepository(db),
@@ -277,6 +279,17 @@ internal class ArangoRoomSearchRepository(db: ArangoDatabase) : RoomSearchReposi
             mapOf("limit" to limit),
         )
     override fun all(): List<RoomSearch> = store.all()
+}
+
+internal class ArangoServiceSearchRepository(db: ArangoDatabase) : ServiceSearchRepository {
+    private val store = ArangoStore(db, ArangoSchema.SERVICE_SEARCHES, ServiceSearch.serializer()) { it.id }
+    override fun add(search: ServiceSearch): ServiceSearch = store.put(search)
+    override fun recent(limit: Int): List<ServiceSearch> =
+        store.query(
+            "FOR d IN ${ArangoSchema.SERVICE_SEARCHES} SORT d.createdAt DESC LIMIT @limit RETURN d",
+            mapOf("limit" to limit),
+        )
+    override fun all(): List<ServiceSearch> = store.all()
 }
 
 internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
@@ -486,6 +499,7 @@ internal class ArangoServiceRepository(db: ArangoDatabase) : ServiceRepository {
     private val store = ArangoStore(db, ArangoSchema.SERVICES, Service.serializer()) { it.id }
     override fun create(service: Service): Service = store.put(service)
     override fun get(id: String): Service? = store.get(id)
+    override fun update(service: Service): Service = store.put(service)
     override fun all(): List<Service> = store.all()
     override fun byProvider(providerId: String): List<Service> =
         store.query(

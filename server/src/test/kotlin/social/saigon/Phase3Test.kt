@@ -21,7 +21,6 @@ import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 import social.saigon.auth.AuthConfig
 import social.saigon.auth.TokenService
-import social.saigon.domain.Intent
 import social.saigon.domain.PlainText
 import social.saigon.domain.Role
 import social.saigon.domain.Room
@@ -85,7 +84,8 @@ class Phase3Test {
     fun plainTextRejectsControlCharsBlankAndOverlong() {
         assertTrue(PlainText.isValid("Anyone know a good pho place in D1?"))
         assertFalse(PlainText.isValid("   "))
-        assertFalse(PlainText.isValid("line1\nline2")) // newline is a control char
+        assertTrue(PlainText.isValid("line1\nline2")) // newlines are allowed so messages can span lines
+        assertFalse(PlainText.isValid("bad\u0000frame")) // other control chars are rejected
         assertFalse(PlainText.isValid("x".repeat(PlainText.MAX_LENGTH + 1)))
     }
 
@@ -187,8 +187,8 @@ class Phase3Test {
             assertEquals("hello Saigon", (said as Outgoing.Said).text)
             assertEquals("u1", said.authorId)
 
-            // Plain-text-only: control characters are rejected.
-            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Say("room1", "bad\nframe"))))
+            // Plain-text-only: control characters are rejected (newlines are allowed).
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Say("room1", "bad\u0000frame"))))
             val rejected = json.decodeFromString(Outgoing.serializer(), (incoming.receive() as Frame.Text).readText())
             assertTrue(rejected is Outgoing.Error)
         }
@@ -258,7 +258,7 @@ class Phase3Test {
                 id = "u1",
                 role = Role.SHARER,
                 displayName = "Real Name",
-                intents = listOf(Intent.DEEP_TALK),
+                intents = listOf("🧠 Deep Talk"),
                 languages = listOf("vi", "en"),
             ),
         )
@@ -282,7 +282,7 @@ class Phase3Test {
             val occupants = client.get("/rooms/room1/occupants")
             assertEquals(HttpStatusCode.OK, occupants.status)
             val body = occupants.bodyAsText()
-            assertTrue(body.contains("DEEP_TALK"))
+            assertTrue(body.contains("Deep Talk"))
             assertTrue(body.contains("\"vi\""))
             assertTrue(body.contains("\"en\""))
         }

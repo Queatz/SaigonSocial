@@ -6,9 +6,11 @@ This document describes the architecture, data models, backend API, WebSocket no
 
 ## 1. Feature Overview
 
-The "Thread replies" feature provides users with a central inbox on the home screen to track discussions they are involved in. Similar to "Direct chats", it shows up as a card underneath the "Direct chats" button on the home screen if there is any active thread that:
-1. The user started (i.e., authored the parent message).
-2. The user has participated in (i.e., replied to).
+The "Thread replies" feature provides users with a central inbox on the home screen to track discussions they are involved in. Similar to "Direct chats", it shows up as a card underneath the "Direct chats" button on the home screen.
+
+A thread only surfaces when **another user** has replied — the caller's own posts never trigger an entry. Concretely, an active thread is shown when there is a reply authored by someone else that is either:
+1. A reply to the caller's initial message (i.e., the caller authored the parent message), or
+2. A reply posted *after* the caller's own first reply in that thread.
 
 To keep the workspace focused and tidy, users can **"Dismiss"** a thread reply. Dismissing a thread hides it from their active list **until another reply is posted to that thread**, at which point it resurfaces automatically.
 
@@ -63,7 +65,7 @@ data class MessageReplyReceived(
 
 ### A. State Retrieval (`GET /profile/me/threads`)
 * **Access:** Authenticated Members (`SHARER`, `SUPPORTER`, `FOUNDER`).
-* **Behavior:** Scans all active threads. Selects those started or participate in by the caller. Replaces blanks with room-scoped names/avatars.
+* **Behavior:** Scans all active threads. Selects only those with a reply from another user that either answers the caller's initial message (caller authored the parent) or was posted after the caller's own first reply. The caller's own replies never, by themselves, make a thread appear. Replaces blanks with room-scoped names/avatars.
 * **Filtering:** Explicitly filters out threads that the user has **dismissed**.
 * **Ordering:** Sorted descending by `lastReplyAt`, bubbling the most recently updated threads to the top.
 

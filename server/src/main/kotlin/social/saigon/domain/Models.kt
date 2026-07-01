@@ -34,19 +34,6 @@ enum class Role {
 }
 
 /**
- * Primary intent badge (DESIGN §4). Multiple may be selected per profile.
- */
-@Serializable
-enum class Intent(val badge: String) {
-    JUST_CHATTING("💬 Just Chatting"),
-    DEEP_TALK("🧠 Deep Talk"),
-    HEAVY_TOPICS("🫂 Heavy Topics"),
-    OPEN_TO_COLLAB("🎯 Open to Collab"),
-    SURPRISE_ME("🎲 Surprise Me"),
-    CASUAL("☕ Casual"),
-}
-
-/**
  * Persistent user profile (DESIGN §4). Tied to the real person behind room-specific identities.
  */
 @Serializable
@@ -67,8 +54,12 @@ data class User(
     val passwordSetAt: Long? = null,
     /** Free-text interest tags. Max 5. */
     val interests: List<String> = emptyList(),
-    /** Primary intent badges the user selected (DESIGN §4). Multiple choice. */
-    val intents: List<Intent> = emptyList(),
+    /**
+     * Primary intent badges the user selected (DESIGN §4). Multiple choice. Each badge is a
+     * free-text label (usually an emoji + short phrase, e.g. "💬 Just Chatting"). Supporters and
+     * Founders can create their own custom badges in addition to the launch set.
+     */
+    val intents: List<String> = emptyList(),
     /** Language codes the user speaks (e.g. "vi", "en", "ko", "zh"). */
     val languages: List<String> = emptyList(),
     /** Optional availability windows. */
@@ -137,7 +128,7 @@ data class RoomIdentity(
      * list) is a deliberate room-scoped customization. Supporters/Founders tailor these per room.
      */
     val interests: List<String>? = null,
-    val intents: List<Intent>? = null,
+    val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
@@ -151,7 +142,7 @@ data class RoomIdentity(
 data class RoomIdentityUpdate(
     val name: String? = null,
     val interests: List<String>? = null,
-    val intents: List<Intent>? = null,
+    val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
@@ -236,7 +227,28 @@ data class Service(
     val emoji: String,
     val name: String,
     val description: String = "",
+    /** Price in Vietnamese đồng (VND), stored as a whole integer (e.g. 50000 → 50.000đ). */
+    val price: Int = 0,
+    /**
+     * Whether the service is publicly listed. Unlisting hides it from the public search and the
+     * provider's room profile without deleting it; the provider can relist it later.
+     */
+    val listed: Boolean = true,
     val createdAt: Long = 0L,
+)
+
+/**
+ * A recorded service search. Persisted whenever someone searches the service list by name, so the
+ * founder can understand what kinds of services people are looking for (mirrors [RoomSearch]).
+ */
+@Serializable
+data class ServiceSearch(
+    val id: String,
+    /** The raw search text the user typed, trimmed. */
+    val query: String,
+    val createdAt: Long,
+    /** The searcher's persistent user id when signed in; null for anonymous viewers. */
+    val userId: String? = null,
 )
 
 /**

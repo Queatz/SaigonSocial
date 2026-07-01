@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,7 +74,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Search services by name") },
+            label = { Text("Search services") },
             singleLine = true,
             shape = InputFieldShape,
         )
@@ -91,6 +92,66 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Text(
+                    text = "Popular services",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+                results.forEach { service ->
+                    ServiceCard(service = service, onClick = { onOpenService(service.id) })
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The caller's own "Services provided" list (reached from their profile). Lists every service the
+ * signed-in user provides, across all rooms, with a polite empty state. Tapping a card opens the
+ * service detail screen.
+ */
+@Composable
+internal fun MyServicesScreen(
+    api: SaigonApi,
+    selfUserId: String?,
+    onOpenService: (String) -> Unit,
+) {
+    val results = remember(selfUserId) { mutableStateListOf<ServiceView>() }
+    var loaded by remember(selfUserId) { mutableStateOf(false) }
+    var error by remember(selfUserId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(selfUserId) {
+        if (selfUserId == null) { loaded = true; return@LaunchedEffect }
+        error = null
+        try {
+            // The caller's own list includes unlisted services so they can relist/manage them.
+            val list = api.myServices()
+            results.clear()
+            results.addAll(list)
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load your services"
+        } finally {
+            loaded = true
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+        when {
+            !loaded -> LoadingSpinner()
+            results.isEmpty() -> Text(
+                "You haven't offered any services yet. Open a room and offer one from your room profile.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 results.forEach { service ->
                     ServiceCard(service = service, onClick = { onOpenService(service.id) })
                 }
@@ -101,16 +162,26 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
 
 /** A single result card in the service search list. */
 @Composable
-private fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Text(service.emoji.ifBlank { "🔧" }, fontSize = 28.sp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                    Text(UiConstants.vnd(service.price), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                if (!service.listed) {
+                    Text(
+                        "Unlisted",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 if (service.description.isNotBlank()) {
                     Text(
-                        service.description,
+                        "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -119,30 +190,10 @@ private fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "🏠 ${service.roomName}",
+                    "${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
-                    "by ${nameWithBadge(service.providerName, service.providerRole)}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                val facets = buildList {
-                    if (service.providerLanguages.isNotEmpty()) {
-                        add(service.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) })
-                    }
-                    if (service.providerInterests.isNotEmpty()) {
-                        add(service.providerInterests.joinToString(" · "))
-                    }
-                }
-                if (facets.isNotEmpty()) {
-                    Text(
-                        facets.joinToString("  •  "),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
     }
@@ -162,18 +213,27 @@ internal fun ServiceDetailScreen(
     isFounder: Boolean,
     canContact: Boolean,
     onOpenDirectChat: (ContactProviderResponse) -> Unit,
+    onSignIn: () -> Unit,
+    onDeleted: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var service by remember(serviceId) { mutableStateOf<ServiceView?>(null) }
     val feedback = remember(serviceId) { mutableStateListOf<FeedbackView>() }
     var loaded by remember(serviceId) { mutableStateOf(false) }
     var error by remember(serviceId) { mutableStateOf<String?>(null) }
+    var editing by remember(serviceId) { mutableStateOf(false) }
+    var confirmingDelete by remember(serviceId) { mutableStateOf(false) }
+    var managing by remember(serviceId) { mutableStateOf(false) }
 
     suspend fun reloadFeedback() {
         runCatching { api.serviceFeedback(serviceId) }.onSuccess {
             feedback.clear()
             feedback.addAll(it)
         }
+    }
+
+    suspend fun reloadService() {
+        runCatching { api.service(serviceId) }.onSuccess { service = it }
     }
 
     LaunchedEffect(serviceId) {
@@ -199,13 +259,22 @@ internal fun ServiceDetailScreen(
                 modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(s.emoji.ifBlank { "🔧" }, fontSize = 36.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("🏠 ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${UiConstants.vnd(s.price)} • ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    // Copy-link affordance, mirroring rooms and threads (top-right).
+                    ShareButton()
+                }
+                if (!s.listed) {
+                    Text(
+                        "This service is unlisted — it won't show up in the public search.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 if (s.description.isNotBlank()) {
                     Text(s.description, fontSize = 15.sp)
@@ -224,6 +293,32 @@ internal fun ServiceDetailScreen(
                     )
                 }
 
+                // Manage controls for the provider (or the Founder): edit, unlist/relist, delete.
+                if (isFounder || selfUserId == s.providerId) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(enabled = !managing, onClick = { editing = true }) { Text("Edit") }
+                        OutlinedButton(
+                            enabled = !managing,
+                            onClick = {
+                                managing = true
+                                scope.launch {
+                                    runCatching {
+                                        if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
+                                    }.onSuccess { service = it }
+                                    managing = false
+                                }
+                            },
+                        ) { Text(if (s.listed) "Unlist" else "Relist") }
+                        TextButton(enabled = !managing, onClick = { confirmingDelete = true }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
                 FeedbackSection(
                     api = api,
                     serviceId = serviceId,
@@ -235,7 +330,13 @@ internal fun ServiceDetailScreen(
                     onChanged = { scope.launch { reloadFeedback() } },
                 )
 
-                if (canContact && selfUserId != s.providerId) {
+                if (selfUserId == null) {
+                    // Signed-out visitors can't message yet — invite them to sign in first.
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onSignIn,
+                    ) { Text("Sign in to get in touch with ${s.providerName}") }
+                } else if (canContact && selfUserId != s.providerId) {
                     ContactProviderSection(
                         api = api,
                         serviceId = serviceId,
@@ -244,8 +345,120 @@ internal fun ServiceDetailScreen(
                     )
                 }
             }
+
+            if (editing) {
+                EditServiceDialog(
+                    api = api,
+                    service = s,
+                    onDismiss = { editing = false },
+                    onSaved = { editing = false; scope.launch { reloadService() } },
+                )
+            }
+            if (confirmingDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmingDelete = false },
+                    title = { Text("Delete this service?") },
+                    text = { Text("This can't be undone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirmingDelete = false
+                            scope.launch {
+                                runCatching { api.deleteService(serviceId) }.onSuccess { onDeleted() }
+                            }
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
+                )
+            }
         }
     }
+}
+
+/** A dialog to edit a service's emoji, name, description, and price (provider or Founder). */
+@Composable
+private fun EditServiceDialog(
+    api: SaigonApi,
+    service: ServiceView,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var emoji by remember { mutableStateOf(service.emoji) }
+    var name by remember { mutableStateOf(service.name) }
+    var description by remember { mutableStateOf(service.description) }
+    var price by remember { mutableStateOf(if (service.price > 0) service.price.toString() else "") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Edit service") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it; error = null },
+                    label = { Text("Emoji") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Service name") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Description") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { new -> price = new.filter { it.isDigit() }; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Price (VND)") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && emoji.isNotBlank() && name.isNotBlank(),
+                onClick = {
+                    error = null
+                    busy = true
+                    scope.launch {
+                        try {
+                            api.updateService(
+                                serviceId = service.id,
+                                emoji = emoji.trim(),
+                                name = name.trim(),
+                                description = description.trim(),
+                                price = price.toIntOrNull() ?: 0,
+                            )
+                            onSaved()
+                        } catch (e: Throwable) {
+                            error = e.message ?: "Could not save your changes."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
@@ -338,9 +551,11 @@ private fun FeedbackReviewsDialog(
     onDeleted: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    // The feedback item awaiting a delete confirmation, if any.
+    var pendingDelete by remember { mutableStateOf<FeedbackView?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("$emoji reviews") },
+        title = { Text("$emoji feedback") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -349,7 +564,7 @@ private fun FeedbackReviewsDialog(
                 val withMessages = reviews.filter { it.message.isNotBlank() }
                 if (withMessages.isEmpty()) {
                     Text(
-                        "No written reviews for this emoji yet.",
+                        "No written feedback for this emoji yet.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -361,12 +576,15 @@ private fun FeedbackReviewsDialog(
                         if (review.message.isNotBlank()) {
                             Text(review.message, fontSize = 14.sp)
                         }
+                        Text(
+                            timeAgo(review.createdAt),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (canDelete) {
-                            TextButton(onClick = {
-                                scope.launch {
-                                    runCatching { api.deleteFeedback(review.id) }.onSuccess { onDeleted() }
-                                }
-                            }) { Text("Delete", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                            TextButton(onClick = { pendingDelete = review }) {
+                                Text("Delete", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -374,6 +592,22 @@ private fun FeedbackReviewsDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+    pendingDelete?.let { review ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete this feedback?") },
+            text = { Text("This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        runCatching { api.deleteFeedback(review.id) }.onSuccess { onDeleted() }
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 /** A dialog to leave feedback: pick a closing emoji + optional message. */
@@ -454,7 +688,7 @@ private fun ContactProviderSection(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Text("Contact $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    Text("Get in touch with $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     OutlinedTextField(
         value = message,
         onValueChange = { message = it; error = null },

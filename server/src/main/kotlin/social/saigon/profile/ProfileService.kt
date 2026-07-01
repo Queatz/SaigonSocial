@@ -2,7 +2,6 @@ package social.saigon.profile
 
 import social.saigon.domain.Capability
 import social.saigon.domain.EmojiOptions
-import social.saigon.domain.Languages
 import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.User
 import social.saigon.domain.can
@@ -32,7 +31,7 @@ class ProfileService(private val users: UserRepository) {
         val interests = update.interests?.let(::normalizeInterests) ?: user.interests
         val languages = update.languages?.let(::normalizeLanguages) ?: user.languages
         val schedule = update.offlineSchedule?.let(::normalizeSchedule) ?: user.offlineSchedule
-        val intents = update.intents?.distinct() ?: user.intents
+        val intents = update.intents?.let(::normalizeIntents) ?: user.intents
 
         return users.update(
             user.copy(
@@ -76,16 +75,18 @@ class ProfileService(private val users: UserRepository) {
         return cleaned
     }
 
-    private fun normalizeLanguages(languages: List<String>): List<String> {
-        val cleaned = languages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        cleaned.forEach { code ->
-            require(Languages.isSupported(code)) { "Unsupported language: $code" }
-        }
-        return cleaned
-    }
+    // Languages are free-text (a launch set plus any custom languages a Supporter/Founder adds),
+    // so just trim, drop blanks, and de-duplicate rather than validating against a fixed set.
+    private fun normalizeLanguages(languages: List<String>): List<String> =
+        languages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     private fun normalizeSchedule(schedule: List<String>): List<String> =
         schedule.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+    // Intent badges are free-text (a launch set plus any custom badges a Supporter/Founder creates),
+    // so just trim, drop blanks, and de-duplicate rather than validating against a fixed enum.
+    private fun normalizeIntents(intents: List<String>): List<String> =
+        intents.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     companion object {
         /** Auto-suggest seed list (DESIGN §4 examples + common Saigon interests). */

@@ -44,6 +44,8 @@ internal fun ProfileScreen(
     onToken: (String?) -> Unit,
     onViewMembers: () -> Unit = {},
     onViewRoomSearches: () -> Unit = {},
+    onViewServiceSearches: () -> Unit = {},
+    onViewMyServices: () -> Unit = {},
 ) {
     if (token == null) {
         SignInPanel(api = api, onToken = onToken)
@@ -74,7 +76,19 @@ internal fun ProfileScreen(
         else -> {
             var introduction by remember(p.id) { mutableStateOf(p.interests.joinToString(", ")) }
             val intents = remember(p.id) { p.intents.toMutableStateList() }
+            // Custom "Here for" badges the member has beyond the launch set (DESIGN §4): any intent
+            // on their profile that isn't one of the fixed options, plus any created this session.
+            val customIntents = remember(p.id) {
+                (p.intents - UiConstants.intents.toSet()).toMutableStateList()
+            }
+            var addingIntent by remember(p.id) { mutableStateOf(false) }
             val languages = remember(p.id) { p.languages.toMutableStateList() }
+            // Custom languages the member has beyond the launch set (DESIGN §4): any language on
+            // their profile that isn't one of the fixed codes, plus any added this session.
+            val customLanguages = remember(p.id) {
+                (p.languages - UiConstants.supportedLanguages.toSet()).toMutableStateList()
+            }
+            var addingLanguage by remember(p.id) { mutableStateOf(false) }
             var availability by remember(p.id) { mutableStateOf(p.offlineSchedule.joinToString("; ")) }
             // Availability is a Supporter perk (DESIGN §3, §7); Founders share it too.
             val isSupporter = p.role == Role.SUPPORTER || p.role == Role.FOUNDER
@@ -99,7 +113,9 @@ internal fun ProfileScreen(
 
                 Text("Here for", fontWeight = FontWeight.Bold)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    UiConstants.intents.chunked(2).forEach { rowIntents ->
+                    // The launch set plus any custom badges the member has, so their own "Here for"
+                    // badges stay selectable alongside the defaults (DESIGN §4).
+                    (UiConstants.intents + customIntents).distinct().chunked(2).forEach { rowIntents ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowIntents.forEach { option ->
                                 val selected = option in intents
@@ -111,16 +127,39 @@ internal fun ProfileScreen(
                                         .scale(intentScale)
                                         .alpha(intentAlpha),
                                 ) {
-                                    Text((if (selected) "✅ " else "") + option.badge, fontSize = 12.sp)
+                                    Text((if (selected) "✅ " else "") + option, fontSize = 12.sp)
                                 }
                             }
                         }
                     }
+                    // Supporters/Founders can craft their own custom "Here for" badge (DESIGN §3, §4).
+                    if (isSupporter) {
+                        OutlinedButton(
+                            onClick = { addingIntent = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("➕ Add your own", fontSize = 12.sp) }
+                    }
+                }
+                if (addingIntent) {
+                    AddIntentDialog(
+                        existing = (UiConstants.intents + customIntents).distinct(),
+                        onDismiss = { addingIntent = false },
+                        onCreate = { badge ->
+                            if (badge !in customIntents && badge !in UiConstants.intents) {
+                                customIntents.add(badge)
+                            }
+                            // Select the new badge right away so a save persists it.
+                            if (badge !in intents) intents.add(badge)
+                            addingIntent = false
+                        },
+                    )
                 }
 
                 Text("Languages", fontWeight = FontWeight.Bold)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    UiConstants.supportedLanguages.chunked(2).forEach { rowLangs ->
+                    // The launch set plus any custom languages the member has, so their own
+                    // languages stay selectable alongside the defaults (DESIGN §4).
+                    (UiConstants.supportedLanguages + customLanguages).distinct().chunked(2).forEach { rowLangs ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowLangs.forEach { code ->
                                 val selected = code in languages
@@ -140,6 +179,28 @@ internal fun ProfileScreen(
                             }
                         }
                     }
+                    // Supporters/Founders can add their own language beyond the launch set (DESIGN §3, §4).
+                    if (isSupporter) {
+                        OutlinedButton(
+                            onClick = { addingLanguage = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("➕ Add your own", fontSize = 12.sp) }
+                    }
+                }
+                if (addingLanguage) {
+                    AddLanguageDialog(
+                        existing = (UiConstants.supportedLanguages + customLanguages).distinct()
+                            .map { UiConstants.languageLabel(it) },
+                        onDismiss = { addingLanguage = false },
+                        onCreate = { language ->
+                            if (language !in customLanguages && language !in UiConstants.supportedLanguages) {
+                                customLanguages.add(language)
+                            }
+                            // Select the new language right away so a save persists it.
+                            if (language !in languages) languages.add(language)
+                            addingLanguage = false
+                        },
+                    )
                 }
 
                 if (isSupporter) {
@@ -180,6 +241,12 @@ internal fun ProfileScreen(
                     },
                 ) { Text("Save profile") }
 
+                if (isSupporter) {
+                    OutlinedButton(onClick = onViewMyServices, modifier = Modifier.fillMaxWidth()) {
+                        Text("Services provided")
+                    }
+                }
+
                 EmojiStatsSection(api = api, profileId = p.id)
 
                 Accordion(title = "Your username") {
@@ -207,6 +274,9 @@ internal fun ProfileScreen(
                     OutlinedButton(onClick = onViewRoomSearches, modifier = Modifier.fillMaxWidth()) {
                         Text("Room searches")
                     }
+                    OutlinedButton(onClick = onViewServiceSearches, modifier = Modifier.fillMaxWidth()) {
+                        Text("Service searches")
+                    }
                 }
 
                 var confirmSignOut by remember { mutableStateOf(false) }
@@ -232,6 +302,111 @@ internal fun ProfileScreen(
             }
         }
     }
+}
+
+/**
+ * A dialog for a Supporter/Founder to craft their own custom "Here for"/intent badge (DESIGN §3,
+ * §4). Now that intents are free-text rather than a fixed enum, a member can type any short badge
+ * (ideally an emoji + a couple of words, e.g. "🎨 Art Buddies"). The badge is trimmed, checked for
+ * blanks and duplicates, then handed to [onCreate], which adds it to the selectable set.
+ */
+@Composable
+private fun AddIntentDialog(
+    existing: List<String>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val trimmed = text.trim()
+    val duplicate = trimmed.isNotEmpty() && existing.any { it.equals(trimmed, ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create a \"Here for\" badge") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Add your own badge — try leading with an emoji, e.g. \"🎨 Art Buddies\".",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Badge") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                if (duplicate) {
+                    Text(
+                        "You already have that badge.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = trimmed.isNotEmpty() && !duplicate,
+                onClick = { onCreate(trimmed) },
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * A dialog for a Supporter/Founder to add their own language beyond the launch set (DESIGN §3, §4).
+ * Now that languages are free-text rather than a fixed set, a member can type any language name
+ * (ideally leading with a flag emoji, e.g. "🇵🇭 Tagalog"). The value is trimmed, checked for blanks
+ * and duplicates (against existing labels), then handed to [onCreate], which adds it to the
+ * selectable set.
+ */
+@Composable
+private fun AddLanguageDialog(
+    existing: List<String>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val trimmed = text.trim()
+    val duplicate = trimmed.isNotEmpty() && existing.any { it.equals(trimmed, ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add a language") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Add your own language — try leading with a flag, e.g. \"🇵🇭 Tagalog\".",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Language") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                if (duplicate) {
+                    Text(
+                        "You already have that language.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = trimmed.isNotEmpty() && !duplicate,
+                onClick = { onCreate(trimmed) },
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**

@@ -88,14 +88,14 @@ class Phase2Test {
             social.saigon.domain.RoomIdentityUpdate(
                 name = "Coffee Nomad",
                 interests = listOf("espresso", "vinyl"),
-                intents = listOf(social.saigon.domain.Intent.CASUAL),
+                intents = listOf("☕ Casual"),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("weekends"),
             ),
         )
         assertEquals("Coffee Nomad", updated.name)
         assertEquals(listOf("espresso", "vinyl"), updated.interests)
-        assertEquals(listOf(social.saigon.domain.Intent.CASUAL), updated.intents)
+        assertEquals(listOf("☕ Casual"), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("weekends"), updated.offlineSchedule)
         // Persisted for subsequent fetches.

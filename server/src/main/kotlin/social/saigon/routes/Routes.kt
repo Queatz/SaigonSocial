@@ -32,7 +32,6 @@ import social.saigon.domain.EconomicStatus
 import social.saigon.domain.EmojiOptions
 import social.saigon.domain.Feedback
 import social.saigon.domain.ForbiddenException
-import social.saigon.domain.Intent
 import social.saigon.domain.InviteRequest
 import social.saigon.domain.InviteStatus
 import social.saigon.domain.LaunchConfig
@@ -127,6 +126,18 @@ data class ServiceCreate(
     val emoji: String,
     val name: String,
     val description: String = "",
+    /** Price in VND (whole integer). */
+    val price: Int = 0,
+)
+
+/** Edit an existing service (provider or Founder). */
+@Serializable
+data class ServiceUpdate(
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+    /** Price in VND (whole integer). */
+    val price: Int = 0,
 )
 
 /** A service enriched with its room name and provider details for list + detail screens. */
@@ -138,11 +149,16 @@ data class ServiceView(
     val description: String,
     val roomId: String,
     val roomName: String,
+    val roomEmoji: String,
     val providerId: String,
     val providerName: String,
     val providerRole: Role,
     val providerLanguages: List<String> = emptyList(),
     val providerInterests: List<String> = emptyList(),
+    /** Price in VND (whole integer, e.g. 50000 → 50.000đ). */
+    val price: Int = 0,
+    /** Whether the service is publicly listed (unlisted services are hidden from search). */
+    val listed: Boolean = true,
     val createdAt: Long,
 )
 
@@ -481,8 +497,28 @@ fun Application.registerRoutes(
         // carries the room name + provider details so the search cards can render everything.
         get("/services") {
             val q = call.request.queryParameters["q"].orEmpty().trim().lowercase()
+            // Optional filters so callers can list a single provider's services (their room profile
+            // "Providing" section, or their profile-wide "Services provided" screen), optionally
+            // scoped to one room.
+            val provider = call.request.queryParameters["provider"].orEmpty().trim()
+            val room = call.request.queryParameters["room"].orEmpty().trim()
+            // Record every non-blank by-name search so the founder can see what people look for
+            // (mirrors the room-search log). Provider/room-scoped listing calls carry no `q`.
+            if (q.isNotBlank()) {
+                repositories.serviceSearches.add(
+                    social.saigon.domain.ServiceSearch(
+                        id = UUID.randomUUID().toString(),
+                        query = q,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
             val services = repositories.services.all()
+                // Unlisted services are invisible to the public search + room-profile listings.
+                .filter { it.listed }
                 .filter { q.isEmpty() || it.name.lowercase().contains(q) }
+                .filter { provider.isEmpty() || it.providerId == provider }
+                .filter { room.isEmpty() || it.roomId == room }
                 .sortedByDescending { it.createdAt }
                 .map { it.toServiceView(repositories) }
             call.respond(services)
@@ -577,8 +613,17 @@ fun Application.registerRoutes(
                     val parent = repositories.messages.get(parentId) ?: return@mapNotNull null
                     val replies = repositories.threads.byParent(parentId).sortedBy { it.createdAt }
                     val userStarted = parent.authorId == selfUserId
-                    val userReplied = replies.any { it.authorId == selfUserId }
-                    if (!userStarted && !userReplied) return@mapNotNull null
+                    // My own replies never trigger an entry. A thread is only relevant when another
+                    // user has replied either to my initial message (I started the thread) or after
+                    // my own first reply.
+                    val myFirstReplyAt = replies
+                        .filter { it.authorId == selfUserId }
+                        .minOfOrNull { it.createdAt }
+                    val hasTriggeringReply = replies.any { reply ->
+                        reply.authorId != selfUserId && reply.authorId.isNotBlank() &&
+                            (userStarted || (myFirstReplyAt != null && reply.createdAt > myFirstReplyAt))
+                    }
+                    if (!hasTriggeringReply) return@mapNotNull null
                     if (repositories.threads.isDismissed(selfUserId, parentId)) return@mapNotNull null
                     val room = repositories.rooms.get(parent.roomId) ?: return@mapNotNull null
                     val lastReply = replies.lastOrNull()
@@ -814,6 +859,16 @@ fun Application.registerRoutes(
                 call.respond(searches)
             }
 
+            // Founder-only: recent service searches, newest first, so the founder can see what
+            // services people are looking for (mirrors room searches). `limit` caps the result.
+            get("/founder/service-searches") {
+                requireFounder(call.caller())
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 500) ?: 100
+                val searches = repositories.serviceSearches.recent(limit)
+                    .map { RoomSearchView(it.query, it.createdAt) }
+                call.respond(searches)
+            }
+
             // Founder-only: mint a single-use invite code for a new member (replaces sharing a raw
             // access token). The recipient redeems it via POST /auth/redeem to create their account.
             post("/founder/invites") {
@@ -882,11 +937,76 @@ fun Application.registerRoutes(
                         emoji = req.emoji.trim(),
                         name = req.name.trim(),
                         description = req.description.trim(),
+                        price = req.price.coerceAtLeast(0),
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
                 repositories.users.update(user.copy(services = user.services + service.id))
                 call.respond(service.toServiceView(repositories))
+            }
+
+            // The caller's own services across all rooms — including unlisted ones, so they can
+            // manage (edit / relist / delete) them from their "Services provided" screen.
+            get("/services/mine") {
+                val userId = requireMember(call.caller())
+                val mine = repositories.services.byProvider(userId)
+                    .sortedByDescending { it.createdAt }
+                    .map { it.toServiceView(repositories) }
+                call.respond(mine)
+            }
+
+            // Edit a service (emoji, name, description, price). Allowed for the provider or Founder.
+            put("/services/{id}") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                require(service.providerId == userId || caller.role.isAdmin) {
+                    "You cannot edit this service."
+                }
+                val req = call.receive<ServiceUpdate>()
+                require(req.emoji.isNotBlank()) { "An emoji is required." }
+                require(req.name.isNotBlank()) { "A service name is required." }
+                val updated = repositories.services.update(
+                    service.copy(
+                        emoji = req.emoji.trim(),
+                        name = req.name.trim(),
+                        description = req.description.trim(),
+                        price = req.price.coerceAtLeast(0),
+                    ),
+                )
+                call.respond(updated.toServiceView(repositories))
+            }
+
+            // Unlist a service (make it invisible in the public search) without deleting it.
+            post("/services/{id}/unlist") {
+                call.setServiceListed(repositories, listed = false)
+            }
+
+            // Relist a previously unlisted service.
+            post("/services/{id}/relist") {
+                call.setServiceListed(repositories, listed = true)
+            }
+
+            // Delete a service (hard delete). Allowed for the provider or Founder. The id is also
+            // removed from the provider's `services` list.
+            delete("/services/{id}") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                require(service.providerId == userId || caller.role.isAdmin) {
+                    "You cannot delete this service."
+                }
+                repositories.services.delete(serviceId)
+                repositories.users.get(service.providerId)?.let { provider ->
+                    repositories.users.update(
+                        provider.copy(services = provider.services.filterNot { it == serviceId }),
+                    )
+                }
+                call.respond(mapOf("deleted" to serviceId))
             }
 
             // Add public feedback to a service. Any member may leave feedback.
@@ -941,7 +1061,8 @@ fun Application.registerRoutes(
                 val message = req.message.trim()
                 require(message.isNotBlank()) { "A message is required." }
                 val chat = privateChatService.openOrStart(userId, service.providerId, service.roomId)
-                privateChatService.post(chat.id, userId, message)
+                // Append a hint so the provider knows which service prompted the message.
+                privateChatService.post(chat.id, userId, "$message — Sent from ${service.name}")
                 val providerName = identities.getOrCreate(service.providerId, service.roomId).name
                 call.respond(
                     ContactProviderResponse(
@@ -1215,7 +1336,7 @@ data class OccupantView(
     val displayName: String = "",
     val avatarUrl: String,
     val role: Role,
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     val languages: List<String>,
     /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
     val interests: List<String> = emptyList(),
@@ -1232,7 +1353,7 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String>,
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     val languages: List<String>,
     val offlineSchedule: List<String>,
     val supporterUntil: Long?,
@@ -1355,7 +1476,7 @@ data class MemberView(
     /** The member's login username (handle), for the founder's reference. */
     val handle: String? = null,
     /** The member's chosen intents (DESIGN §4). */
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     /** Language codes the member speaks. */
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (formerly "interests"). */
@@ -1434,6 +1555,23 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     passwordSet = passwordHash != null,
 )
 
+/**
+ * Flip a service's public visibility (unlist/relist). Allowed for the provider or Founder; responds
+ * with the refreshed [ServiceView].
+ */
+private suspend fun ApplicationCall.setServiceListed(repositories: Repositories, listed: Boolean) {
+    val caller = caller()
+    val userId = requireMember(caller)
+    val serviceId = parameters["id"].orEmpty()
+    val service = repositories.services.get(serviceId)
+        ?: throw IllegalArgumentException("That service does not exist.")
+    require(service.providerId == userId || caller.role.isAdmin) {
+        "You cannot change this service."
+    }
+    val updated = repositories.services.update(service.copy(listed = listed))
+    respond(updated.toServiceView(repositories))
+}
+
 /** Enrich a [Service] with its room name and provider details for the client (search + detail). */
 private fun Service.toServiceView(repositories: Repositories): ServiceView {
     val room = repositories.rooms.get(roomId)
@@ -1445,11 +1583,14 @@ private fun Service.toServiceView(repositories: Repositories): ServiceView {
         description = description,
         roomId = roomId,
         roomName = room?.name ?: roomId,
+        roomEmoji = room?.emoji.orEmpty(),
         providerId = providerId,
         providerName = provider?.displayName ?: providerId,
         providerRole = provider?.role ?: Role.SHARER,
         providerLanguages = provider?.languages ?: emptyList(),
         providerInterests = provider?.interests ?: emptyList(),
+        price = price,
+        listed = listed,
         createdAt = createdAt,
     )
 }

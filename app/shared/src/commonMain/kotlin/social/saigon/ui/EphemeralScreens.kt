@@ -137,6 +137,28 @@ internal fun PrivateChatScreen(
                     Text("Connecting to $peer…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        } else if (messages.isEmpty()) {
+            // No messages yet: offer a few random conversation starters, centered, to break the ice.
+            val starters = remember(targetUserId) {
+                UiConstants.chatStarters.shuffled().take(3)
+            }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    starters.forEach { starter ->
+                        SuggestionBubble(
+                            text = starter,
+                            onClick = {
+                                if (connected) {
+                                    scope.launch { runCatching { channel?.say(starter) } }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -234,6 +256,21 @@ internal fun FinalEmojiScreen(
                 Button(onClick = onClose) { Text("Close") }
             }
         }
+    }
+}
+
+@Composable
+private fun SuggestionBubble(text: String, onClick: () -> Unit) {
+    val bubbleShape = RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .clip(bubbleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, bubbleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

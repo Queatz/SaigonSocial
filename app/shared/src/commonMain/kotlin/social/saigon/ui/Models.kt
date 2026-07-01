@@ -20,19 +20,6 @@ enum class Role(val label: String) {
     FOUNDER("Founder"),
 }
 
-/** Primary intent badge (DESIGN §4). Serialized by name to match the server `Intent` enum. */
-@Serializable
-enum class Intent(val badge: String) {
-    JUST_CHATTING("💬 Just Chatting"),
-    DEEP_TALK("🧠 Deep Talk"),
-    HEAVY_TOPICS("🫂 Heavy Topics"),
-    OPEN_TO_COLLAB("🎯 Open to Collab"),
-    SURPRISE_ME("🎲 Surprise Me"),
-    CASUAL("☕ Casual");
-
-    /** Just the leading emoji of the [badge], for compact emoji-only display (DESIGN §6). */
-    val emoji: String get() = badge.substringBefore(' ')
-}
 
 /** A public room as shown in the room list (`GET /rooms`, DESIGN §6). */
 @Serializable
@@ -60,7 +47,7 @@ data class OccupantView(
     val displayName: String = "",
     val avatarUrl: String = "",
     val role: Role,
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
     val interests: List<String> = emptyList(),
@@ -119,7 +106,7 @@ data class RoomIdentity(
      * customization Supporters/Founders set via the "Edit your room profile" dialog.
      */
     val interests: List<String>? = null,
-    val intents: List<Intent>? = null,
+    val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
@@ -133,7 +120,7 @@ data class RoomIdentity(
 data class RoomIdentityUpdate(
     val name: String? = null,
     val interests: List<String>? = null,
-    val intents: List<Intent>? = null,
+    val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
@@ -145,7 +132,7 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String> = emptyList(),
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     val languages: List<String> = emptyList(),
     val offlineSchedule: List<String> = emptyList(),
     val supporterUntil: Long? = null,
@@ -165,7 +152,7 @@ data class EmojiStatsResponse(val stats: Map<String, Int> = emptyMap())
 @Serializable
 data class ProfileUpdate(
     val interests: List<String>? = null,
-    val intents: List<Intent>? = null,
+    val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
 )
@@ -228,7 +215,7 @@ data class MemberView(
     /** The member's login username (handle). */
     val handle: String? = null,
     /** The member's chosen intents (DESIGN §4). */
-    val intents: List<Intent> = emptyList(),
+    val intents: List<String> = emptyList(),
     /** Language codes the member speaks. */
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (formerly "interests"). */
@@ -315,8 +302,50 @@ object UiConstants {
     /** Closing-emoji options (DESIGN §8). */
     val emojiOptions: List<String> = listOf("😊", "💡", "😂", "🙏", "🤝", "❤️", "✨", "🔥")
 
-    /** Selectable intents (DESIGN §4). */
-    val intents: List<Intent> = Intent.entries.toList()
+    /**
+     * Friendly conversation starters shown as tappable suggestions when a private chat has no
+     * messages yet. Each is a short (≈3-5 word) opener that works whether the two people just met
+     * or already know each other. A few are picked at random to break the ice.
+     */
+    val chatStarters: List<String> = listOf(
+        "Hey, how's your day?",
+        "What are you up to?",
+        "How have you been?",
+        "What's on your mind?",
+        "Got any fun plans?",
+        "How's everything going?",
+        "What made your day?",
+        "Been anywhere lately?",
+        "What are you into these days?",
+        "Any good ideas lately?",
+        "How's your week going?",
+        "What's new with you?",
+        "Working on anything?",
+        "Seen anything lately?",
+        "What's keeping you up?",
+        "Any recommendations for me?",
+        "How's life pampering you?",
+        "What's your favorite room here?",
+        "Coffee, tea, or water?",
+        "What's the news lately?",
+    )
+
+    /**
+     * The launch set of selectable "Here for" intent badges (DESIGN §4). Each is a free-text
+     * label (emoji + short phrase); Supporters/Founders can add their own custom badges on top of
+     * these, so this is just the default starting set rather than a closed enum.
+     */
+    val intents: List<String> = listOf(
+        "💬 Just Chatting",
+        "🧠 Deep Talk",
+        "🫂 Heavy Topics",
+        "🎯 Open to Collab",
+        "🎲 Surprise Me",
+        "☕ Casual",
+    )
+
+    /** Just the leading emoji of an intent [badge], for compact emoji-only display (DESIGN §6). */
+    fun intentEmoji(badge: String): String = badge.substringBefore(' ')
 
     /** Supported language codes (DESIGN §4). */
     val supportedLanguages: List<String> = listOf("vi", "en", "ko", "zh", "ja", "fr")
@@ -336,6 +365,22 @@ object UiConstants {
 
     /** Just the flag emoji for [code] (the leading token of its label), falling back to the code. */
     fun languageEmoji(code: String): String = languageNames[code]?.substringBefore(' ') ?: code
+
+    /**
+     * Render a VND price stored as a whole integer, e.g. 50000 → "50.000đ" (dot thousands
+     * separators, Vietnamese đồng suffix). A zero/negative price renders as "Free".
+     */
+    fun vnd(price: Int): String {
+        if (price <= 0) return "Free"
+        val digits = price.toString()
+        val grouped = buildString {
+            digits.forEachIndexed { index, c ->
+                if (index > 0 && (digits.length - index) % 3 == 0) append('.')
+                append(c)
+            }
+        }
+        return "${grouped}đ"
+    }
 }
 
 @Serializable
@@ -362,11 +407,17 @@ data class ServiceView(
     val roomId: String,
     /** The room the service lives in — always displayed wherever a service is shown. */
     val roomName: String,
+    /** The room's emoji icon, shown alongside the room name. */
+    val roomEmoji: String = "",
     val providerId: String,
     val providerName: String,
     val providerRole: Role = Role.SHARER,
     val providerLanguages: List<String> = emptyList(),
     val providerInterests: List<String> = emptyList(),
+    /** Price in VND (whole integer, e.g. 50000 → 50.000đ). */
+    val price: Int = 0,
+    /** Whether the service is publicly listed (unlisted services are hidden from search). */
+    val listed: Boolean = true,
     val createdAt: Long = 0L,
 )
 
@@ -377,6 +428,18 @@ data class ServiceCreate(
     val emoji: String,
     val name: String,
     val description: String = "",
+    /** Price in VND (whole integer). */
+    val price: Int = 0,
+)
+
+/** Edit an existing service (`PUT /services/{id}`). */
+@Serializable
+data class ServiceUpdate(
+    val emoji: String,
+    val name: String,
+    val description: String = "",
+    /** Price in VND (whole integer). */
+    val price: Int = 0,
 )
 
 /** Public feedback on a service (`GET /services/{id}/feedback`). */

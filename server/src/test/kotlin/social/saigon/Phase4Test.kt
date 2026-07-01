@@ -66,8 +66,11 @@ class Phase4Test {
 
         // Unknown parent message is rejected.
         assertFailsWith<IllegalArgumentException> { svc.reply("missing", "u2", "hi") }
-        // Plain-text-only is enforced on replies, too.
-        assertFailsWith<IllegalArgumentException> { svc.reply("m1", "u2", "bad\nframe") }
+        // Newlines are allowed so replies can span multiple lines.
+        val multiline = svc.reply("m1", "u2", "line one\nline two")
+        assertEquals("line one\nline two", multiline.text)
+        // Other control characters (binary/rich payloads) are still rejected.
+        assertFailsWith<IllegalArgumentException> { svc.reply("m1", "u2", "bad\u0000frame") }
         // A nested reply must target an existing reply in the same thread.
         assertFailsWith<IllegalArgumentException> { svc.reply("m1", "u2", "hi", replyToId = "nope") }
     }
@@ -294,6 +297,68 @@ class Phase4Test {
             }
             assertEquals(HttpStatusCode.OK, listResponseAfterNewReply.status)
             assertTrue(listResponseAfterNewReply.bodyAsText().contains("another reply from u2"))
+        }
+    }
+
+    @Test
+    fun ownRepliesDoNotTriggerThreadEntry() = testApplication {
+        val repositories = Repositories()
+        val u1 = User(id = "u1", role = Role.SHARER, displayName = "Nam")
+        val u2 = User(id = "u2", role = Role.SHARER, displayName = "Alex")
+        repositories.users.create(u1)
+        repositories.users.create(u2)
+        repositories.rooms.create(Room("room1", "District 1 Room", "🏙️", "vibe", "u1"))
+
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokenService = TokenService(authConfig)
+        val u1Token = tokenService.issueMemberToken("u1", Role.SHARER)
+        val u2Token = tokenService.issueMemberToken("u2", Role.SHARER)
+
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        wsClient.webSocket("/ws?token=$u1Token") {
+            val u1Incoming = incoming
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+            u1Incoming.receive()
+
+            // u1 starts a thread parent
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Say("room1", "my own thread"))))
+            val saidFrame = u1Incoming.receive() as Frame.Text
+            val said = json.decodeFromString(Outgoing.serializer(), saidFrame.readText()) as Outgoing.Said
+            val parentId = said.messageId!!
+
+            // u1 replies to their own thread — this must NOT create an entry for u1.
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Reply("room1", parentId, "talking to myself"))))
+            u1Incoming.receive() // Replied broadcast
+
+            val ownOnly = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, ownOnly.status)
+            assertFalse(
+                ownOnly.bodyAsText().contains("my own thread"),
+                "A thread with only the user's own posts must not appear",
+            )
+
+            // u2 replies to u1's initial message — the thread should now appear for u1.
+            wsClient.webSocket("/ws?token=$u2Token") {
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+                incoming.receive()
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Reply("room1", parentId, "u2 chimes in"))))
+                val f = incoming.receive() as Frame.Text
+                assertTrue(json.decodeFromString(Outgoing.serializer(), f.readText()) is Outgoing.Replied)
+            }
+
+            val afterOther = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, afterOther.status)
+            assertTrue(
+                afterOther.bodyAsText().contains("u2 chimes in"),
+                "A thread should appear once another user replies",
+            )
         }
     }
 }
