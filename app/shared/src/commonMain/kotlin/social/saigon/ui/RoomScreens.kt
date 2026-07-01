@@ -2186,6 +2186,8 @@ internal fun ThreadRepliesScreen(
                 "No active threads. Participate in room threads to see them here.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp)
             )
         }
         return

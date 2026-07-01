@@ -44,9 +44,10 @@ object ArangoSchemaExtra {
     const val MODERATION_FLAGS = "ModerationFlags"
     const val PAYMENTS = "Payments"
     const val INVITES = "Invites"
+    const val THREAD_DISMISSALS = "ThreadDismissals"
 
     val documentCollections: List<String> = listOf(
-        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS, INVITES,
+        ROOM_IDENTITIES, REPORTS, WARNINGS, MODERATION_FLAGS, PAYMENTS, INVITES, THREAD_DISMISSALS
     )
 }
 
@@ -89,6 +90,12 @@ private data class ModerationFlag(
     val banned: Boolean = false,
     val banReason: String? = null,
     val verified: Boolean = false,
+)
+
+@Serializable
+private data class ThreadDismissal(
+    val userId: String,
+    val parentMessageId: String,
 )
 
 /**
@@ -290,7 +297,9 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
 
 internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
     private val store = ArangoStore(db, ArangoSchema.THREADS, ThreadReply.serializer()) { it.id }
-    private val dismissed = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+    private val dismissalStore = ArangoStore(db, ArangoSchemaExtra.THREAD_DISMISSALS, ThreadDismissal.serializer()) {
+        "${it.userId}@${it.parentMessageId}"
+    }
 
     override fun add(reply: ThreadReply): ThreadReply = store.put(reply).also {
         clearDismissal(it.parentMessageId)
@@ -312,17 +321,21 @@ internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
                 mapOf("p" to parent),
             )
             keys.forEach { store.delete(it) }
-            dismissed.remove(parent)
+            clearDismissal(parent)
         }
     }
     override fun dismiss(userId: String, parentMessageId: String) {
-        dismissed.computeIfAbsent(parentMessageId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }.add(userId)
+        dismissalStore.put(ThreadDismissal(userId, parentMessageId))
     }
     override fun isDismissed(userId: String, parentMessageId: String): Boolean {
-        return dismissed[parentMessageId]?.contains(userId) == true
+        return dismissalStore.get("$userId@$parentMessageId") != null
     }
     override fun clearDismissal(parentMessageId: String) {
-        dismissed.remove(parentMessageId)
+        val keys = dismissalStore.queryStrings(
+            "FOR d IN ${ArangoSchemaExtra.THREAD_DISMISSALS} FILTER d.parentMessageId == @p RETURN d._key",
+            mapOf("p" to parentMessageId),
+        )
+        keys.forEach { dismissalStore.delete(it) }
     }
 }
 

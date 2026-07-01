@@ -82,10 +82,10 @@ When any member replies to a thread (processed in the WebSocket handler for `Inc
 ## 4. Ephemerality & Persistence Policies
 
 * **Thread Lifecycle:** Threads are ephemeral. They are cleared completely when a room empties or after 24 hours of inactivity (via `ThreadService.sweepInactive()`).
-* **Dismissal Lifecycle:** Thread dismissals are fully tied to the ephemeral lifetime of the thread.
+* **Dismissal Lifecycle:** Thread dismissals are tied to the lifetime of the thread.
   - When a thread is swept/cleared via `ThreadRepository.clear()`, its associated dismissals are purged.
   - When a new reply is posted, the dismissals for that thread are cleared.
-  - Dismissals are maintained in a concurrent, thread-safe memory registry matching the ephemeral nature of thread storage.
+  - Dismissals are stored durably in the ArangoDB `ThreadDismissals` collection to survive server restarts (in production), while in-memory repositories use a thread-safe registry.
 
 ---
 
