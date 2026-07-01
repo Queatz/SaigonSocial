@@ -290,7 +290,11 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
 
 internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
     private val store = ArangoStore(db, ArangoSchema.THREADS, ThreadReply.serializer()) { it.id }
-    override fun add(reply: ThreadReply): ThreadReply = store.put(reply)
+    private val dismissed = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+
+    override fun add(reply: ThreadReply): ThreadReply = store.put(reply).also {
+        clearDismissal(it.parentMessageId)
+    }
     override fun get(replyId: String): ThreadReply? = store.get(replyId)
     override fun update(reply: ThreadReply): ThreadReply = store.put(reply)
     override fun byParent(parentMessageId: String): List<ThreadReply> =
@@ -308,7 +312,17 @@ internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {
                 mapOf("p" to parent),
             )
             keys.forEach { store.delete(it) }
+            dismissed.remove(parent)
         }
+    }
+    override fun dismiss(userId: String, parentMessageId: String) {
+        dismissed.computeIfAbsent(parentMessageId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }.add(userId)
+    }
+    override fun isDismissed(userId: String, parentMessageId: String): Boolean {
+        return dismissed[parentMessageId]?.contains(userId) == true
+    }
+    override fun clearDismissal(parentMessageId: String) {
+        dismissed.remove(parentMessageId)
     }
 }
 

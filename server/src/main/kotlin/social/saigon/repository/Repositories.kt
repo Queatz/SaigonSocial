@@ -196,6 +196,9 @@ interface ThreadRepository {
     fun parents(): Set<String>
     /** Drop the threads hanging off the given parent message ids. */
     fun clear(parentMessageIds: Collection<String>)
+    fun dismiss(userId: String, parentMessageId: String)
+    fun isDismissed(userId: String, parentMessageId: String): Boolean
+    fun clearDismissal(parentMessageId: String)
 }
 
 class InMemoryUserRepository : UserRepository {
@@ -357,8 +360,11 @@ class InMemoryMetricRepository : MetricRepository {
 class InMemoryThreadRepository : ThreadRepository {
     // CopyOnWriteArrayList + computeIfAbsent keep concurrent thread replies safe under load (Phase 11).
     private val store = ConcurrentHashMap<String, MutableList<ThreadReply>>()
+    private val dismissed = ConcurrentHashMap<String, MutableSet<String>>()
+
     override fun add(reply: ThreadReply): ThreadReply = reply.also {
         store.computeIfAbsent(it.parentMessageId) { CopyOnWriteArrayList() }.add(it)
+        clearDismissal(it.parentMessageId)
     }
     override fun get(replyId: String): ThreadReply? =
         store.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == replyId } }
@@ -374,7 +380,19 @@ class InMemoryThreadRepository : ThreadRepository {
     override fun replyCount(parentMessageId: String): Int = store[parentMessageId]?.size ?: 0
     override fun parents(): Set<String> = store.keys.toSet()
     override fun clear(parentMessageIds: Collection<String>) {
-        parentMessageIds.forEach { store.remove(it) }
+        parentMessageIds.forEach {
+            store.remove(it)
+            dismissed.remove(it)
+        }
+    }
+    override fun dismiss(userId: String, parentMessageId: String) {
+        dismissed.computeIfAbsent(parentMessageId) { ConcurrentHashMap.newKeySet() }.add(userId)
+    }
+    override fun isDismissed(userId: String, parentMessageId: String): Boolean {
+        return dismissed[parentMessageId]?.contains(userId) == true
+    }
+    override fun clearDismissal(parentMessageId: String) {
+        dismissed.remove(parentMessageId)
     }
 }
 

@@ -42,6 +42,7 @@ import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
 import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.domain.RoomUpdate
+import social.saigon.domain.ThreadSummary
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
 import social.saigon.economics.EconomicsService
@@ -442,6 +443,46 @@ fun Application.registerRoutes(
             get("/profile/me/emoji-stats") {
                 val userId = requireMember(call.caller())
                 call.respond(EmojiStatsResponse(profiles.emojiStats(userId)))
+            }
+
+            // Thread replies active for the user (those they started or replied to).
+            get("/profile/me/threads") {
+                val selfUserId = requireMember(call.caller())
+                val parentIds = repositories.threads.parents()
+                val relevantThreads = parentIds.mapNotNull { parentId ->
+                    val parent = repositories.messages.get(parentId) ?: return@mapNotNull null
+                    val replies = repositories.threads.byParent(parentId).sortedBy { it.createdAt }
+                    val userStarted = parent.authorId == selfUserId
+                    val userReplied = replies.any { it.authorId == selfUserId }
+                    if (!userStarted && !userReplied) return@mapNotNull null
+                    if (repositories.threads.isDismissed(selfUserId, parentId)) return@mapNotNull null
+                    val room = repositories.rooms.get(parent.roomId) ?: return@mapNotNull null
+                    val lastReply = replies.lastOrNull()
+                    ThreadSummary(
+                        roomId = room.id,
+                        roomName = room.name,
+                        roomEmoji = room.emoji,
+                        parentMessageId = parent.id,
+                        parentMessageText = parent.text,
+                        parentMessageAuthorName = parent.authorName.ifBlank {
+                            authorName(parent.authorId, room.id, repositories, identities)
+                        },
+                        replyCount = replies.size,
+                        lastReplyText = lastReply?.text,
+                        lastReplyAuthorName = lastReply?.authorName?.ifBlank {
+                            lastReply?.authorId?.let { authorName(it, room.id, repositories, identities) }
+                        },
+                        lastReplyAt = lastReply?.createdAt
+                    )
+                }.sortedByDescending { it.lastReplyAt ?: 0L }
+                call.respond(relevantThreads)
+            }
+
+            post("/profile/me/threads/{parentMessageId}/dismiss") {
+                val selfUserId = requireMember(call.caller())
+                val parentMessageId = call.parameters["parentMessageId"].orEmpty()
+                repositories.threads.dismiss(selfUserId, parentMessageId)
+                call.respond(HttpStatusCode.OK)
             }
 
             // Capabilities granted to the caller's role (capability matrix; DESIGN §3, §11).
@@ -1261,6 +1302,41 @@ private suspend fun handleIncoming(
                     authorName = authorName,
                 ),
             )
+
+            // Route thread reply notifications to the thread starter and all other participants
+            val parent = repositories.messages.get(frame.parentMessageId)
+            if (parent != null) {
+                val previousReplies = repositories.threads.byParent(parent.id)
+                val room = repositories.rooms.get(frame.roomId)
+                if (room != null) {
+                    val recipients = (listOf(parent.authorId) + previousReplies.map { it.authorId })
+                        .distinct()
+                        .filter { it != authorId && it.isNotBlank() } // Do not notify the replier themselves
+                    
+                    val parentAuthorName = parent.authorName.ifBlank {
+                        authorName(parent.authorId, room.id, repositories, identities)
+                    }
+
+                    recipients.forEach { userId ->
+                        chatHub.sendToUser(
+                            userId,
+                            Outgoing.MessageReplyReceived(
+                                roomId = room.id,
+                                roomName = room.name,
+                                roomEmoji = room.emoji,
+                                parentMessageId = parent.id,
+                                parentMessageText = parent.text,
+                                parentMessageAuthorName = parentAuthorName,
+                                replyId = reply.id,
+                                replyText = reply.text,
+                                replyAuthorName = reply.authorName,
+                                replyCreatedAt = reply.createdAt,
+                                replyCount = threadService.replyCount(parent.id)
+                            )
+                        )
+                    }
+                }
+            }
         }
 
         is Incoming.Say -> {

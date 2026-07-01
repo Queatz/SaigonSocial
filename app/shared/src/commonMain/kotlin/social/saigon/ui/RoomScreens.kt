@@ -192,6 +192,8 @@ internal fun RoomListScreen(
     canManageRooms: Boolean = false,
     directChatCount: Int = 0,
     onOpenDirectChats: () -> Unit = {},
+    threadReplyCount: Int = 0,
+    onOpenThreadReplies: () -> Unit = {},
     signedIn: Boolean = false,
     userDisplayName: String? = null,
 ) {
@@ -266,6 +268,15 @@ internal fun RoomListScreen(
                             }
                         }
                     }
+                    if (userDisplayName != null) {
+                        item {
+                            Text(
+                                text = "Hi, $userDisplayName, how's it going?",
+                                style = MaterialTheme.typography.displaySmall,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    }
                     // Entry to the open direct chats (DESIGN §7). Shown once at least one chat exists so the
                     // user can see their open conversations and find chats others started with them.
                     if (directChatCount > 0) {
@@ -296,13 +307,32 @@ internal fun RoomListScreen(
                             }
                         }
                     }
-                    if (userDisplayName != null) {
+                    if (threadReplyCount > 0) {
                         item {
-                            Text(
-                                text = "Hi, $userDisplayName, how's it going?",
-                                style = MaterialTheme.typography.displaySmall,
-                                modifier = Modifier.padding(vertical = 16.dp)
-                            )
+                            Card(
+                                onClick = onOpenThreadReplies,
+                                modifier = Modifier.fillMaxWidth().softShadow()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("🧵", fontSize = 24.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = "Thread replies",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        "$threadReplyCount active",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
                         }
                     }
                     item {
@@ -1360,7 +1390,7 @@ internal fun IncomingChatBanner(chat: DirectChat, onOpen: () -> Unit, onDismiss:
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("\uD83D\uDCAC", fontSize = 20.sp)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(16.dp))
             Text(
                 "${chat.peerName} started a chat with you",
                 fontWeight = FontWeight.Bold,
@@ -2137,6 +2167,78 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ThreadRepliesScreen(
+    threads: List<ThreadSummary>,
+    onOpen: (ThreadSummary) -> Unit,
+    onDismiss: (ThreadSummary) -> Unit,
+) {
+    if (threads.isEmpty()) {
+        Centered {
+            Text(
+                "No active threads. Participate in room threads to see them here.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(threads, key = { it.parentMessageId }) { thread ->
+            Card(onClick = { onOpen(thread) }, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(thread.roomEmoji, fontSize = 24.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = thread.roomName,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Thread: ${thread.parentMessageText}",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        thread.lastReplyText?.let { reply ->
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "${thread.lastReplyAuthorName}: $reply",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { onDismiss(thread) }) {
+                        Text("Dismiss", fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "💬 ${thread.replyCount}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }

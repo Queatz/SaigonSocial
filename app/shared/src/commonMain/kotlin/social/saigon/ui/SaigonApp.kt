@@ -78,6 +78,7 @@ private sealed interface Screen {
     data class Private(val roomId: String, val targetUserId: String, val peerName: String) : Screen
     data class Invite(val code: String) : Screen
     data object DirectChats : Screen
+    data object ThreadReplies : Screen
     data object Profile : Screen
     data object Members : Screen
     data object RoomSearches : Screen
@@ -102,6 +103,7 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
 
     is Screen.Private -> "/chat/${screen.roomId}/${screen.targetUserId}"
     Screen.DirectChats -> null
+    Screen.ThreadReplies -> null
     Screen.Profile -> null
     Screen.Members -> null
     Screen.RoomSearches -> null
@@ -134,6 +136,9 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
         // (ahead of the router wiring) so a deep-linked "/chat/..." path can recover the peer's
         // display name from it when restoring a chat by URL.
         val directChats = remember { mutableStateListOf<DirectChat>() }
+
+        // Open thread replies (newest first, sorted by last activity time).
+        val threadReplies = remember { mutableStateListOf<ThreadSummary>() }
 
         // Resolve a URL path to a screen. Rooms are matched by id from the live room list, since the
         // room screen needs the full RoomSummary; an unknown path falls back to the home screen.
@@ -227,6 +232,17 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                 profile = null
             }
         }
+
+        LaunchedEffect(token, profile) {
+            if (token != null && profile != null) {
+                runCatching { api.myThreads() }.onSuccess { list ->
+                    threadReplies.clear()
+                    threadReplies.addAll(list)
+                }
+            } else {
+                threadReplies.clear()
+            }
+        }
         val role = profile?.role
         val canCreateRooms = role == Role.SUPPORTER || role == Role.FOUNDER
         val canManageRooms = role == Role.FOUNDER
@@ -242,17 +258,39 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
             if (token == null || selfId == null) return@LaunchedEffect
             val channel = runCatching { api.openNotifications() }.getOrNull() ?: return@LaunchedEffect
             try {
-                channel.start { notice ->
-                    val chat = DirectChat(notice.roomId.orEmpty(), notice.peerId, notice.peerName ?: "Someone")
-                    // Always list the chat so it shows up under "Direct chats" from any screen.
-                    recordDirectChat(chat)
-                    // Surface a banner too, but don't nag the initiator (already in this chat) or
-                    // duplicate the in-room banner that the room screen already shows.
-                    val current = screen
-                    val alreadyInThisChat = current is Screen.Private && current.targetUserId == notice.peerId
-                    val inARoom = current is Screen.Room
-                    if (!alreadyInThisChat && !inARoom) chatNotice = chat
-                }
+                channel.start(
+                    onChatStarted = { notice ->
+                        val chat = DirectChat(notice.roomId.orEmpty(), notice.peerId, notice.peerName ?: "Someone")
+                        // Always list the chat so it shows up under "Direct chats" from any screen.
+                        recordDirectChat(chat)
+                        // Surface a banner too, but don't nag the initiator (already in this chat) or
+                        // duplicate the in-room banner that the room screen already shows.
+                        val current = screen
+                        val alreadyInThisChat = current is Screen.Private && current.targetUserId == notice.peerId
+                        val inARoom = current is Screen.Room
+                        if (!alreadyInThisChat && !inARoom) chatNotice = chat
+                    },
+                    onThreadReply = { notice ->
+                        // Remove outdated entry
+                        threadReplies.removeAll { it.parentMessageId == notice.parentMessageId }
+                        // Prepend newest activity
+                        threadReplies.add(
+                            0,
+                            ThreadSummary(
+                                roomId = notice.roomId,
+                                roomName = notice.roomName,
+                                roomEmoji = notice.roomEmoji,
+                                parentMessageId = notice.parentMessageId,
+                                parentMessageText = notice.parentMessageText,
+                                parentMessageAuthorName = notice.parentMessageAuthorName,
+                                replyCount = notice.replyCount,
+                                lastReplyText = notice.replyText,
+                                lastReplyAuthorName = notice.replyAuthorName,
+                                lastReplyAt = notice.replyCreatedAt,
+                            )
+                        )
+                    }
+                )
             } finally {
                 runCatching { channel.close() }
             }
@@ -276,6 +314,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                         is Screen.Room -> "${s.room.emoji} ${s.room.name}"
                         is Screen.Private -> "Chat with ${s.peerName}"
                         Screen.DirectChats -> "Direct chats"
+                        Screen.ThreadReplies -> "Thread replies"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                         Screen.Members -> "Members"
                         Screen.RoomSearches -> "Room searches"
@@ -340,6 +379,8 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                                 canManageRooms = canManageRooms,
                                 directChatCount = directChats.size,
                                 onOpenDirectChats = { screen = Screen.DirectChats },
+                                threadReplyCount = threadReplies.size,
+                                onOpenThreadReplies = { screen = Screen.ThreadReplies },
                                 signedIn = token != null,
                                 userDisplayName = profile?.displayName,
                             )
@@ -402,6 +443,28 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                                 api = api,
                                 chats = directChats,
                                 onOpen = { openDirectChat(it) },
+                            )
+                        }
+
+                        Screen.ThreadReplies -> MaxWidthContainer {
+                            ThreadRepliesScreen(
+                                threads = threadReplies,
+                                onOpen = { thread ->
+                                    val roomSummary = RoomSummary(
+                                        id = thread.roomId,
+                                        name = thread.roomName,
+                                        emoji = thread.roomEmoji,
+                                        atmosphere = "",
+                                        occupants = 0
+                                    )
+                                    screen = Screen.Room(roomSummary, threadId = thread.parentMessageId)
+                                },
+                                onDismiss = { thread ->
+                                    scope.launch {
+                                        runCatching { api.dismissThread(thread.parentMessageId) }
+                                        threadReplies.remove(thread)
+                                    }
+                                }
                             )
                         }
 

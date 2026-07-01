@@ -3,7 +3,10 @@ package social.saigon
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import io.ktor.websocket.Frame
@@ -12,15 +15,19 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import kotlinx.serialization.json.Json
 import social.saigon.auth.AuthConfig
 import social.saigon.auth.TokenService
 import social.saigon.domain.Message
 import social.saigon.domain.Role
+import social.saigon.domain.Room
+import social.saigon.domain.User
 import social.saigon.realtime.Incoming
 import social.saigon.realtime.Outgoing
 import social.saigon.repository.InMemoryMessageRepository
 import social.saigon.repository.InMemoryThreadRepository
+import social.saigon.repository.Repositories
 import social.saigon.thread.ThreadService
 
 class Phase4Test {
@@ -141,6 +148,152 @@ class Phase4Test {
                 val reply = json.decodeFromString(Outgoing.serializer(), (incoming.receive() as Frame.Text).readText())
                 assertTrue(reply is Outgoing.Error)
             }
+        }
+    }
+
+    @Test
+    fun threadRepliesNotificationsAndEndpoint() = testApplication {
+        val repositories = Repositories()
+        val u1 = User(id = "u1", role = Role.SHARER, displayName = "Nam")
+        val u2 = User(id = "u2", role = Role.SHARER, displayName = "Alex")
+        repositories.users.create(u1)
+        repositories.users.create(u2)
+        repositories.rooms.create(Room("room1", "District 1 Room", "🏙️", "vibe", "u1"))
+
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokenService = TokenService(authConfig)
+        val u1Token = tokenService.issueMemberToken("u1", Role.SHARER)
+        val u2Token = tokenService.issueMemberToken("u2", Role.SHARER)
+
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        wsClient.webSocket("/ws?token=$u1Token") {
+            val u1Incoming = incoming
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+            u1Incoming.receive()
+
+            // Post a parent message
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Say("room1", "anyone here?"))))
+            val saidFrame = u1Incoming.receive() as Frame.Text
+            val said = json.decodeFromString(Outgoing.serializer(), saidFrame.readText()) as Outgoing.Said
+            val parentId = said.messageId!!
+
+            // Now u2 joins and replies
+            wsClient.webSocket("/ws?token=$u2Token") {
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+                incoming.receive()
+
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Reply("room1", parentId, "yes u2 is here"))))
+                // u2 should get their Replied broadcast response
+                val u2RepliedFrame = incoming.receive() as Frame.Text
+                val u2Replied = json.decodeFromString(Outgoing.serializer(), u2RepliedFrame.readText())
+                assertTrue(u2Replied is Outgoing.Replied)
+            }
+
+            // u1 receives Said response, Replied broadcast, and MessageReplyReceived notification
+            val frames = (1..3).map {
+                val f = u1Incoming.receive() as Frame.Text
+                json.decodeFromString(Outgoing.serializer(), f.readText())
+            }
+            val hasNotification = frames.any { it is Outgoing.MessageReplyReceived }
+            assertTrue(hasNotification, "Should have received MessageReplyReceived notification")
+
+            val notification = frames.first { it is Outgoing.MessageReplyReceived } as Outgoing.MessageReplyReceived
+            assertEquals("yes u2 is here", notification.replyText)
+            assertEquals(repositories.identities.get("u2", "room1")?.name, notification.replyAuthorName)
+
+            // Now test the REST endpoint /profile/me/threads for u1
+            val response = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertTrue(response.bodyAsText().contains("yes u2 is here"))
+        }
+    }
+
+    @Test
+    fun dismissAndReactivateThreadReplies() = testApplication {
+        val repositories = Repositories()
+        val u1 = User(id = "u1", role = Role.SHARER, displayName = "Nam")
+        val u2 = User(id = "u2", role = Role.SHARER, displayName = "Alex")
+        repositories.users.create(u1)
+        repositories.users.create(u2)
+        repositories.rooms.create(Room("room1", "District 1 Room", "🏙️", "vibe", "u1"))
+
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokenService = TokenService(authConfig)
+        val u1Token = tokenService.issueMemberToken("u1", Role.SHARER)
+        val u2Token = tokenService.issueMemberToken("u2", Role.SHARER)
+
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        wsClient.webSocket("/ws?token=$u1Token") {
+            val u1Incoming = incoming
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+            u1Incoming.receive()
+
+            // Post a parent message
+            send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Say("room1", "anyone here?"))))
+            val saidFrame = u1Incoming.receive() as Frame.Text
+            val said = json.decodeFromString(Outgoing.serializer(), saidFrame.readText()) as Outgoing.Said
+            val parentId = said.messageId!!
+
+            // Now u2 joins and replies
+            wsClient.webSocket("/ws?token=$u2Token") {
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+                incoming.receive()
+
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Reply("room1", parentId, "yes u2 is here"))))
+                // u2 should get their Replied broadcast response
+                val u2RepliedFrame = incoming.receive() as Frame.Text
+                val u2Replied = json.decodeFromString(Outgoing.serializer(), u2RepliedFrame.readText())
+                assertTrue(u2Replied is Outgoing.Replied)
+            }
+
+            // Consume frames for u1
+            (1..3).forEach { u1Incoming.receive() }
+
+            // 1. Thread summary should list "yes u2 is here" for u1
+            val listResponse = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, listResponse.status)
+            assertTrue(listResponse.bodyAsText().contains("yes u2 is here"))
+
+            // 2. Dismiss the thread for u1
+            val dismissResponse = wsClient.post("/profile/me/threads/$parentId/dismiss") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, dismissResponse.status)
+
+            // 3. Thread summary should be empty for u1 now
+            val listResponseAfterDismiss = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, listResponseAfterDismiss.status)
+            assertFalse(listResponseAfterDismiss.bodyAsText().contains("yes u2 is here"))
+
+            // 4. u2 replies again to the same thread
+            wsClient.webSocket("/ws?token=$u2Token") {
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Join("room1"))))
+                incoming.receive()
+
+                send(Frame.Text(json.encodeToString(Incoming.serializer(), Incoming.Reply("room1", parentId, "another reply from u2"))))
+                val u2RepliedFrame = incoming.receive() as Frame.Text
+                val u2Replied = json.decodeFromString(Outgoing.serializer(), u2RepliedFrame.readText())
+                assertTrue(u2Replied is Outgoing.Replied)
+            }
+
+            // 5. Thread summary should show up again for u1 (reactivated!)
+            val listResponseAfterNewReply = wsClient.get("/profile/me/threads") {
+                header(HttpHeaders.Authorization, "Bearer $u1Token")
+            }
+            assertEquals(HttpStatusCode.OK, listResponseAfterNewReply.status)
+            assertTrue(listResponseAfterNewReply.bodyAsText().contains("another reply from u2"))
         }
     }
 }

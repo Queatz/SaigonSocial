@@ -208,3 +208,17 @@ data class ThreadReply(
      */
     val recalled: Boolean = false,
 )
+
+@Serializable
+data class ThreadSummary(
+    val roomId: String,
+    val roomName: String,
+    val roomEmoji: String,
+    val parentMessageId: String,
+    val parentMessageText: String,
+    val parentMessageAuthorName: String,
+    val replyCount: Int,
+    val lastReplyText: String? = null,
+    val lastReplyAuthorName: String? = null,
+    val lastReplyAt: Long? = null,
+)

@@ -167,6 +167,21 @@ sealed interface Outgoing {
 
     @Serializable
     data class Error(val reason: String) : Outgoing
+
+    @Serializable
+    data class MessageReplyReceived(
+        val roomId: String,
+        val roomName: String,
+        val roomEmoji: String,
+        val parentMessageId: String,
+        val parentMessageText: String,
+        val parentMessageAuthorName: String,
+        val replyId: String,
+        val replyText: String,
+        val replyAuthorName: String,
+        val replyCreatedAt: Long,
+        val replyCount: Int,
+    ) : Outgoing
 }
 
 /**

@@ -343,3 +343,17 @@ object UiConstants {
     /** Just the flag emoji for [code] (the leading token of its label), falling back to the code. */
     fun languageEmoji(code: String): String = languageNames[code]?.substringBefore(' ') ?: code
 }
+
+@Serializable
+data class ThreadSummary(
+    val roomId: String,
+    val roomName: String,
+    val roomEmoji: String,
+    val parentMessageId: String,
+    val parentMessageText: String,
+    val parentMessageAuthorName: String,
+    val replyCount: Int,
+    val lastReplyText: String? = null,
+    val lastReplyAuthorName: String? = null,
+    val lastReplyAt: Long? = null,
+)

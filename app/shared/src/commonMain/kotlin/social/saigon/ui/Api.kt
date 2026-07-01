@@ -203,6 +203,20 @@ class SaigonApi(
         client.get("$baseUrl/profile/me/emoji-stats") { HttpRequestAuth(this) }
             .decodeMember<EmojiStatsResponse>().stats
 
+    /**
+     * Active threads the user has started or replied to (ensures state restoration across reloads).
+     */
+    suspend fun myThreads(): List<ThreadSummary> =
+        client.get("$baseUrl/profile/me/threads") { HttpRequestAuth(this) }
+            .decodeMember()
+
+    /**
+     * Dismiss a thread reply, preventing it from showing up in active thread replies until another reply comes in.
+     */
+    suspend fun dismissThread(parentMessageId: String): Unit {
+        client.post("$baseUrl/profile/me/threads/$parentMessageId/dismiss") { HttpRequestAuth(this) }
+    }
+
     /** Update editable profile fields (DESIGN §4). Requires a member token. */
     suspend fun updateProfile(update: ProfileUpdate): ProfileResponse =
         client.put("$baseUrl/profile/me") {
@@ -497,6 +511,7 @@ class SaigonApi(
         const val FINAL_EMOJI_PROMPT_TYPE = "social.saigon.realtime.Outgoing.FinalEmojiPrompt"
         const val FINAL_EMOJI_REVEALED_TYPE = "social.saigon.realtime.Outgoing.FinalEmojiRevealed"
         const val ERROR_TYPE = "social.saigon.realtime.Outgoing.Error"
+        const val THREAD_REPLY_RECEIVED_TYPE = "social.saigon.realtime.Outgoing.MessageReplyReceived"
     }
 }
 
@@ -679,6 +694,22 @@ data class ChatStartedNotice(
 )
 
 /**
+ * Notice that someone replied in a thread started by or participated in by the user.
+ */
+data class ThreadReplyNotice(
+    val roomId: String,
+    val roomName: String,
+    val roomEmoji: String,
+    val parentMessageId: String,
+    val parentMessageText: String,
+    val parentMessageAuthorName: String,
+    val replyText: String,
+    val replyAuthorName: String,
+    val replyCreatedAt: Long,
+    val replyCount: Int,
+)
+
+/**
  * An always-on, room-less WebSocket whose only job is to surface "someone started a chat with you"
  * notices to the signed-in member regardless of which screen they are on (DESIGN §7). The server
  * routes `PrivateChatStarted` by user id, so simply having this connection open is enough — no room
@@ -688,22 +719,43 @@ class NotificationsChannel internal constructor(
     private val session: io.ktor.client.plugins.websocket.DefaultClientWebSocketSession,
     private val json: Json,
 ) {
-    /** Consume server frames, surfacing each chat-started notice to [onChatStarted]. Suspends until
-     * the socket closes. */
-    suspend fun start(onChatStarted: (ChatStartedNotice) -> Unit) {
+    /** Consume server frames, surfacing each chat-started notice to [onChatStarted] and thread reply
+     * to [onThreadReply]. Suspends until the socket closes. */
+    suspend fun start(
+        onChatStarted: (ChatStartedNotice) -> Unit,
+        onThreadReply: (ThreadReplyNotice) -> Unit = {},
+    ) {
         consumeUntilClosed {
             session.incoming.consumeAsFlow().filterIsInstance<Frame.Text>().collect { frame ->
-            val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
-            if (obj["type"]?.jsonPrimitive?.contentOrNull == SaigonApi.PRIVATE_STARTED_TYPE) {
-                onChatStarted(
-                    ChatStartedNotice(
-                        peerId = obj["peerId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                        peerName = obj["peerName"]?.jsonPrimitive?.contentOrNull,
-                        roomId = obj["roomId"]?.jsonPrimitive?.contentOrNull,
-                    ),
-                )
+                val obj = runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull() ?: return@collect
+                when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                    SaigonApi.PRIVATE_STARTED_TYPE -> {
+                        onChatStarted(
+                            ChatStartedNotice(
+                                peerId = obj["peerId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                peerName = obj["peerName"]?.jsonPrimitive?.contentOrNull,
+                                roomId = obj["roomId"]?.jsonPrimitive?.contentOrNull,
+                            )
+                        )
+                    }
+                    SaigonApi.THREAD_REPLY_RECEIVED_TYPE -> {
+                        onThreadReply(
+                            ThreadReplyNotice(
+                                roomId = obj["roomId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                roomName = obj["roomName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                roomEmoji = obj["roomEmoji"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                parentMessageId = obj["parentMessageId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                parentMessageText = obj["parentMessageText"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                parentMessageAuthorName = obj["parentMessageAuthorName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                replyText = obj["replyText"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                replyAuthorName = obj["replyAuthorName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                replyCreatedAt = obj["replyCreatedAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+                                replyCount = obj["replyCount"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                            )
+                        )
+                    }
+                }
             }
-        }
         }
     }
 
