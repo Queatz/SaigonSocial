@@ -623,7 +623,7 @@ class SaigonApi(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "http://localhost:9090"
+        const val DEFAULT_BASE_URL = "https://api.saigon.social"
         private const val JOIN_TYPE = "social.saigon.realtime.Incoming.Join"
         const val SAY_TYPE = "social.saigon.realtime.Incoming.Say"
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"

@@ -198,6 +198,14 @@ fun topBarBrush(): Brush {
     )
 }
 
+@Composable
+@ReadOnlyComposable
+fun inputFieldBackgroundColor(): Color = if (isSystemInDarkTheme()) {
+    Color.Black.copy(alpha = 0.33f)
+} else {
+    Color.White.copy(alpha = 0.33f)
+}
+
 /**
  * A soft hairline border (DESIGN §1 — "soft borders"): a thin, low-contrast outline that gives
  * cards and panels a gentle edge without the hard line of a full-strength stroke.

@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.isSystemInDarkTheme
 
 /**
  * Compose Web app shell + navigation (DESIGN §12), wired to the live [SaigonApi].
@@ -338,7 +341,7 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                         Screen.ServiceSearches -> "Service searches"
                         Screen.MyServices -> "Services provided"
                         Screen.Services -> "Services"
-                        is Screen.ServiceDetail -> "Service"
+                        is Screen.ServiceDetail -> "Services"
                     },
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
@@ -767,6 +770,7 @@ internal fun MessageComposer(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        val backgroundColor = inputFieldBackgroundColor()
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -783,9 +787,13 @@ internal fun MessageComposer(
                         false
                     }
                 },
-            label = { Text(placeholder) },
+            label = { Text(text = placeholder) },
             shape = InputFieldShape,
             maxLines = 5,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = backgroundColor,
+                unfocusedContainerColor = backgroundColor,
+            ),
         )
         IconButton(
             onClick = onSend,

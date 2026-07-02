@@ -165,7 +165,7 @@ internal fun MyServicesScreen(
 internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(service.emoji.ifBlank { "🔧" }, fontSize = 28.sp)
+            Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,7 +260,7 @@ internal fun ServiceDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(s.emoji.ifBlank { "🔧" }, fontSize = 36.sp)
+                    Text(s.emoji.ifBlank { "🌟" }, fontSize = 36.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -394,7 +394,10 @@ private fun EditServiceDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Edit service") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it; error = null },

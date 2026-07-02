@@ -313,7 +313,7 @@ object UiConstants {
         "How have you been?",
         "What's on your mind?",
         "Got any fun plans?",
-        "How's everything going?",
+        "How's everything going?",  
         "What made your day?",
         "Been anywhere lately?",
         "What are you into these days?",

@@ -3,6 +3,7 @@ package social.saigon.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -346,7 +347,7 @@ internal fun RoomListScreen(
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("🔧", fontSize = 24.sp)
+                                Text("🌟", fontSize = 24.sp)
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     text = "Browse services",
@@ -1108,7 +1109,7 @@ private fun OccupantDetailSheet(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Button(onClick = { onOpenService(service.id) }) { Text("Buy") }
+                            Button(onClick = { onOpenService(service.id) }) { Text("Details") }
                         }
                     }
                 }
@@ -1177,7 +1178,7 @@ private fun CreateServiceDialog(
     onCreated: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var emoji by remember { mutableStateOf("🔧") }
+    var emoji by remember { mutableStateOf("🌟") }
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
@@ -1188,7 +1189,10 @@ private fun CreateServiceDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Offer a service") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it; error = null },
@@ -1589,7 +1593,12 @@ private fun OccupantList(
         val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
         // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
         var selected by remember { mutableStateOf<OccupantView?>(null) }
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(inputFieldBackgroundColor(), MaterialTheme.shapes.large)
+                .padding(16.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 ShareButton()
@@ -1877,6 +1886,7 @@ private fun OccupantScroller(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .background(inputFieldBackgroundColor(), shape)
             .clip(shape)
             .softBorder(shape)
             .clickable { expanded = !expanded }
