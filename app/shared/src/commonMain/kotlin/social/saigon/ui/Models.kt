@@ -328,6 +328,26 @@ object UiConstants {
         "What's your favorite room here?",
         "Coffee, tea, or water?",
         "What's the news lately?",
+        "I bow to your transmission.",
+        "I welcome your light-speed ping.",
+        "I greet thee, fellow carbon-form.",
+        "I bow, fellow solar wanderer.",
+        "I humbly greet your quantum node.",
+        "I welcome you, fellow dream-traveller.",
+        "I formally accept your stream-of-consciousness.",
+        "I honor to your orbital path, matey.",
+        "I welcome your bio-luminescent field.",
+        "I stand ready for you, cryptic being.",
+        "I greet you, child of Old Earth.",
+        "I bow to your neural fuel.",
+        "I bow to you, gravity-bound vessel.",
+        "I formally welcome your exo-consciousness.",
+        "I welcome you, fellow star-seeder.",
+        "I humbly accept your chrono-echo.",
+        "I bow, honored by your shape of light.",
+        "I welcome your terraformed heart.",
+        "I greet you, fellow post-biological.",
+        "I formally invite your holographics."
     )
 
     /**
