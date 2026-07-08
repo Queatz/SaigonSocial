@@ -34,6 +34,18 @@ enum class Role {
 }
 
 /**
+ * A profile photo hosted on the content server (issue: "Profile and room profile photos").
+ * [url] is the content server's public URL for the file; [message] is the user's own caption for
+ * the photo, shown alongside it.
+ */
+@Serializable
+data class ProfilePhoto(
+    val url: String,
+    val message: String = "",
+    val createdAt: Long = 0L,
+)
+
+/**
  * Persistent user profile (DESIGN §4). Tied to the real person behind room-specific identities.
  */
 @Serializable
@@ -64,6 +76,13 @@ data class User(
     val languages: List<String> = emptyList(),
     /** Optional availability windows. */
     val offlineSchedule: List<String> = emptyList(),
+    /** The member's current (main) profile photo; null until they upload one. */
+    val photo: ProfilePhoto? = null,
+    /**
+     * Previous profile photos, newest first. Uploading a new photo makes it the main one and moves
+     * the old main photo to the head of this list; entries can be deleted individually.
+     */
+    val previousPhotos: List<ProfilePhoto> = emptyList(),
     /** Ids of the [Service]s this Supporter provides. Each service is created from a room. */
     val services: List<String> = emptyList(),
     /** Private emoji tally aggregated from received reactions. Visible only to the user. */
@@ -131,6 +150,13 @@ data class RoomIdentity(
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    /**
+     * Room-scoped profile photos (issue: "Room profile photos"). Added from the room profile form,
+     * these belong only to this (user, room) pair and show up ahead of the user's main-profile
+     * photos in the room-profile sheet's photo list. Unlike the override facets above, photos are
+     * additive rather than an inherit/override toggle, so an empty list simply means "none yet".
+     */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /**
@@ -145,6 +171,12 @@ data class RoomIdentityUpdate(
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    /**
+     * The room-scoped photos to store (issue: "Room profile photos"). A null list leaves the
+     * existing room photos untouched; a non-null list wholesale-replaces them. This differs from
+     * the override facets, where a null field clears the override to inherit the main profile.
+     */
+    val photos: List<ProfilePhoto>? = null,
 )
 
 /**

@@ -127,9 +127,12 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
 }
 
 @Composable
-fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
+fun SaigonApp(
+    baseUrl: String = SaigonApi.DEFAULT_BASE_URL,
+    contentUrl: String = SaigonApi.DEFAULT_CONTENT_URL,
+) {
     SaigonTheme {
-        val api = remember { SaigonApi(baseUrl) }
+        val api = remember { SaigonApi(baseUrl, contentUrl = contentUrl) }
         // Restore a previously-saved access token so a page reload doesn't sign the user out
         // (DESIGN §2): the token is persisted via TokenStore (localStorage on web).
         var token by remember { mutableStateOf(TokenStore.load()) }
@@ -355,6 +358,9 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                     // Don't show the "Sign in" button while the sign-in page is already open.
                     showSignIn = screen != Screen.Profile,
                     profileName = profile?.displayName,
+                    // The signed-in user's own photo drives the top-bar avatar (issue: profile
+                    // photos should replace the initial letter everywhere, including the top bar).
+                    profilePhotoUrl = profile?.photo?.url,
                     // The members directory is opened from the profile, so Back returns there;
                     // every other screen falls back to the room list.
                     onBack = {
@@ -422,7 +428,16 @@ fun SaigonApp(baseUrl: String = SaigonApi.DEFAULT_BASE_URL) {
                             selfUserId = profile?.id,
                             isFounder = canManageRooms,
                             onStartPrivate = { occupant ->
-                                openDirectChat(DirectChat(s.room.id, occupant.userId, occupant.name))
+                                // Carry the room-first avatar photo (room profile latest, else main
+                                // profile) so the direct-chats list shows the same photo the room did.
+                                openDirectChat(
+                                    DirectChat(
+                                        s.room.id,
+                                        occupant.userId,
+                                        occupant.name,
+                                        peerPhotoUrl = occupant.photoUrl.ifBlank { null },
+                                    ),
+                                )
                             },
                             onRecordDirectChat = { recordDirectChat(it) },
                             // Surface the shared app-level banner (DESIGN §7) when the room socket
@@ -561,6 +576,7 @@ private fun TopBar(
     signedIn: Boolean,
     showSignIn: Boolean,
     profileName: String?,
+    profilePhotoUrl: String? = null,
     onBack: () -> Unit,
     onProfile: () -> Unit,
 ) {
@@ -701,7 +717,7 @@ private fun TopBar(
                         .clip(CircleShape)
                         .clickable(onClick = onProfile),
                 ) {
-                    ProfileIcon(name = profileName ?: "?", size = 36.dp)
+                    ProfileIcon(name = profileName ?: "?", size = 36.dp, photoUrl = profilePhotoUrl?.ifBlank { null })
                 }
             } else if (showSignIn) {
                 TextButton(onClick = onProfile) {

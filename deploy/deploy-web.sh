@@ -43,8 +43,10 @@ SSH_HOST="${1:-${SSH_HOST:-root@${DOMAIN}}}"
 SSH_OPTS="${SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
 LOCAL="${LOCAL:-false}"
 
-# Resource baked into the web bundle: where the client talks to the API.
+# Resources baked into the web bundle: where the client talks to the API, and where it uploads /
+# loads photos (the content server — see ./deploy/deploy-content.sh).
 DEFAULT_BASE_URL="${DEFAULT_BASE_URL:-https://api.saigon.social}"
+DEFAULT_CONTENT_URL="${DEFAULT_CONTENT_URL:-https://content.saigon.social}"
 
 # Resolve the repository root so the script works from any directory.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -79,6 +81,9 @@ cp "${API_FILE}" "${API_FILE}.deploybak"
 restore_api_file() { mv -f "${API_FILE}.deploybak" "${API_FILE}" 2>/dev/null || true; }
 trap restore_api_file EXIT
 sed -i "s#const val DEFAULT_BASE_URL = \"[^\"]*\"#const val DEFAULT_BASE_URL = \"${DEFAULT_BASE_URL}\"#" \
+  "${API_FILE}"
+echo ">> Baking DEFAULT_CONTENT_URL=${DEFAULT_CONTENT_URL} into ${API_FILE}"
+sed -i "s#const val DEFAULT_CONTENT_URL = \"[^\"]*\"#const val DEFAULT_CONTENT_URL = \"${DEFAULT_CONTENT_URL}\"#" \
   "${API_FILE}"
 
 echo ">> Building web bundle with Gradle (:app:webApp:jsBrowserDistribution)"

@@ -38,6 +38,7 @@ import social.saigon.domain.LaunchConfig
 import social.saigon.domain.Message
 import social.saigon.domain.PlainText
 import social.saigon.domain.Pricing
+import social.saigon.domain.ProfilePhoto
 import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.ReportTarget
 import social.saigon.domain.Role
@@ -111,6 +112,13 @@ data class RedeemRequest(val code: String, val username: String, val password: S
 /** Change the caller's login username (handle). */
 @Serializable
 data class ChangeUsernameRequest(val username: String)
+
+/**
+ * Set the caller's profile photo (issue: "Profile and room profile photos").
+ * [url] is a content-server URL from a prior upload; [message] is the user's caption for it.
+ */
+@Serializable
+data class SetProfilePhotoRequest(val url: String, val message: String = "")
 
 /**
  * Set or change the caller's password (PASSWORD_AUTH.md §2B). [currentPassword] is required only
@@ -398,6 +406,8 @@ fun Application.registerRoutes(
                     authorName = message.authorName.ifBlank {
                         authorName(message.authorId, roomId, repositories, identities)
                     },
+                    // The room-first avatar photo (room profile latest, else main profile).
+                    authorPhotoUrl = roomPhotoUrl(message.authorId, roomId, repositories, identities),
                     text = message.text,
                     createdAt = message.createdAt,
                     replyCount = threadService.replyCount(message.id),
@@ -424,6 +434,8 @@ fun Application.registerRoutes(
                     authorName = reply.authorName.ifBlank {
                         authorName(reply.authorId, roomId, repositories, identities)
                     },
+                    // The room-first avatar photo (room profile latest, else main profile).
+                    authorPhotoUrl = roomPhotoUrl(reply.authorId, roomId, repositories, identities),
                     text = reply.text,
                     createdAt = reply.createdAt,
                     recalled = reply.recalled,
@@ -443,7 +455,8 @@ fun Application.registerRoutes(
                     val identity = identities.getOrCreate(userId, roomId)
                     OccupantView(
                         userId = userId,
-                        name = identity.name,
+                        // An empty room identity falls back to the member's main profile name (DESIGN §4, §5).
+                        name = identity.name.ifBlank { user.displayName },
                         displayName = user.displayName,
                         avatarUrl = identity.avatarUrl,
                         role = user.role,
@@ -454,6 +467,11 @@ fun Application.registerRoutes(
                         offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
+                        // The main profile photo drives the avatar. The sheet's photo cards list
+                        // this room's photos first (issue: "Room profile photos"), then the full
+                        // main-profile set (main + previous).
+                        photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
+                        photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
                         )
                     }
             call.respond(occupants)
@@ -476,7 +494,8 @@ fun Application.registerRoutes(
             call.respond(
                 OccupantView(
                     userId = userId,
-                    name = identity.name,
+                    // An empty room identity falls back to the member's main profile name (DESIGN §4, §5).
+                    name = identity.name.ifBlank { user.displayName },
                     displayName = user.displayName,
                     avatarUrl = identity.avatarUrl,
                     role = user.role,
@@ -487,6 +506,11 @@ fun Application.registerRoutes(
                     offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
+                    // The main profile photo drives the avatar. The sheet's photo cards list this
+                    // room's photos first (issue: "Room profile photos"), then the full
+                    // main-profile set (main + previous).
+                    photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
+                    photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
                 ),
             )
         }
@@ -573,6 +597,23 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val update = call.receive<ProfileUpdate>()
                 call.respond(profiles.update(userId, update).toProfileResponse())
+            }
+
+            // Set a new profile photo — or update the current one's caption (issue: "Profile and
+            // room profile photos"). A new URL becomes the main photo and rotates the previous
+            // main photo into the "previous photos" list.
+            post("/profile/photo") {
+                val userId = requireMember(call.caller())
+                val req = call.receive<SetProfilePhotoRequest>()
+                call.respond(profiles.setPhoto(userId, req.url, req.message).toProfileResponse())
+            }
+
+            // Delete one of the caller's *previous* profile photos by its URL (`?url=`).
+            delete("/profile/photos") {
+                val userId = requireMember(call.caller())
+                val url = call.request.queryParameters["url"].orEmpty()
+                require(url.isNotBlank()) { "url required" }
+                call.respond(profiles.deletePhoto(userId, url).toProfileResponse())
             }
 
             // Change the caller's login username (handle), rejecting one already taken.
@@ -756,6 +797,7 @@ fun Application.registerRoutes(
                         authorName = recalled.authorName.ifBlank {
                             authorName(recalled.authorId, roomId, repositories, identities)
                         },
+                        authorPhotoUrl = roomPhotoUrl(recalled.authorId, roomId, repositories, identities),
                         text = recalled.text,
                         createdAt = recalled.createdAt,
                         replyCount = threadService.replyCount(recalled.id),
@@ -800,6 +842,7 @@ fun Application.registerRoutes(
                         authorName = recalled.authorName.ifBlank {
                             authorName(recalled.authorId, roomId, repositories, identities)
                         },
+                        authorPhotoUrl = roomPhotoUrl(recalled.authorId, roomId, repositories, identities),
                         text = recalled.text,
                         createdAt = recalled.createdAt,
                         recalled = recalled.recalled,
@@ -1063,7 +1106,7 @@ fun Application.registerRoutes(
                 val chat = privateChatService.openOrStart(userId, service.providerId, service.roomId)
                 // Append a hint so the provider knows which service prompted the message.
                 privateChatService.post(chat.id, userId, "$message — Sent from ${service.name}")
-                val providerName = identities.getOrCreate(service.providerId, service.roomId).name
+                val providerName = authorName(service.providerId, service.roomId, repositories, identities)
                 call.respond(
                     ContactProviderResponse(
                         roomId = service.roomId,
@@ -1344,6 +1387,10 @@ data class OccupantView(
     val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
+    /** The member's main profile photo URL; empty when they have none. Drives the avatar. */
+    val photoUrl: String = "",
+    /** All profile photos (main first, then previous), for the room-profile sheet's photo cards. */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /** Public-facing view of a user's own persistent profile (DESIGN §4). */
@@ -1362,6 +1409,10 @@ data class ProfileResponse(
     val handle: String? = null,
     /** True once the member has set a durable sign-in password (PASSWORD_AUTH.md §2B). */
     val passwordSet: Boolean = false,
+    /** The member's current (main) profile photo; null until they upload one. */
+    val photo: ProfilePhoto? = null,
+    /** Previous profile photos, newest first (issue: "Profile and room profile photos"). */
+    val previousPhotos: List<ProfilePhoto> = emptyList(),
 )
 
 /**
@@ -1380,6 +1431,8 @@ data class FeedMessage(
     val replyCount: Int,
     /** True once the author (or the Founder) recalled the message; its [text] is then blank. */
     val recalled: Boolean = false,
+    /** The author's main profile photo URL (empty when they have none), for their avatar. */
+    val authorPhotoUrl: String = "",
 )
 
 /** A thread reply enriched with the author's room-scoped display name (DESIGN §5, §9). */
@@ -1394,6 +1447,8 @@ data class ThreadReplyView(
     val createdAt: Long,
     /** True once the author (or the Founder) recalled the reply; its [text] is then blank. */
     val recalled: Boolean = false,
+    /** The author's main profile photo URL (empty when they have none), for their avatar. */
+    val authorPhotoUrl: String = "",
 )
 
 /** Public pricing table for the economics screen (DESIGN §3, §11). */
@@ -1481,6 +1536,8 @@ data class MemberView(
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (formerly "interests"). */
     val introduction: List<String> = emptyList(),
+    /** The member's main profile photo URL; empty when they have none. Drives the avatar. */
+    val photoUrl: String = "",
 )
 
 /** Body for a founder-only manual tier change (MEMBER_MANAGEMENT.md B). */
@@ -1538,6 +1595,7 @@ private fun User.toMemberView(economics: EconomicsService): MemberView = MemberV
     intents = intents,
     languages = languages,
     introduction = interests,
+    photoUrl = photo?.url ?: "",
 )
 
 private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
@@ -1553,6 +1611,8 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     handle = handle,
     // Never expose the hash itself — only whether a password exists (PASSWORD_AUTH.md §2E).
     passwordSet = passwordHash != null,
+    photo = photo,
+    previousPhotos = previousPhotos,
 )
 
 /**
@@ -1612,7 +1672,8 @@ private fun Feedback.toFeedbackView(repositories: Repositories): FeedbackView {
 
 /**
  * Resolve a message/reply author's room-scoped display name (DESIGN §5) so the public feed and
- * thread sheets never surface a raw user id. Anonymous (non-member) authors keep their id.
+ * thread sheets never surface a raw user id. A room identity without a name of its own falls back
+ * to the member's main profile name. Anonymous (non-member) authors keep their id.
  */
 private suspend fun authorName(
     authorId: String,
@@ -1620,11 +1681,25 @@ private suspend fun authorName(
     repositories: Repositories,
     identities: IdentityService,
 ): String =
-    if (repositories.users.get(authorId) != null) {
-        identities.getOrCreate(authorId, roomId).name
-    } else {
-        authorId
-    }
+    repositories.users.get(authorId)?.let { user ->
+        identities.getOrCreate(authorId, roomId).name.ifBlank { user.displayName }
+    } ?: authorId
+
+/**
+ * Resolve the avatar photo URL to show for a member in a room context (issue: "everything room
+ * related ... should take the latest photo from the room profile if there is one, otherwise fall
+ * back to the user profile"). Prefers the room identity's latest photo, then the member's main
+ * profile photo; empty when neither exists (non-member / no photo).
+ */
+private suspend fun roomPhotoUrl(
+    userId: String,
+    roomId: String,
+    repositories: Repositories,
+    identities: IdentityService,
+): String {
+    val roomPhoto = identities.getOrCreate(userId, roomId).photos.firstOrNull()?.url
+    return roomPhoto ?: repositories.users.get(userId)?.photo?.url ?: ""
+}
 
 /**
  * Generate a short, human-friendly, single-use invite code (e.g. "K7P2QM9X"). Uses an
@@ -1696,7 +1771,7 @@ private suspend fun handleIncoming(
                 return
             }
             val authorId = session.userId ?: session.connectionId
-            val authorName = session.userId?.let { identities.getOrCreate(it, frame.roomId).name }
+            val authorName = session.userId?.let { authorName(it, frame.roomId, repositories, identities) }
             val reply = try {
                 threadService.reply(
                     parentMessageId = frame.parentMessageId,
@@ -1721,6 +1796,8 @@ private suspend fun handleIncoming(
                     replyCount = threadService.replyCount(reply.parentMessageId),
                     replyToId = reply.replyToId,
                     authorName = authorName,
+                    // Room-first avatar photo (room profile latest, else main profile).
+                    authorPhotoUrl = roomPhotoUrl(reply.authorId, frame.roomId, repositories, identities),
                 ),
             )
 
@@ -1779,7 +1856,7 @@ private suspend fun handleIncoming(
             }
             // Members post under their room-scoped identity; fall back to the connection id.
             val authorId = session.userId ?: session.connectionId
-            val authorName = session.userId?.let { identities.getOrCreate(it, frame.roomId).name }
+            val authorName = session.userId?.let { authorName(it, frame.roomId, repositories, identities) }
             val message = repositories.messages.add(
                 Message(
                     id = UUID.randomUUID().toString(),
@@ -1794,7 +1871,16 @@ private suspend fun handleIncoming(
             session.userId?.let { metrics.record(MetricType.ACTIVE, userId = it) }
             chatHub.broadcast(
                 frame.roomId,
-                Outgoing.Said(message.roomId, message.authorId, message.text, message.createdAt, authorName, message.id),
+                Outgoing.Said(
+                    message.roomId,
+                    message.authorId,
+                    message.text,
+                    message.createdAt,
+                    authorName,
+                    message.id,
+                    // Room-first avatar photo (room profile latest, else main profile).
+                    authorPhotoUrl = roomPhotoUrl(message.authorId, frame.roomId, repositories, identities),
+                ),
             )
         }
 
@@ -1819,9 +1905,10 @@ private suspend fun handleIncoming(
                 session.send(Outgoing.Error(e.message ?: "Cannot start direct chat"))
                 return
             }
-            // Each party sees the other's room-scoped display name (DESIGN §5, §7).
-            val initiatorName = identities.getOrCreate(initiatorId, frame.roomId).name
-            val targetName = identities.getOrCreate(frame.targetUserId, frame.roomId).name
+            // Each party sees the other's room-scoped display name (DESIGN §5, §7), falling back
+            // to the main profile name when the room identity has none.
+            val initiatorName = authorName(initiatorId, frame.roomId, repositories, identities)
+            val targetName = authorName(frame.targetUserId, frame.roomId, repositories, identities)
             chatHub.sendToUser(initiatorId, Outgoing.PrivateChatStarted(chat.id, frame.targetUserId, targetName, frame.roomId))
             chatHub.sendToUser(frame.targetUserId, Outgoing.PrivateChatStarted(chat.id, initiatorId, initiatorName, frame.roomId))
             // Replay the conversation so far to whoever just opened the screen, so (re)opening an

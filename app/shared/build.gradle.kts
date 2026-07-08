@@ -39,6 +39,8 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.clientCioMp)
+            // System photo picker (rememberLauncherForActivityResult) for profile photo uploads.
+            implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
             api(projects.core)

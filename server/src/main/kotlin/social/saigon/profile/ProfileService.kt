@@ -2,6 +2,7 @@ package social.saigon.profile
 
 import social.saigon.domain.Capability
 import social.saigon.domain.EmojiOptions
+import social.saigon.domain.ProfilePhoto
 import social.saigon.domain.ProfileUpdate
 import social.saigon.domain.User
 import social.saigon.domain.can
@@ -41,6 +42,43 @@ class ProfileService(private val users: UserRepository) {
                 intents = intents,
             ),
         )
+    }
+
+    /**
+     * Set the user's profile photo (issue: "Profile and room profile photos").
+     *
+     * When [url] differs from the current photo, the new photo becomes the main one and the
+     * previous main photo (if any) moves to the head of [User.previousPhotos]. When [url] matches
+     * the current photo, only its [message] (the user's caption) is updated — no rotation happens.
+     */
+    fun setPhoto(userId: String, url: String, message: String): User {
+        val user = get(userId)
+        require(user.role.can(Capability.EDIT_PROFILE)) { "Role ${user.role} cannot edit a profile" }
+        val photoUrl = url.trim()
+        require(photoUrl.isNotEmpty()) { "A photo URL is required" }
+        val caption = message.trim()
+        val current = user.photo
+        val updated = if (current != null && current.url == photoUrl) {
+            user.copy(photo = current.copy(message = caption))
+        } else {
+            user.copy(
+                photo = ProfilePhoto(url = photoUrl, message = caption, createdAt = System.currentTimeMillis()),
+                previousPhotos = listOfNotNull(current) + user.previousPhotos,
+            )
+        }
+        return users.update(updated)
+    }
+
+    /**
+     * Delete one of the user's *previous* profile photos by its [url]. The current main photo
+     * cannot be deleted — only replaced by [setPhoto].
+     */
+    fun deletePhoto(userId: String, url: String): User {
+        val user = get(userId)
+        require(user.role.can(Capability.EDIT_PROFILE)) { "Role ${user.role} cannot edit a profile" }
+        val remaining = user.previousPhotos.filterNot { it.url == url }
+        require(remaining.size < user.previousPhotos.size) { "No such photo" }
+        return users.update(user.copy(previousPhotos = remaining))
     }
 
     /**

@@ -40,26 +40,28 @@ class Phase2Test {
         IdentityService(InMemoryRoomIdentityRepository(), generator)
 
     @Test
-    fun generatesIdentityOnFirstJoinAndKeepsItStable() = runBlocking {
+    fun firstJoinStartsEmptySoItFallsBackToTheMainProfile() = runBlocking {
         val gen = SequentialIdentityGenerator()
         val svc = service(gen)
 
+        // A new room profile has no generated name/avatar of its own: it falls back to the user's
+        // main profile until they customize or refresh it.
         val first = svc.getOrCreate("u1", "room1")
-        assertTrue(first.name.isNotBlank())
-        assertTrue(first.avatarUrl.endsWith(".svg"))
-        assertEquals(1, gen.calls)
+        assertTrue(first.name.isBlank())
+        assertTrue(first.avatarUrl.isBlank())
+        assertEquals(0, gen.calls)
 
         // Subsequent joins return the same identity — no time-based/forced reset (DESIGN §5).
         val again = svc.getOrCreate("u1", "room1")
         assertEquals(first, again)
-        assertEquals(1, gen.calls)
+        assertEquals(0, gen.calls)
     }
 
     @Test
     fun identityIsIndependentPerRoom() = runBlocking {
         val svc = service()
-        val coffee = svc.getOrCreate("u1", "coffee")
-        val deep = svc.getOrCreate("u1", "deep")
+        val coffee = svc.refresh("u1", "coffee")
+        val deep = svc.refresh("u1", "deep")
 
         assertEquals("coffee", coffee.roomId)
         assertEquals("deep", deep.roomId)
@@ -129,6 +131,37 @@ class Phase2Test {
         // A null field clears the override so the facet inherits from the main profile again.
         val cleared = svc.updateProfile("u1", "room1", social.saigon.domain.RoomIdentityUpdate())
         assertEquals(null, cleared.interests)
+    }
+
+    @Test
+    fun updateProfileStoresRoomPhotosAdditively() = runBlocking {
+        val svc = service()
+        svc.getOrCreate("u1", "room1")
+        val photo = social.saigon.domain.ProfilePhoto(url = "https://cdn.saigon.social/x.jpg", message = "hi")
+        // A non-null photos list is stored for this room (issue: "Room profile photos").
+        val withPhoto = svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(photos = listOf(photo)),
+        )
+        assertEquals(listOf(photo), withPhoto.photos)
+
+        // Photos are additive, not an inherit/override facet: a null photos list leaves the stored
+        // photos intact even while another facet is updated.
+        val kept = svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(interests = listOf("chess")),
+        )
+        assertEquals(listOf(photo), kept.photos)
+
+        // An explicit empty list wholesale-replaces (removes) the room photos.
+        val cleared = svc.updateProfile(
+            "u1",
+            "room1",
+            social.saigon.domain.RoomIdentityUpdate(photos = emptyList()),
+        )
+        assertTrue(cleared.photos.isEmpty())
     }
 
     @Test

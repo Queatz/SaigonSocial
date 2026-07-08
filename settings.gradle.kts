@@ -31,5 +31,6 @@ dependencyResolutionManagement {
 include(":app:androidApp")
 include(":app:shared")
 include(":app:webApp")
+include(":content")
 include(":core")
 include(":server")

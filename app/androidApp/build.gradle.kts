@@ -40,14 +40,18 @@ android {
         // Generate BuildConfig so the API base URL can be baked in per build type.
         buildConfig = true
     }
-    // Where the client talks to the API, baked into BuildConfig.API_BASE_URL per build type so no
-    // source editing is needed: debug -> local dev server (10.0.2.2 is the host loopback as seen
-    // from an emulator), release -> production. Override either build with -PapiBaseUrl=<url>.
+    // Where the client talks to the API and the content (photo) server, baked into
+    // BuildConfig.API_BASE_URL / BuildConfig.CONTENT_BASE_URL per build type so no source editing
+    // is needed: debug -> local dev servers (10.0.2.2 is the host loopback as seen from an
+    // emulator), release -> production. Override with -PapiBaseUrl=<url> / -PcontentBaseUrl=<url>.
     val apiBaseUrlOverride = project.findProperty("apiBaseUrl") as String?
+    val contentBaseUrlOverride = project.findProperty("contentBaseUrl") as String?
     buildTypes {
         getByName("debug") {
             val url = apiBaseUrlOverride ?: "http://10.0.2.2:9090"
             buildConfigField("String", "API_BASE_URL", "\"$url\"")
+            val contentUrl = contentBaseUrlOverride ?: "http://10.0.2.2:9091"
+            buildConfigField("String", "CONTENT_BASE_URL", "\"$contentUrl\"")
         }
         getByName("release") {
             isMinifyEnabled = false
@@ -56,6 +60,8 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             val url = apiBaseUrlOverride ?: "https://api.saigon.social"
             buildConfigField("String", "API_BASE_URL", "\"$url\"")
+            val contentUrl = contentBaseUrlOverride ?: "https://content.saigon.social"
+            buildConfigField("String", "CONTENT_BASE_URL", "\"$contentUrl\"")
         }
     }
     compileOptions {

@@ -712,6 +712,8 @@ internal fun RoomChatScreen(
                                     authorName = msg.authorName.orEmpty(),
                                     text = msg.text,
                                     createdAt = msg.createdAt,
+                                    // Room-first avatar photo carried on the live broadcast.
+                                    authorPhotoUrl = msg.authorPhotoUrl,
                                 ),
                             )
                         }
@@ -1033,9 +1035,15 @@ private fun OccupantDetailSheet(
         dragHandle = null,
     ) {
         PlainDragHandle()
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                ProfileIcon(name = person.name, size = 48.dp)
+                ProfileIcon(name = person.name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -1063,6 +1071,12 @@ private fun OccupantDetailSheet(
                 Text("Interests", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(person.interests.joinToString(" · "), fontSize = 14.sp)
+            }
+            // Photo cards: this room's photos come first (issue: "Room profile photos"), then the
+            // main-profile set, exactly as the server orders them. Shown above "Here for".
+            if (person.photos.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                PhotoCardsRow(photos = person.photos)
             }
             if (person.intents.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1332,6 +1346,13 @@ private fun EditRoomProfileForm(
         mutableStateOf((identity.offlineSchedule ?: profile.offlineSchedule).joinToString("; "))
     }
 
+    // Room-scoped photos (issue: "Room profile photos"). Unlike the facets above these aren't an
+    // inherit/override toggle: they belong only to this room and are sent as-is on save. The upload
+    // itself happens in the shared dialog; here we just track the resulting list.
+    val photos = remember { mutableStateListOf<ProfilePhoto>().apply { addAll(identity.photos) } }
+    var addingPhoto by remember { mutableStateOf(false) }
+    var confirmDeletePhoto by remember { mutableStateOf<ProfilePhoto?>(null) }
+
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -1349,7 +1370,8 @@ private fun EditRoomProfileForm(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Name: always a room-scoped value. "New name" regenerates a fresh anonymous one.
+                // Name: a new room profile has no name of its own and falls back to the main
+                // profile name; "New name" generates a fresh anonymous one on demand.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Name", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
@@ -1363,9 +1385,17 @@ private fun EditRoomProfileForm(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Your name in this room") },
+                    placeholder = { Text(profile.displayName) },
                     singleLine = true,
                     shape = InputFieldShape,
                 )
+                if (name.isBlank()) {
+                    Text(
+                        "Without a room name you appear as \"${profile.displayName}\", your profile name.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 // Interests (comma-separated free text).
                 RoomFacetHeader(
@@ -1459,6 +1489,24 @@ private fun EditRoomProfileForm(
                     shape = InputFieldShape,
                 )
 
+                // Photos: room-scoped photos that lead this member's photo list in this room.
+                Text("Photos", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(
+                    "Photos you add here show first in your profile for this room.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (photos.isNotEmpty()) {
+                    PhotoCardsRow(
+                        photos = photos.toList(),
+                        onPhotoClick = { confirmDeletePhoto = it },
+                    )
+                }
+                OutlinedButton(
+                    onClick = { addingPhoto = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("➕ Add a photo") }
+
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1481,6 +1529,9 @@ private fun EditRoomProfileForm(
                             offlineSchedule = if (availabilityCustom) {
                                 availabilityText.split(";").map { it.trim() }.filter { it.isNotEmpty() }
                             } else null,
+                            // Photos are always sent (never inherit), so the current list — including
+                            // any just-added or removed — replaces what's stored for this room.
+                            photos = photos.toList(),
                         )
                         try {
                             api.updateRoomIdentity(roomId, update)
@@ -1496,6 +1547,36 @@ private fun EditRoomProfileForm(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+
+    if (addingPhoto) {
+        // A room photo is uploaded to the content server here, then appended to the working list;
+        // it's only persisted for the room when the form is saved.
+        PhotoUploadDialog(
+            api = api,
+            title = "Add a room photo",
+            currentPhoto = null,
+            onDismiss = { addingPhoto = false },
+            onSaved = { photo ->
+                photos.add(photo)
+                addingPhoto = false
+            },
+            confirmLabel = "Add photo",
+        )
+    }
+    confirmDeletePhoto?.let { photo ->
+        AlertDialog(
+            onDismissRequest = { confirmDeletePhoto = null },
+            title = { Text("Remove this photo?") },
+            text = { Text("It will no longer show in your profile for this room.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    photos.remove(photo)
+                    confirmDeletePhoto = null
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeletePhoto = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 /**
@@ -1519,6 +1600,8 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile
     ChatMessage(
         authorName = msg.displayAuthor,
         text = msg.text,
+        // Room-first avatar photo (room profile latest, else main profile); blank shows the initial.
+        authorPhotoUrl = msg.authorPhotoUrl.ifBlank { null },
         timestamp = msg.createdAt,
         recalled = msg.recalled,
         onClick = onOpenThread,
@@ -1624,7 +1707,7 @@ private fun OccupantList(
                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ProfileIcon(name = person.name, size = 48.dp)
+                            ProfileIcon(name = person.name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
                             Spacer(Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1946,7 +2029,7 @@ private fun OccupantScroller(
                         ) {
                             // Not vertically centered because the containers are equal height.
                             Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                                ProfileIcon(name = person.name, size = 48.dp)
+                                ProfileIcon(name = person.name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
                                 Spacer(Modifier.width(6.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2087,6 +2170,8 @@ private fun ThreadSheet(
                     authorName = ev.authorName.orEmpty(),
                     text = ev.text,
                     createdAt = ev.createdAt,
+                    // Room-first avatar photo carried on the live broadcast.
+                    authorPhotoUrl = ev.authorPhotoUrl,
                 ),
             )
         }
@@ -2131,6 +2216,7 @@ private fun ThreadSheet(
                 Column(
                     modifier = Modifier.fillMaxWidth()
                         .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp),
                 ) {
@@ -2142,6 +2228,8 @@ private fun ThreadSheet(
                     ChatMessage(
                         authorName = parent.displayAuthor,
                         text = parent.text,
+                        // Room-first avatar photo (room profile latest, else main profile).
+                        authorPhotoUrl = parent.authorPhotoUrl.ifBlank { null },
                         timestamp = parent.createdAt,
                         recalled = parent.recalled,
                         // Tapping the message offers to recall it, but only for the author or the Founder.
@@ -2185,6 +2273,8 @@ private fun ThreadSheet(
                             ChatMessage(
                                 authorName = reply.displayAuthor,
                                 text = reply.text,
+                                // Room-first avatar photo (room profile latest, else main profile).
+                                authorPhotoUrl = reply.authorPhotoUrl.ifBlank { null },
                                 timestamp = reply.createdAt,
                                 recalled = reply.recalled,
                                 // Tapping the reply offers to recall it, but only for the author or the Founder.
@@ -2331,7 +2421,7 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ProfileIcon(name = chat.peerName, size = 36.dp)
+                    ProfileIcon(name = chat.peerName, size = 36.dp, photoUrl = chat.peerPhotoUrl)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)

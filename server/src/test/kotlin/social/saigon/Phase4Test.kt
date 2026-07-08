@@ -205,7 +205,9 @@ class Phase4Test {
 
             val notification = frames.first { it is Outgoing.MessageReplyReceived } as Outgoing.MessageReplyReceived
             assertEquals("yes u2 is here", notification.replyText)
-            assertEquals(repositories.identities.get("u2", "room1")?.name, notification.replyAuthorName)
+            // A new room profile has no name of its own, so the reply author's name falls back to
+            // their main profile name (issue: "Profile and room profile photos" preparations).
+            assertEquals("Alex", notification.replyAuthorName)
 
             // Now test the REST endpoint /profile/me/threads for u1
             val response = wsClient.get("/profile/me/threads") {

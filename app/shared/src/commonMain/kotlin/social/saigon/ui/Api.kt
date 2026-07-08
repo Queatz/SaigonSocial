@@ -46,6 +46,8 @@ class SaigonApi(
     private val baseUrl: String = DEFAULT_BASE_URL,
     /** A member JWT enables sending and member-only reads; null browses as an anonymous viewer. */
     var token: String? = null,
+    /** The content server photos are uploaded to / served from (see the `:content` module). */
+    private val contentUrl: String = DEFAULT_CONTENT_URL,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -223,6 +225,40 @@ class SaigonApi(
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
             setBody(update)
+        }.decodeMember()
+
+    /**
+     * Upload an image to the content server (issue: "Profile and room profile photos"). The
+     * server authenticates the bearer token against the main backend before accepting the bytes,
+     * then answers with the public URL the file is served back on.
+     */
+    suspend fun uploadContent(bytes: ByteArray, contentType: String = "image/jpeg"): String =
+        client.put("$contentUrl/content") {
+            HttpRequestAuth(this)
+            contentType(ContentType.parse(contentType))
+            setBody(bytes)
+        }.decodeMember<UploadResponse>().url
+
+    /**
+     * Set the caller's profile photo, or update the current photo's caption when [photoUrl] is
+     * unchanged. A new URL becomes the main photo and rotates the previous main photo into the
+     * "previous photos" list. Requires a member token; returns the refreshed profile.
+     */
+    suspend fun setProfilePhoto(photoUrl: String, message: String = ""): ProfileResponse =
+        client.post("$baseUrl/profile/photo") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(SetProfilePhotoRequest(url = photoUrl, message = message))
+        }.decodeMember()
+
+    /**
+     * Delete one of the caller's *previous* profile photos by its URL. The current main photo
+     * cannot be deleted — only replaced. Requires a member token; returns the refreshed profile.
+     */
+    suspend fun deleteProfilePhoto(photoUrl: String): ProfileResponse =
+        client.delete("$baseUrl/profile/photos") {
+            HttpRequestAuth(this)
+            url.parameters.append("url", photoUrl)
         }.decodeMember()
 
     /**
@@ -623,7 +659,8 @@ class SaigonApi(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "https://api.saigon.social"
+        const val DEFAULT_BASE_URL = "http://localhost:9090"
+        const val DEFAULT_CONTENT_URL = "http://localhost:9091"
         private const val JOIN_TYPE = "social.saigon.realtime.Incoming.Join"
         const val SAY_TYPE = "social.saigon.realtime.Incoming.Say"
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"
@@ -678,6 +715,8 @@ data class ReplyEvent(
     val text: String = "",
     val createdAt: Long = 0L,
     val replyToId: String? = null,
+    /** The author's room-first avatar photo URL (room profile latest, else main); empty when none. */
+    val authorPhotoUrl: String = "",
 )
 
 /** A live recall broadcast over the WebSocket (`Outgoing.Recalled`): the named message — or, when
@@ -698,6 +737,8 @@ data class ChatMessage(
     val authorName: String?,
     val text: String,
     val createdAt: Long,
+    /** The author's room-first avatar photo URL (room profile latest, else main); empty when none. */
+    val authorPhotoUrl: String = "",
 )
 
 /**
@@ -758,6 +799,7 @@ class RoomChannel internal constructor(
                         authorName = obj["authorName"]?.jsonPrimitive?.contentOrNull,
                         text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+                        authorPhotoUrl = obj["authorPhotoUrl"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     ),
                 )
                 SaigonApi.REPLIED_TYPE -> onReply(
@@ -770,6 +812,7 @@ class RoomChannel internal constructor(
                         text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                         createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: 0L,
                         replyToId = obj["replyToId"]?.jsonPrimitive?.contentOrNull,
+                        authorPhotoUrl = obj["authorPhotoUrl"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     ),
                 )
                 SaigonApi.RECALLED_TYPE -> onRecalled(

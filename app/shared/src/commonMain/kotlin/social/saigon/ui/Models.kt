@@ -37,6 +37,17 @@ data class RoomSummary(
     val lastMessageAt: Long? = null,
 )
 
+/**
+ * A profile photo hosted on the content server (issue: "Profile and room profile photos").
+ * [url] is the content server's public URL for the file; [message] is the user's own caption.
+ */
+@Serializable
+data class ProfilePhoto(
+    val url: String,
+    val message: String = "",
+    val createdAt: Long = 0L,
+)
+
 /** A person currently in a room with intent + languages (`GET /rooms/{id}/occupants`, DESIGN §6). */
 @Serializable
 data class OccupantView(
@@ -55,6 +66,10 @@ data class OccupantView(
     val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
     val available: Boolean = false,
+    /** The member's main profile photo URL; empty when they have none. Drives the avatar. */
+    val photoUrl: String = "",
+    /** All profile photos (main first, then previous), for the room-profile sheet's photo cards. */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /** A public-chat message with its live reply-count (`GET /rooms/{id}/messages`, DESIGN §9). */
@@ -70,6 +85,8 @@ data class FeedMessage(
     val replyCount: Int = 0,
     /** True once the author (or the Founder) recalled the message; its [text] is then blank. */
     val recalled: Boolean = false,
+    /** The author's main profile photo URL (empty when they have none), for their avatar. */
+    val authorPhotoUrl: String = "",
 ) {
     /** The name to render in the feed — the room-scoped name when present, else the raw id. */
     val displayAuthor: String get() = authorName.ifBlank { authorId }
@@ -88,6 +105,8 @@ data class ThreadReply(
     val createdAt: Long,
     /** True once the author (or the Founder) recalled the reply; its [text] is then blank. */
     val recalled: Boolean = false,
+    /** The author's main profile photo URL (empty when they have none), for their avatar. */
+    val authorPhotoUrl: String = "",
 ) {
     /** The name to render in the thread — the room-scoped name when present, else the raw id. */
     val displayAuthor: String get() = authorName.ifBlank { authorId }
@@ -109,6 +128,12 @@ data class RoomIdentity(
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    /**
+     * Room-scoped profile photos (issue: "Room profile photos"). Added from the room profile form,
+     * these belong only to this room and are shown ahead of the main-profile photos in the
+     * room-profile sheet's photo list.
+     */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /**
@@ -123,6 +148,8 @@ data class RoomIdentityUpdate(
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
+    /** Room-scoped photos to store; null leaves them untouched, non-null replaces them wholesale. */
+    val photos: List<ProfilePhoto>? = null,
 )
 
 /** The caller's editable persistent profile (`GET /profile/me`, DESIGN §4). */
@@ -141,12 +168,27 @@ data class ProfileResponse(
     val handle: String? = null,
     /** True once the member has set a durable sign-in password (PASSWORD_AUTH.md §2B). */
     val passwordSet: Boolean = false,
+    /** The member's current (main) profile photo; null until they upload one. */
+    val photo: ProfilePhoto? = null,
+    /** Previous profile photos, newest first (issue: "Profile and room profile photos"). */
+    val previousPhotos: List<ProfilePhoto> = emptyList(),
 )
 
 /** The caller's private emoji tally (`GET /profile/me/emoji-stats`, DESIGN §4, §8). Visible only
  * to the user themself. */
 @Serializable
 data class EmojiStatsResponse(val stats: Map<String, Int> = emptyMap())
+
+/**
+ * Set the caller's profile photo (`POST /profile/photo`). [url] is a content-server URL from a
+ * prior [SaigonApi.uploadContent]; [message] is the user's caption for the photo.
+ */
+@Serializable
+data class SetProfilePhotoRequest(val url: String, val message: String = "")
+
+/** The content server's answer to an upload: the public URL the file is served back on. */
+@Serializable
+data class UploadResponse(val url: String)
 
 /** Editable profile fields (`PUT /profile/me`, DESIGN §4). Null fields are left unchanged. */
 @Serializable
@@ -220,6 +262,8 @@ data class MemberView(
     val languages: List<String> = emptyList(),
     /** The member's free-text introduction (formerly "interests"). */
     val interests: List<String> = emptyList(),
+    /** The member's main profile photo URL; empty when they have none. Drives the avatar. */
+    val photoUrl: String = "",
 )
 
 /** A recorded room search shown in the Founder's "Room searches" list (`GET /founder/room-searches`). */
@@ -292,6 +336,8 @@ data class DirectChat(
     val roomId: String,
     val targetUserId: String,
     val peerName: String,
+    /** The peer's main profile photo URL when known, for their avatar in the chats list. */
+    val peerPhotoUrl: String? = null,
 )
 
 /**

@@ -22,3 +22,4 @@ deploy/web/dist/
 deploy/server/dist/
 *.deploybak
 /.junie/
+/content/content-files/

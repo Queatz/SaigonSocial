@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -60,17 +61,22 @@ internal fun timeAgo(epochMillis: Long): String {
 }
 
 /**
- * A small circular profile icon derived from a display [name]'s first letter (DESIGN §5). Used by
- * the room feed, thread replies, the occupant list, the founder member directory, and the identity
- * bar so every person is shown with a consistent avatar rather than a raw id.
+ * A small circular profile icon (DESIGN §5). Used by the room feed, thread replies, the occupant
+ * list, the founder member directory, and the identity bar so every person is shown with a
+ * consistent avatar rather than a raw id.
+ *
+ * When the member has a profile photo ([photoUrl], issue: "Profile and room profile photos") it is
+ * shown cropped to the circle; the [name]'s first letter renders underneath as the fallback while
+ * the photo loads (or when there is none).
  */
 @Composable
-internal fun ProfileIcon(name: String, size: Dp = 32.dp) {
+internal fun ProfileIcon(name: String, size: Dp = 32.dp, photoUrl: String? = null) {
     Box(
         modifier = Modifier
             .width(size)
             .height(size)
-            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -79,6 +85,9 @@ internal fun ProfileIcon(name: String, size: Dp = 32.dp) {
             fontWeight = FontWeight.Bold,
             fontSize = (size.value / 2.2f).sp,
         )
+        if (!photoUrl.isNullOrBlank()) {
+            UrlImage(url = photoUrl, modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
@@ -91,16 +100,18 @@ internal fun ProfileIcon(name: String, size: Dp = 32.dp) {
  * mirrors the whole row — avatar on the right, bubble tinted as "mine" and right-aligned — so the
  * same component renders both incoming and outgoing messages in a one-on-one chat.
  *
- * [authorName] drives both the avatar and the (optional) name label; [timestamp] adds a "time ago"
- * label when known; [onClick] makes the bubble tappable (e.g. to open a thread); [onAvatarClick]
- * makes the author's [ProfileIcon] tappable (e.g. to open their detail sheet); and [footer] adds
- * extra content beneath the text inside the bubble (e.g. a "↳ N replies" indicator).
+ * [authorName] drives both the avatar and the (optional) name label; [authorPhotoUrl] shows the
+ * author's profile photo on the avatar when they have one; [timestamp] adds a "time ago" label
+ * when known; [onClick] makes the bubble tappable (e.g. to open a thread); [onAvatarClick] makes
+ * the author's [ProfileIcon] tappable (e.g. to open their detail sheet); and [footer] adds extra
+ * content beneath the text inside the bubble (e.g. a "↳ N replies" indicator).
  */
 @Composable
 internal fun ChatMessage(
     authorName: String,
     text: String,
     modifier: Modifier = Modifier,
+    authorPhotoUrl: String? = null,
     timestamp: Long? = null,
     reversed: Boolean = false,
     showAuthor: Boolean = true,
@@ -123,7 +134,7 @@ internal fun ChatMessage(
                 modifier = if (onAvatarClick != null) {
                     Modifier.clip(CircleShape).clickable(onClick = onAvatarClick)
                 } else Modifier,
-            ) { ProfileIcon(name = authorName, size = 32.dp) }
+            ) { ProfileIcon(name = authorName, size = 32.dp, photoUrl = authorPhotoUrl) }
             Spacer(Modifier.width(8.dp))
         }
         val bubbleShape = RoundedCornerShape(12.dp)
@@ -179,7 +190,7 @@ internal fun ChatMessage(
                 modifier = if (onAvatarClick != null) {
                     Modifier.clip(CircleShape).clickable(onClick = onAvatarClick)
                 } else Modifier,
-            ) { ProfileIcon(name = authorName, size = 32.dp) }
+            ) { ProfileIcon(name = authorName, size = 32.dp, photoUrl = authorPhotoUrl) }
         }
     }
 }

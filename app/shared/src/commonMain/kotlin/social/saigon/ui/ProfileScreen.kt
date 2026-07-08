@@ -1,13 +1,16 @@
 package social.saigon.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -26,11 +29,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -97,6 +103,10 @@ internal fun ProfileScreen(
                 modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // The member's profile photo (issue: "Profile and room profile photos"): a large,
+                // centered photo button at the top; clicking it opens the upload dialog.
+                ProfilePhotoSection(api = api, profile = p, onUpdated = { profile = it })
+
                 if (p.role == Role.SHARER) {
                     BecomeSupporterBubble()
                 }
@@ -301,6 +311,95 @@ internal fun ProfileScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * The profile-photo area at the top of the profile screen (issue: "Profile and room profile
+ * photos"): a large, centered profile button (the photo, or the letter avatar until one exists)
+ * with its label underneath. Clicking it opens [PhotoUploadDialog]. Previous profile photos are
+ * shown below as vertical cards in a wrapping flex row; clicking a card asks to delete it.
+ */
+@Composable
+private fun ProfilePhotoSection(
+    api: SaigonApi,
+    profile: ProfileResponse,
+    onUpdated: (ProfileResponse) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var showUpload by remember(profile.id) { mutableStateOf(false) }
+    var confirmDelete by remember(profile.id) { mutableStateOf<ProfilePhoto?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Clip to a circle *before* the clickable so the ripple stays inside the photo's bounds.
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable { showUpload = true },
+        ) {
+            ProfileIcon(name = profile.displayName, size = 96.dp, photoUrl = profile.photo?.url)
+        }
+        Text(
+            if (profile.photo == null) "Add a profile photo" else "Change your profile photo",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        profile.photo?.message?.takeIf { it.isNotBlank() }?.let {
+            Text(it, fontSize = 13.sp, textAlign = TextAlign.Center)
+        }
+    }
+
+    // Previous profile photos: vertical cards in a wrapping flex row; click a card to delete it.
+    if (profile.previousPhotos.isNotEmpty()) {
+        Text("Previous profile photos", fontWeight = FontWeight.Bold)
+        Text(
+            "Click a photo to delete it.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PhotoCardsRow(
+            photos = profile.previousPhotos,
+            onPhotoClick = { confirmDelete = it },
+        )
+    }
+
+    if (showUpload) {
+        PhotoUploadDialog(
+            api = api,
+            title = if (profile.photo == null) "Add a profile photo" else "Update your profile photo",
+            currentPhoto = profile.photo,
+            onDismiss = { showUpload = false },
+            // A new URL becomes the main photo (rotating the old one into "previous"); an unchanged
+            // URL just re-captions it.
+            onSaved = { photo ->
+                onUpdated(api.setProfilePhoto(photo.url, photo.message))
+                showUpload = false
+            },
+        )
+    }
+
+    confirmDelete?.let { photo ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete this photo?") },
+            text = { Text("This previous profile photo will be removed for good.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        runCatching { api.deleteProfilePhoto(photo.url) }
+                            .onSuccess { onUpdated(it) }
+                        confirmDelete = null
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 

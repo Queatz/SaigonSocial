@@ -78,6 +78,8 @@ sealed interface Outgoing {
         val authorName: String? = null,
         /** The persisted message id, so clients can tap it to open its thread (DESIGN §9). */
         val messageId: String? = null,
+        /** The author's main profile photo URL, so live messages render their avatar photo. */
+        val authorPhotoUrl: String? = null,
     ) : Outgoing
 
     /**
@@ -96,6 +98,8 @@ sealed interface Outgoing {
         val replyToId: String? = null,
         /** The author's room-scoped display name (DESIGN §5). Null for anonymous senders. */
         val authorName: String? = null,
+        /** The author's main profile photo URL, so live replies render their avatar photo. */
+        val authorPhotoUrl: String? = null,
     ) : Outgoing
 
     /**

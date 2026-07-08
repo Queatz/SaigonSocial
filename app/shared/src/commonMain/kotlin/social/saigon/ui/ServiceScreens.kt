@@ -401,6 +401,7 @@ private fun EditServiceDialog(
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Emoji") },
                     singleLine = true,
                     shape = InputFieldShape,
