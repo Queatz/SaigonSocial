@@ -387,7 +387,7 @@ object UiConstants {
         "I humbly greet your quantum node.",
         "I welcome you, fellow dream-traveller.",
         "I formally accept your stream-of-consciousness.",
-        "I honor to your orbital path, matey.",
+        "I honor to your orbital path, mate.",
         "I welcome your bio-luminescent field.",
         "I stand ready for you, cryptic being.",
         "I greet you, child of Old Earth.",

@@ -196,6 +196,7 @@ internal fun RoomListScreen(
     threadReplyCount: Int = 0,
     onOpenThreadReplies: () -> Unit = {},
     onOpenServices: () -> Unit = {},
+    onOpenService: (String) -> Unit = {},
     signedIn: Boolean = false,
     userDisplayName: String? = null,
 ) {
@@ -210,9 +211,15 @@ internal fun RoomListScreen(
     var creatingRoom by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RoomSummary?>(null) }
     var deleting by remember { mutableStateOf<RoomSummary?>(null) }
+    var services by remember { mutableStateOf<List<ServiceView>?>(null) }
+
+    LaunchedEffect(Unit) {
+        runCatching { api.services("") }.onSuccess { services = it }
+    }
 
     suspend fun reload() {
         runCatching { api.rooms(search.trim().ifBlank { null }) }.onSuccess { rooms = it }
+        runCatching { api.services("") }.onSuccess { services = it }
     }
 
     // Search the rooms on the backend, debounced by 500ms so we don't fire a request per keystroke
@@ -339,22 +346,55 @@ internal fun RoomListScreen(
                     }
                     // Entry to the city-wide service directory (issue §5), open to everyone.
                     item {
-                        Card(
-                            onClick = onOpenServices,
-                            modifier = Modifier.fillMaxWidth().softShadow(),
-                        ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("🌟", fontSize = 24.sp)
-                                Spacer(Modifier.width(12.dp))
                                 Text(
-                                    text = "Browse services",
+                                    text = "Popular services",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    modifier = Modifier.weight(1f),
+                                    fontSize = 18.sp
                                 )
+                                Text(
+                                    text = "See all ➔",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable { onOpenServices() }
+                                )
+                            }
+                            val list = services
+                            if (list == null) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    LoadingSpinner()
+                                }
+                            } else if (list.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No services yet.",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    list.forEach { service ->
+                                        ServicePortraitCard(service = service, onClick = { onOpenService(service.id) })
+                                    }
+                                }
                             }
                         }
                     }
@@ -993,7 +1033,7 @@ private fun List<OccupantView>.selfFirst(selfUserId: String?): List<OccupantView
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OccupantDetailSheet(
+internal fun OccupantDetailSheet(
     person: OccupantView,
     isSelf: Boolean,
     canStartPrivate: Boolean,
@@ -1101,7 +1141,7 @@ private fun OccupantDetailSheet(
             }
             if (services.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text("Providing", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Provides", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     services.forEach { service ->
@@ -1173,7 +1213,7 @@ private fun ServiceItemRow(service: ServiceView, onOpenService: (String) -> Unit
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
+                "by ${service.providerName} • ${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
                 fontSize = 14.sp,
             )
             Text(
@@ -2668,6 +2708,74 @@ internal fun ThreadRepliesScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .width(180.dp)
+            .height(240.dp)
+            .softShadow()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
+                Text(
+                    text = UiConstants.vnd(service.price),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = service.name,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!service.listed) {
+                    Text(
+                        "Unlisted",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (service.description.isNotBlank()) {
+                    Text(
+                        "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                text = "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

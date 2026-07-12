@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -205,6 +206,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
  * section whose "Send message" button opens (or reuses) a direct chat seeded with the typed
  * message and navigates the caller straight into that conversation.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ServiceDetailScreen(
     api: SaigonApi,
@@ -215,6 +217,7 @@ internal fun ServiceDetailScreen(
     onOpenDirectChat: (ContactProviderResponse) -> Unit,
     onSignIn: () -> Unit,
     onDeleted: () -> Unit = {},
+    onOpenService: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var service by remember(serviceId) { mutableStateOf<ServiceView?>(null) }
@@ -224,6 +227,7 @@ internal fun ServiceDetailScreen(
     var editing by remember(serviceId) { mutableStateOf(false) }
     var confirmingDelete by remember(serviceId) { mutableStateOf(false) }
     var managing by remember(serviceId) { mutableStateOf(false) }
+    var selectedOccupant by remember(serviceId) { mutableStateOf<OccupantView?>(null) }
 
     suspend fun reloadFeedback() {
         runCatching { api.serviceFeedback(serviceId) }.onSuccess {
@@ -264,7 +268,7 @@ internal fun ServiceDetailScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("${UiConstants.vnd(s.price)} • ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${UiConstants.vnd(s.price)} • in ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // Copy-link affordance, mirroring rooms and threads (top-right).
                     ShareButton(isService = true)
@@ -281,9 +285,15 @@ internal fun ServiceDetailScreen(
                 }
 
                 Text(
-                    "Provided by ${nameWithBadge(s.providerName, s.providerRole)}",
+                    text = "Provided by ${nameWithBadge(s.providerName, s.providerRole)}",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
+                        scope.launch {
+                            runCatching { api.occupant(s.roomId, s.providerId) }
+                                .getOrNull()?.let { selectedOccupant = it }
+                        }
+                    }
                 )
                 if (s.providerLanguages.isNotEmpty()) {
                     Text(
@@ -368,6 +378,42 @@ internal fun ServiceDetailScreen(
                         }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                     },
                     dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
+                )
+            }
+
+            selectedOccupant?.let { person ->
+                val isSelf = selfUserId != null && person.userId == selfUserId
+                OccupantDetailSheet(
+                    person = person,
+                    isSelf = isSelf,
+                    canStartPrivate = canContact,
+                    api = api,
+                    roomId = s.roomId,
+                    onStartChat = {
+                        selectedOccupant = null
+                        onOpenDirectChat(
+                            ContactProviderResponse(
+                                roomId = s.roomId,
+                                providerId = person.userId,
+                                providerName = person.name,
+                            )
+                        )
+                    },
+                    onRefresh = {
+                        scope.launch {
+                            runCatching { api.refreshIdentity(s.roomId) }
+                            runCatching { api.occupant(s.roomId, s.providerId) }
+                                .getOrNull()?.let { selectedOccupant = it }
+                        }
+                    },
+                    onEdited = {
+                        scope.launch {
+                            runCatching { api.occupant(s.roomId, s.providerId) }
+                                .getOrNull()?.let { selectedOccupant = it }
+                        }
+                    },
+                    onOpenService = onOpenService,
+                    onClose = { selectedOccupant = null },
                 )
             }
         }

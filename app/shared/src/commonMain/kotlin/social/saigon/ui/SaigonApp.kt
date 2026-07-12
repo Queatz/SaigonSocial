@@ -440,6 +440,7 @@ fun SaigonApp(
                                 threadReplyCount = threadReplies.size,
                                 onOpenThreadReplies = { screen = Screen.ThreadReplies },
                                 onOpenServices = { screen = Screen.Services },
+                                onOpenService = { screen = Screen.ServiceDetail(it) },
                                 signedIn = token != null,
                                 userDisplayName = profile?.displayName,
                             )
@@ -588,6 +589,7 @@ fun SaigonApp(
                                 },
                                 onSignIn = { screen = Screen.Profile },
                                 onDeleted = { screen = Screen.Services },
+                                onOpenService = { screen = Screen.ServiceDetail(it) },
                             )
                         }
                     }
