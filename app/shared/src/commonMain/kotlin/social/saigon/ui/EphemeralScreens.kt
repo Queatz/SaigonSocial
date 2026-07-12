@@ -54,6 +54,9 @@ internal fun PrivateChatScreen(
     onClose: () -> Unit,
     onEnded: () -> Unit = {},
     onPeerName: (String) -> Unit = {},
+    // Surfaces every message sent or received in this chat so the caller can show it as the
+    // chat's last-message preview under "Direct chats" (mirroring the room list's preview).
+    onLastMessage: (text: String, mine: Boolean, at: Long) -> Unit = { _, _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     val messages = remember(targetUserId) { mutableStateListOf<PrivateMessage>() }
@@ -82,13 +85,15 @@ internal fun PrivateChatScreen(
                             name?.let { peer = it; onPeerName(it) }
                         },
                         onMessage = { msg ->
+                            val mine = msg.authorId == selfUserId
                             messages.add(
                                 PrivateMessage(
-                                    author = if (msg.authorId == selfUserId) "You" else peer,
+                                    author = if (mine) "You" else peer,
                                     text = msg.text,
-                                    mine = msg.authorId == selfUserId,
+                                    mine = mine,
                                 ),
                             )
+                            onLastMessage(msg.text, mine, msg.createdAt)
                         },
                         // A private chat is ephemeral and gone once it ends (DESIGN §7): drop it
                         // from the "Direct chats" list so it no longer lingers on the home screen.

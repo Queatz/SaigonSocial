@@ -1,11 +1,13 @@
 package social.saigon.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,7 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.DefaultShadowColor
 import androidx.compose.ui.graphics.Path
@@ -281,4 +286,28 @@ internal fun Accordion(
             }
         }
     }
+}
+
+/**
+ * An [OutlinedButton] that dims and shrinks slightly when [selected] is false, animating back to
+ * full size/opacity once selected (DESIGN §4, §5). This is the shared toggle look for the
+ * multi-select "Here for" and "Languages" buttons — used on the main profile screen and reused
+ * as-is for the same buttons in the per-room profile editor, so both stay visually in sync.
+ */
+@Composable
+internal fun DimmableToggleButton(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val scale by animateFloatAsState(if (selected) 1f else 0.95f)
+    val alpha by animateFloatAsState(if (selected) 1f else 0.6f)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .scale(scale)
+            .alpha(alpha),
+        content = content,
+    )
 }

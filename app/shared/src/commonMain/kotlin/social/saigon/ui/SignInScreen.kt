@@ -119,7 +119,10 @@ private fun RequestInviteDialog(api: SaigonApi, onDismiss: () -> Unit, onSubmitt
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Request an Invite") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     "Tell us a little about you. The founder will reach out on Zalo — no account is created automatically.",
                     fontSize = 12.sp,

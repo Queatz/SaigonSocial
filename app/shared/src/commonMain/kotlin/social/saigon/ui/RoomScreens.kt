@@ -273,7 +273,7 @@ internal fun RoomListScreen(
                     if (userDisplayName != null) {
                         item {
                             Text(
-                                text = "Hi, $userDisplayName, how's it going?",
+                                text = "Hi $userDisplayName, how's it going?",
                                 style = MaterialTheme.typography.displaySmall,
                                 modifier = Modifier.padding(vertical = 16.dp)
                             )
@@ -1105,26 +1105,7 @@ private fun OccupantDetailSheet(
                 Spacer(Modifier.height(4.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     services.forEach { service ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    UiConstants.vnd(service.price) +
-                                        if (service.description.isNotBlank()) " • ${service.description}" else "",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Button(onClick = { onOpenService(service.id) }) { Text("Details") }
-                        }
+                        ServiceItemRow(service = service, onOpenService = onOpenService)
                     }
                 }
             }
@@ -1143,7 +1124,7 @@ private fun OccupantDetailSheet(
                     Button(
                         onClick = { offeringService = true },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("➕ Offer a service here") }
+                    ) { Text("➕ Provide a service in this room") }
                 }
                 isSelf -> OutlinedButton(
                     onClick = onRefresh,
@@ -1179,6 +1160,112 @@ private fun OccupantDetailSheet(
 }
 
 /**
+ * A single service list item, rendered identically in the member-detail sheet's "Providing"
+ * section and the room-wide [RoomServicesSheet] so the two always stay in visual sync. Shows the
+ * service's emoji + name, its price (and description when present), and a "Details" button that
+ * opens the full service via [onOpenService].
+ */
+@Composable
+private fun ServiceItemRow(service: ServiceView, onOpenService: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
+                fontSize = 14.sp,
+            )
+            Text(
+                UiConstants.vnd(service.price) +
+                    if (service.description.isNotBlank()) " • ${service.description}" else "",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Button(onClick = { onOpenService(service.id) }) { Text("Details") }
+    }
+}
+
+/**
+ * Dynamic label for the "provided services" button that reveals [RoomServicesSheet]: "1 provided
+ * service" / "N provided services", matching the room's live service count.
+ */
+internal fun servicesProvidedLabel(count: Int): String = when (count) {
+    1 -> "$count provided service"
+    else -> "$count provided services"
+}
+
+/**
+ * A bottom sheet listing every service provided by people in the room, opened by the "N provided
+ * services" button beside the occupant list/scroller. Each item reuses [ServiceItemRow] so it looks
+ * exactly like the "Providing" section of the member-detail sheet; tapping "Details" opens the full
+ * service via [onOpenService].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RoomServicesSheet(
+    services: List<ServiceView>,
+    onOpenService: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState()
+    // Animate the sheet shut before clearing the selection, mirroring OccupantDetailSheet so
+    // tapping "Close" slides down rather than vanishing instantly.
+    val animateClose: () -> Unit = {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) onClose()
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
+    ) {
+        PlainDragHandle()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Text("Services in this room", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = servicesProvidedLabel(services.size),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            if (services.isEmpty()) {
+                Text(
+                    "Nobody's offering a service here yet.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    services.forEach { service ->
+                        ServiceItemRow(service = service, onOpenService = onOpenService)
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(
+                onClick = animateClose,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Close") }
+        }
+    }
+}
+
+/**
  * Create a service from the current room (issue §1). A service always belongs to the room it's
  * created from, so the [roomId] is fixed here; the caller (a Supporter/Founder) supplies an emoji
  * icon, a name, and an optional description. On success the service is persisted and appears in the
@@ -1201,7 +1288,7 @@ private fun CreateServiceDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Offer a service") },
+        title = { Text("Provide a service") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1427,7 +1514,8 @@ private fun EditRoomProfileForm(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowIntents.forEach { option ->
                                 val selected = option in intents
-                                OutlinedButton(
+                                DimmableToggleButton(
+                                    selected = selected,
                                     onClick = {
                                         if (selected) intents.remove(option) else intents.add(option)
                                         intentsCustom = true
@@ -1455,7 +1543,8 @@ private fun EditRoomProfileForm(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowLangs.forEach { code ->
                                 val selected = code in languages
-                                OutlinedButton(
+                                DimmableToggleButton(
+                                    selected = selected,
                                     onClick = {
                                         if (selected) languages.remove(code) else languages.add(code)
                                         languagesCustom = true
@@ -1663,6 +1752,13 @@ private fun OccupantList(
     // The self quick-action on each card opens the "Edit your room profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
+    // Every service provided in this room, backing the "N provided services" button + sheet.
+    val roomServices = remember(roomId) { mutableStateListOf<ServiceView>() }
+    var showServicesSheet by remember(roomId) { mutableStateOf(false) }
+    LaunchedEffect(roomId) {
+        runCatching { api.services(roomId = roomId) }
+            .getOrNull()?.let { roomServices.clear(); roomServices.addAll(it) }
+    }
 
     Box(
         modifier = Modifier
@@ -1679,7 +1775,6 @@ private fun OccupantList(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(inputFieldBackgroundColor(), MaterialTheme.shapes.large)
                 .padding(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1687,6 +1782,14 @@ private fun OccupantList(
                 ShareButton()
             }
             Spacer(Modifier.height(8.dp))
+            // Reveal every service provided in this room; the label tracks the live count.
+            if (roomServices.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = { showServicesSheet = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("🌟 ${servicesProvidedLabel(roomServices.size)}") }
+                Spacer(Modifier.height(8.dp))
+            }
             if (people.isEmpty()) {
                 Text(
                     text = "Nobody's here right now.",
@@ -1761,6 +1864,14 @@ private fun OccupantList(
             )
         }
 
+        if (showServicesSheet) {
+            RoomServicesSheet(
+                services = roomServices,
+                onOpenService = { showServicesSheet = false; onOpenService(it) },
+                onClose = { showServicesSheet = false },
+            )
+        }
+
         if (editingSelf) {
             EditRoomProfileDialog(
                 api = api,
@@ -1809,7 +1920,7 @@ private fun OccupantInterestsLine(person: OccupantView) {
  * shareable URL and a "Copy link" button so members can hand the room/thread link to someone else.
  */
 @Composable
-internal fun ShareButton() {
+internal fun ShareButton(isService: Boolean = false) {
     val scope = rememberCoroutineScope()
     val router = remember { UrlRouter() }
     var showDialog by remember { mutableStateOf(false) }
@@ -1823,7 +1934,7 @@ internal fun ShareButton() {
         val url = remember { router.currentUrl() }
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("Share") },
+            title = { Text("Share this ${if (isService) "service" else "room"}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -1877,7 +1988,7 @@ private fun RoomNavPanel(
             .fillMaxHeight()
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Popular", fontWeight = FontWeight.Bold)
+            Text("Popular rooms", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
@@ -1959,6 +2070,13 @@ private fun OccupantScroller(
     // The self quick-action on each card opens the "Edit your room profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
+    // Every service provided in this room, backing the "N provided services" button + sheet.
+    val roomServices = remember(roomId) { mutableStateListOf<ServiceView>() }
+    var showServicesSheet by remember(roomId) { mutableStateOf(false) }
+    LaunchedEffect(roomId) {
+        runCatching { api.services(roomId = roomId) }
+            .getOrNull()?.let { roomServices.clear(); roomServices.addAll(it) }
+    }
     // On mobile the people list is an accordion that starts collapsed so it takes up only a single
     // line ("N people in the room") until the user expands it; the Share action and the scroller of
     // member cards are only revealed once expanded (DESIGN §6).
@@ -2069,6 +2187,14 @@ private fun OccupantScroller(
                     }
                 }
             }
+            // Reveal every service provided in this room; the label tracks the live count.
+            if (roomServices.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showServicesSheet = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("🌟 ${servicesProvidedLabel(roomServices.size)}") }
+            }
         }
     }
     selected?.let { sel ->
@@ -2087,6 +2213,13 @@ private fun OccupantScroller(
             onEdited = onIdentityEdited,
             onOpenService = onOpenService,
             onClose = { selected = null },
+        )
+    }
+    if (showServicesSheet) {
+        RoomServicesSheet(
+            services = roomServices,
+            onOpenService = { showServicesSheet = false; onOpenService(it) },
+            onClose = { showServicesSheet = false },
         )
     }
     if (editingSelf) {
@@ -2425,13 +2558,39 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        // The latest message preview, "Sender: text" (mirroring the room list's
+                        // preview), shown above the origin room line so the chat's own last
+                        // message reads first.
+                        chat.lastMessageText?.let { text ->
+                            Text(
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                        append(if (chat.lastMessageMine) "You: " else "${chat.peerName}: ")
+                                    }
+                                    append(text)
+                                },
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         roomsById[chat.roomId]?.let { room ->
                             Text(
-                                "${room.emoji} ${room.name}",
+                                "in ${room.emoji} ${room.name}",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                    // Time since the last message, mirroring the room list's trailing time.
+                    chat.lastMessageAt?.let { at ->
+                        Text(
+                            timeAgo(at),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Medium,
+                        )
                     }
                 }
             }

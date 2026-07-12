@@ -1,6 +1,5 @@
 package social.saigon.ui
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,9 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -129,13 +126,10 @@ internal fun ProfileScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowIntents.forEach { option ->
                                 val selected = option in intents
-                                val intentScale by animateFloatAsState(if (selected) 1f else 0.95f)
-                                val intentAlpha by animateFloatAsState(if (selected) 1f else 0.6f)
-                                OutlinedButton(
+                                DimmableToggleButton(
+                                    selected = selected,
                                     onClick = { if (selected) intents.remove(option) else intents.add(option) },
-                                    modifier = Modifier.weight(1f)
-                                        .scale(intentScale)
-                                        .alpha(intentAlpha),
+                                    modifier = Modifier.weight(1f),
                                 ) {
                                     Text((if (selected) "✅ " else "") + option, fontSize = 12.sp)
                                 }
@@ -173,13 +167,10 @@ internal fun ProfileScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowLangs.forEach { code ->
                                 val selected = code in languages
-                                val langScale by animateFloatAsState(if (selected) 1f else 0.95f)
-                                val langAlpha by animateFloatAsState(if (selected) 1f else 0.6f)
-                                OutlinedButton(
+                                DimmableToggleButton(
+                                    selected = selected,
                                     onClick = { if (selected) languages.remove(code) else languages.add(code) },
-                                    modifier = Modifier.weight(1f)
-                                        .scale(langScale)
-                                        .alpha(langAlpha),
+                                    modifier = Modifier.weight(1f),
                                 ) {
                                     Text(
                                         (if (selected) "✅ " else "") + UiConstants.languageLabel(code),

@@ -214,9 +214,21 @@ fun SaigonApp(
         }
 
         // Record a direct chat (newest first, de-duplicated by peer) so it shows in the list.
+        // Carries over an already-known last message preview when the incoming [chat] doesn't
+        // specify one (e.g. a peer-name update or a re-opened chat), so it isn't lost.
         fun recordDirectChat(chat: DirectChat) {
+            val existing = directChats.firstOrNull {
+                it.targetUserId == chat.targetUserId && it.roomId == chat.roomId
+            }
+            val merged = if (existing != null && chat.lastMessageText == null) {
+                chat.copy(
+                    lastMessageText = existing.lastMessageText,
+                    lastMessageMine = existing.lastMessageMine,
+                    lastMessageAt = existing.lastMessageAt,
+                )
+            } else chat
             directChats.removeAll { it.targetUserId == chat.targetUserId && it.roomId == chat.roomId }
-            directChats.add(0, chat)
+            directChats.add(0, merged)
         }
 
         // Record the chat and open it.
@@ -229,6 +241,19 @@ fun SaigonApp(
         // so they must not keep showing under "Direct chats" on the home screen.
         fun removeDirectChat(roomId: String, targetUserId: String) {
             directChats.removeAll { it.targetUserId == targetUserId && it.roomId == roomId }
+        }
+
+        // Track the latest message of an open chat (DESIGN §7) so "Direct chats" can show a
+        // preview above the room it started from, mirroring the room list's last-message preview.
+        fun updateDirectChatLastMessage(roomId: String, targetUserId: String, text: String, mine: Boolean, at: Long) {
+            val idx = directChats.indexOfFirst { it.roomId == roomId && it.targetUserId == targetUserId }
+            if (idx >= 0) {
+                directChats[idx] = directChats[idx].copy(
+                    lastMessageText = text,
+                    lastMessageMine = mine,
+                    lastMessageAt = at,
+                )
+            }
         }
 
         // The most recent "someone started a chat with you" notice, surfaced as an app-level banner
@@ -479,6 +504,10 @@ fun SaigonApp(
                                         DirectChat(current.roomId, current.targetUserId, name),
                                     )
                                 }
+                            },
+                            // Keep "Direct chats" showing the last message sent in this chat (DESIGN §7).
+                            onLastMessage = { text, mine, at ->
+                                updateDirectChatLastMessage(s.roomId, s.targetUserId, text, mine, at)
                             },
                         )
 

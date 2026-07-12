@@ -338,6 +338,12 @@ data class DirectChat(
     val peerName: String,
     /** The peer's main profile photo URL when known, for their avatar in the chats list. */
     val peerPhotoUrl: String? = null,
+    /** Text of the most recent message sent in this chat this session; null if none has been sent yet. */
+    val lastMessageText: String? = null,
+    /** Whether [lastMessageText] was sent by the caller ("You") rather than the peer. */
+    val lastMessageMine: Boolean = false,
+    /** Unix epoch millis of the most recent message; null if none has been sent yet. */
+    val lastMessageAt: Long? = null,
 )
 
 /**

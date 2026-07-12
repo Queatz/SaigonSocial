@@ -190,7 +190,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
+                    "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -267,7 +267,7 @@ internal fun ServiceDetailScreen(
                         Text("${UiConstants.vnd(s.price)} • ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // Copy-link affordance, mirroring rooms and threads (top-right).
-                    ShareButton()
+                    ShareButton(isService = true)
                 }
                 if (!s.listed) {
                     Text(
