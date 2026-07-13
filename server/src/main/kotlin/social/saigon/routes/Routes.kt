@@ -395,6 +395,7 @@ fun Application.registerRoutes(
                         it.authorName.ifBlank { authorName(it.authorId, room.id, repositories, identities) }
                     },
                     lastMessageAt = last?.createdAt,
+                    photos = room.photos,
                 )
             }
             call.respond(rooms)
@@ -1420,6 +1421,8 @@ data class RoomSummary(
     val lastMessageSender: String? = null,
     /** Unix epoch millis of the most recent message; null if the room has no messages. */
     val lastMessageAt: Long? = null,
+    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /** A person currently in a room, with intents + languages shown next to them (DESIGN §6). */

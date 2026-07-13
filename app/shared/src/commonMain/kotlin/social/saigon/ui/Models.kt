@@ -35,6 +35,8 @@ data class RoomSummary(
     val lastMessageSender: String? = null,
     /** Unix epoch millis of the most recent message; null if the room has no messages. */
     val lastMessageAt: Long? = null,
+    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /**
@@ -207,6 +209,8 @@ data class RoomCreate(
     val atmosphere: String = "",
     /** Optional caller-chosen room URL (id); blank/null lets the server assign one. */
     val id: String? = null,
+    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /** Founder request to rename/edit a room (`PUT /rooms/{id}`, DESIGN §6). Null fields unchanged. */
@@ -215,6 +219,7 @@ data class RoomUpdate(
     val name: String? = null,
     val emoji: String? = null,
     val atmosphere: String? = null,
+    val photos: List<ProfilePhoto>? = null,
 )
 
 /** Sign in with a previously-set password (`POST /auth/login`, PASSWORD_AUTH.md §2C). */

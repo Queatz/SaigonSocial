@@ -35,6 +35,7 @@ class RoomService(private val rooms: RoomRepository) {
                 atmosphere = request.atmosphere.trim(),
                 createdBy = founderId,
                 createdAt = System.currentTimeMillis(),
+                photos = request.photos,
             ),
         )
     }
@@ -70,7 +71,15 @@ class RoomService(private val rooms: RoomRepository) {
             require(it.isNotEmpty()) { "Room emoji required" }
         } ?: room.emoji
         val atmosphere = request.atmosphere?.trim() ?: room.atmosphere
-        return rooms.create(room.copy(name = name, emoji = emoji, atmosphere = atmosphere))
+        val photos = request.photos ?: room.photos
+        return rooms.create(
+            room.copy(
+                name = name,
+                emoji = emoji,
+                atmosphere = atmosphere,
+                photos = photos
+            )
+        )
     }
 
     /** Delete a room. Idempotent: deleting an unknown room is a no-op. */

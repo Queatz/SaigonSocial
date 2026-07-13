@@ -184,7 +184,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                 UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
                 Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
             }
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().innerGlow().padding(12.dp)) {
             Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -252,6 +252,7 @@ private fun ServicePhotoSection(
 
     if (service.photos.isNotEmpty()) {
         PhotoCardsRow(
+            title = service.name,
             photos = service.photos,
             // Managers delete on tap; everyone else just opens the read-only display.
             onPhotoClick = if (canManage) ({ confirmDelete = it }) else null,

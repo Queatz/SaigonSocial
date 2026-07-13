@@ -115,6 +115,8 @@ data class Room(
     val createdBy: String,
     /** Creation time (epoch millis), so the room list can show the newest rooms first. */
     val createdAt: Long = 0L,
+    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /**

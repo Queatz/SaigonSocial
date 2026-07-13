@@ -114,11 +114,11 @@ class SaigonApi(
      * Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. An optional
      * [id] sets the room's URL; when blank the server assigns one.
      */
-    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null) {
+    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null, photos: List<ProfilePhoto> = emptyList()) {
         val response = client.post("$baseUrl/rooms") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }))
+            setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }, photos))
         }
         // Surface the server's validation message (e.g. a taken room URL) so the UI can show it
         // rather than silently dropping the failure.
@@ -131,11 +131,11 @@ class SaigonApi(
     }
 
     /** Founder-only: rename/edit a room (DESIGN §6). */
-    suspend fun updateRoom(roomId: String, name: String, emoji: String, atmosphere: String): Unit =
+    suspend fun updateRoom(roomId: String, name: String, emoji: String, atmosphere: String, photos: List<ProfilePhoto>? = null): Unit =
         client.put("$baseUrl/rooms/$roomId") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(RoomUpdate(name, emoji, atmosphere))
+            setBody(RoomUpdate(name, emoji, atmosphere, photos))
         }.let { }
 
     /** Founder-only: delete a room (DESIGN §6). */

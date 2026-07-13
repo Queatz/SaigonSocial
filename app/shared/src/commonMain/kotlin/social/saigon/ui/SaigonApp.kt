@@ -386,6 +386,10 @@ fun SaigonApp(
                     // The signed-in user's own photo drives the top-bar avatar (issue: profile
                     // photos should replace the initial letter everywhere, including the top bar).
                     profilePhotoUrl = profile?.photo?.url,
+                    backgroundPhotoUrl = when (val s = screen) {
+                        is Screen.Room -> s.room.photos.firstOrNull()?.url
+                        else -> null
+                    },
                     // The members directory is opened from the profile, so Back returns there;
                     // every other screen falls back to the room list.
                     onBack = {
@@ -608,6 +612,7 @@ private fun TopBar(
     showSignIn: Boolean,
     profileName: String?,
     profilePhotoUrl: String? = null,
+    backgroundPhotoUrl: String? = null,
     onBack: () -> Unit,
     onProfile: () -> Unit,
 ) {
@@ -627,6 +632,12 @@ private fun TopBar(
             )
         )
     ) {
+        if (backgroundPhotoUrl != null) {
+            UrlImage(url = backgroundPhotoUrl, modifier = Modifier.matchParentSize())
+            Box(modifier = Modifier.matchParentSize()
+                .background(servicePhotoScrim(MaterialTheme.colorScheme.surface))
+                .innerGlow(RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)))
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -748,7 +759,11 @@ private fun TopBar(
                         .clip(CircleShape)
                         .clickable(onClick = onProfile),
                 ) {
-                    ProfileIcon(name = profileName ?: "?", size = 36.dp, photoUrl = profilePhotoUrl?.ifBlank { null })
+                    ProfileIcon(
+                        name = profileName ?: "?",
+                        size = 36.dp,
+                        photoUrl = profilePhotoUrl?.ifBlank { null }
+                    )
                 }
             } else if (showSignIn) {
                 TextButton(onClick = onProfile) {

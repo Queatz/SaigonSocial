@@ -91,6 +91,7 @@ internal fun ProfileIcon(name: String, size: Dp = 32.dp, photoUrl: String? = nul
         if (!photoUrl.isNullOrBlank()) {
             UrlImage(url = photoUrl, modifier = Modifier.fillMaxSize())
         }
+        Box(Modifier.matchParentSize().innerGlow(CircleShape))
     }
 }
 

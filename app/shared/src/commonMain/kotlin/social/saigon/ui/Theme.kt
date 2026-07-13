@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -269,3 +270,17 @@ fun Modifier.subtleGrain(
 @Composable
 fun Modifier.softShadow(shape: Shape = SaigonShapes.medium) =
     this.shadow(2.dp, shape, spotColor = DefaultShadowColor.copy(alpha = 0.25f))
+
+@Composable
+fun Modifier.innerGlow(shape: Shape = SaigonShapes.medium) =
+    this.innerShadow(shape) {
+        radius = 4f
+        spread = 1f
+        color = Color.White.copy(alpha = 0.25f)
+        offset = Offset(0f, -1f)
+    }.innerShadow(shape) {
+        radius = 24f
+        spread = 0f
+        color = Color.White.copy(alpha = 0.125f)
+        offset = Offset(0f, -2f)
+    }

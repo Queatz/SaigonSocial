@@ -20,6 +20,8 @@ data class RoomCreate(
      * provided it must be URL-safe (lowercase letters, digits and hyphens) and not already taken.
      */
     val id: String? = null,
+    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    val photos: List<ProfilePhoto> = emptyList(),
 )
 
 /**
@@ -31,6 +33,7 @@ data class RoomUpdate(
     val name: String? = null,
     val emoji: String? = null,
     val atmosphere: String? = null,
+    val photos: List<ProfilePhoto>? = null,
 )
 
 /**

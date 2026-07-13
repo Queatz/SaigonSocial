@@ -5,6 +5,7 @@ import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -286,5 +287,59 @@ class Phase3Test {
             assertTrue(body.contains("\"vi\""))
             assertTrue(body.contains("\"en\""))
         }
+    }
+
+    @Test
+    fun roomCreationAndModificationSupportsPhotos() = testApplication {
+        val authConfig = AuthConfig(secret = "test-secret")
+        val tokens = TokenService(authConfig)
+        val founder = tokens.issueMemberToken("f1", Role.FOUNDER)
+        val repositories = Repositories()
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // Create a room with photos.
+        val createRes = client.post("/rooms") {
+            bearerAuth(founder)
+            contentType(ContentType.Application.Json)
+            setBody("""{
+                "name": "Photo Room",
+                "emoji": "📸",
+                "atmosphere": "very picturesque",
+                "id": "photo-room",
+                "photos": [
+                    {"url": "https://content.local/room1.jpg", "message": "View from the window"}
+                ]
+            }""")
+        }
+        assertEquals(HttpStatusCode.OK, createRes.status)
+        val createdBody = createRes.bodyAsText()
+        assertTrue(createdBody.contains("room1.jpg"))
+        assertTrue(createdBody.contains("View from the window"))
+
+        // Fetch rooms list and check if photos are in the RoomSummary.
+        val listRes = client.get("/rooms")
+        assertEquals(HttpStatusCode.OK, listRes.status)
+        val listBody = listRes.bodyAsText()
+        assertTrue(listBody.contains("room1.jpg"))
+
+        // Update the room's photos.
+        val updateRes = client.put("/rooms/photo-room") {
+            bearerAuth(founder)
+            contentType(ContentType.Application.Json)
+            setBody("""{
+                "name": "Photo Room",
+                "emoji": "📸",
+                "atmosphere": "very picturesque",
+                "photos": [
+                    {"url": "https://content.local/room2.jpg", "message": "New angle"}
+                ]
+            }""")
+        }
+        assertEquals(HttpStatusCode.OK, updateRes.status)
+        
+        // Fetch room lists again to verify it has room2.jpg and not room1.jpg.
+        val updatedListBody = client.get("/rooms").bodyAsText()
+        assertTrue(updatedListBody.contains("room2.jpg"))
+        assertFalse(updatedListBody.contains("room1.jpg"))
     }
 }

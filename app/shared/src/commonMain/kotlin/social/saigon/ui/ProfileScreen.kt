@@ -353,6 +353,7 @@ private fun ProfilePhotoSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         PhotoCardsRow(
+            title = profile.displayName,
             photos = profile.previousPhotos,
             onPhotoClick = { confirmDelete = it },
         )

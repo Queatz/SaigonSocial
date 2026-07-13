@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.modifier.modifierLocalConsumer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,21 +118,24 @@ internal fun PhotoCard(
             .clip(RoundedCornerShape(12.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
-        Column {
-            UrlImage(
-                url = photo.url,
-                modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f),
-                fallback = { LoadingSpinner() },
-            )
-            if (photo.message.isNotBlank()) {
-                Text(
-                    photo.message,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+        Box {
+            Column {
+                UrlImage(
+                    url = photo.url,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f),
+                    fallback = { LoadingSpinner() },
                 )
+                if (photo.message.isNotBlank()) {
+                    Text(
+                        photo.message,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                }
             }
+            Box(Modifier.matchParentSize().innerGlow(RoundedCornerShape(12.dp)))
         }
     }
 }
@@ -146,6 +150,7 @@ internal fun PhotoCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PhotoCardsRow(
+    title: String = "Photo",
     photos: List<ProfilePhoto>,
     modifier: Modifier = Modifier,
     onPhotoClick: ((ProfilePhoto) -> Unit)? = null,
@@ -168,7 +173,7 @@ internal fun PhotoCardsRow(
         }
     }
     viewing?.let { photo ->
-        PhotoDisplayDialog(photo = photo, onDismiss = { viewing = null })
+        PhotoDisplayDialog(title = title, photo = photo, onDismiss = { viewing = null })
     }
 }
 
@@ -179,12 +184,13 @@ internal fun PhotoCardsRow(
  */
 @Composable
 internal fun PhotoDisplayDialog(
+    title: String = "Photo",
     photo: ProfilePhoto,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Photo") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val areaShape = RoundedCornerShape(16.dp)
@@ -202,6 +208,7 @@ internal fun PhotoDisplayDialog(
                         modifier = Modifier.fillMaxSize(),
                         fallback = { LoadingSpinner() },
                     )
+                    Box(Modifier.matchParentSize().innerGlow(RoundedCornerShape(12.dp)))
                 }
                 if (photo.message.isNotBlank()) {
                     Text(photo.message, fontSize = 14.sp)
