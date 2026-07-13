@@ -3,6 +3,7 @@ package social.saigon
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -174,6 +175,63 @@ class ServicesTest {
         }.let { assertEquals(HttpStatusCode.OK, it.status) }
         assertFalse(repositories.users.get("sup")!!.services.contains(serviceId))
         assertEquals(HttpStatusCode.NotFound, client.get("/services/$serviceId").status)
+    }
+
+    @Test
+    fun serviceOwnerCanAddAndDeletePhotosButOthersCannot() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "sup", role = Role.SUPPORTER, displayName = "Minh"))
+        repositories.users.create(User(id = "other", role = Role.SUPPORTER, displayName = "Nam"))
+        repositories.rooms.create(Room(id = "r1", name = "Room 1", emoji = "🏠", createdBy = "sup"))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val ts = TokenService(authConfig)
+        val supToken = ts.issueMemberToken("sup", Role.SUPPORTER)
+        val otherToken = ts.issueMemberToken("other", Role.SUPPORTER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val serviceId = extractId(
+            client.post("/rooms/r1/services") {
+                header(HttpHeaders.Authorization, "Bearer $supToken")
+                contentType(ContentType.Application.Json)
+                setBody("""{"roomId":"r1","emoji":"🎸","name":"Guitar lessons"}""")
+            }.bodyAsText(),
+        )
+
+        // The provider adds a photo; it comes back on the service (issue: "upload service photos").
+        val added = client.post("/services/$serviceId/photos") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"https://content.local/content/s1.jpg","message":"My studio"}""")
+        }
+        assertEquals(HttpStatusCode.OK, added.status)
+        assertTrue(added.bodyAsText().contains("\"url\":\"https://content.local/content/s1.jpg\""))
+        assertTrue(added.bodyAsText().contains("\"message\":\"My studio\""))
+
+        // It is served on the public service page too.
+        assertTrue(client.get("/services/$serviceId").bodyAsText().contains("s1.jpg"))
+
+        // A different member cannot add photos to someone else's service.
+        val forbidden = client.post("/services/$serviceId/photos") {
+            header(HttpHeaders.Authorization, "Bearer $otherToken")
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"https://content.local/content/nope.jpg"}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, forbidden.status)
+
+        // Anonymous callers cannot add photos.
+        val anonymous = client.post("/services/$serviceId/photos") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"https://content.local/content/anon.jpg"}""")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, anonymous.status)
+
+        // The provider deletes the photo by URL.
+        val deleted = client.delete("/services/$serviceId/photos") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            parameter("url", "https://content.local/content/s1.jpg")
+        }
+        assertEquals(HttpStatusCode.OK, deleted.status)
+        assertFalse(client.get("/services/$serviceId").bodyAsText().contains("s1.jpg"))
     }
 
     @Test

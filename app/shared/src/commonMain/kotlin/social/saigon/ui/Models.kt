@@ -490,8 +490,14 @@ data class ServiceView(
     val price: Int = 0,
     /** Whether the service is publicly listed (unlisted services are hidden from search). */
     val listed: Boolean = true,
+    /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
+    val photos: List<ProfilePhoto> = emptyList(),
     val createdAt: Long = 0L,
 )
+
+/** Add a photo to a service (`POST /services/{id}/photos`). */
+@Serializable
+data class AddServicePhotoRequest(val url: String, val message: String = "")
 
 /** Create a service from a room (`POST /rooms/{id}/services`). */
 @Serializable

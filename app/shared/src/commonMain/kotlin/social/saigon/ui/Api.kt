@@ -387,6 +387,28 @@ class SaigonApi(
     suspend fun deleteService(serviceId: String): Unit =
         client.delete("$baseUrl/services/$serviceId") { HttpRequestAuth(this) }.let { }
 
+    /**
+     * Add a photo to a service (issue: "upload service photos"). [photoUrl] is a content-server URL
+     * from a prior [uploadContent]; [message] is the optional caption. Allowed for the provider or a
+     * Founder. Requires a member token; returns the refreshed service.
+     */
+    suspend fun addServicePhoto(serviceId: String, photoUrl: String, message: String = ""): ServiceView =
+        client.post("$baseUrl/services/$serviceId/photos") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(AddServicePhotoRequest(url = photoUrl, message = message))
+        }.decodeMember()
+
+    /**
+     * Delete one of a service's photos by its URL. Allowed for the provider or a Founder. Requires a
+     * member token; returns the refreshed service.
+     */
+    suspend fun deleteServicePhoto(serviceId: String, photoUrl: String): ServiceView =
+        client.delete("$baseUrl/services/$serviceId/photos") {
+            HttpRequestAuth(this)
+            url.parameters.append("url", photoUrl)
+        }.decodeMember()
+
     /** Leave public feedback on a service. Requires a member token. */
     suspend fun addFeedback(serviceId: String, emoji: String, message: String): FeedbackView =
         client.post("$baseUrl/services/$serviceId/feedback") {
@@ -659,8 +681,8 @@ class SaigonApi(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "http://localhost:9090"
-        const val DEFAULT_CONTENT_URL = "http://localhost:9091"
+        const val DEFAULT_BASE_URL = "https://api.saigon.social"
+        const val DEFAULT_CONTENT_URL = "https://content.saigon.social"
         private const val JOIN_TYPE = "social.saigon.realtime.Incoming.Join"
         const val SAY_TYPE = "social.saigon.realtime.Incoming.Say"
         const val REPLY_TYPE = "social.saigon.realtime.Incoming.Reply"

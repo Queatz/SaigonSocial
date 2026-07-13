@@ -358,7 +358,7 @@ internal fun RoomListScreen(
                                     fontSize = 18.sp
                                 )
                                 Text(
-                                    text = "See all ➔",
+                                    text = "See all",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -1213,7 +1213,7 @@ private fun ServiceItemRow(service: ServiceView, onOpenService: (String) -> Unit
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "by ${service.providerName} • ${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name}",
+                "${service.emoji.ifBlank { "\uD83D\uDD27" }} ${service.name} • by ${service.providerName}",
                 fontSize = 14.sp,
             )
             Text(
@@ -2714,6 +2714,8 @@ internal fun ThreadRepliesScreen(
 
 @Composable
 internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
+    val photoUrl = service.photos.firstOrNull()?.url
+    val scrimColor = MaterialTheme.colorScheme.surface
     Card(
         modifier = Modifier
             .width(180.dp)
@@ -2722,6 +2724,12 @@ internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onClick)
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+        if (photoUrl != null) {
+            // The service's photo fills the card behind the text, with the top→bottom fade over it.
+            UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
+            Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -2776,6 +2784,7 @@ internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
         }
     }
 }

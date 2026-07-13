@@ -266,6 +266,12 @@ data class Service(
      * provider's room profile without deleting it; the provider can relist it later.
      */
     val listed: Boolean = true,
+    /**
+     * Photos of the service the provider uploaded (issue: "upload service photos"), newest first.
+     * Shown on the service page and as the background of the service cards/rows. Only the provider
+     * (or a Founder) can add or delete them.
+     */
+    val photos: List<ProfilePhoto> = emptyList(),
     val createdAt: Long = 0L,
 )
 

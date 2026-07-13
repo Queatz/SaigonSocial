@@ -148,6 +148,13 @@ data class ServiceUpdate(
     val price: Int = 0,
 )
 
+/**
+ * Add a photo to a service (issue: "upload service photos"). [url] is a content-server URL from a
+ * prior upload; [message] is the provider's optional caption for it.
+ */
+@Serializable
+data class AddServicePhotoRequest(val url: String, val message: String = "")
+
 /** A service enriched with its room name and provider details for list + detail screens. */
 @Serializable
 data class ServiceView(
@@ -167,6 +174,8 @@ data class ServiceView(
     val price: Int = 0,
     /** Whether the service is publicly listed (unlisted services are hidden from search). */
     val listed: Boolean = true,
+    /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
+    val photos: List<ProfilePhoto> = emptyList(),
     val createdAt: Long,
 )
 
@@ -1052,6 +1061,50 @@ fun Application.registerRoutes(
                 call.respond(mapOf("deleted" to serviceId))
             }
 
+            // Add a photo to a service (issue: "upload service photos"). Allowed for the provider
+            // or a Founder. The new photo is prepended so the most recent one shows first.
+            post("/services/{id}/photos") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                require(service.providerId == userId || caller.role.isAdmin) {
+                    "You cannot add photos to this service."
+                }
+                val req = call.receive<AddServicePhotoRequest>()
+                val photoUrl = req.url.trim()
+                require(photoUrl.isNotBlank()) { "A photo URL is required." }
+                val photo = ProfilePhoto(
+                    url = photoUrl,
+                    message = req.message.trim(),
+                    createdAt = System.currentTimeMillis(),
+                )
+                val updated = repositories.services.update(
+                    service.copy(photos = listOf(photo) + service.photos),
+                )
+                call.respond(updated.toServiceView(repositories))
+            }
+
+            // Delete one of a service's photos by its URL (`?url=`). Allowed for the provider or a
+            // Founder.
+            delete("/services/{id}/photos") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That service does not exist.")
+                require(service.providerId == userId || caller.role.isAdmin) {
+                    "You cannot delete photos from this service."
+                }
+                val url = call.request.queryParameters["url"].orEmpty()
+                require(url.isNotBlank()) { "url required" }
+                val remaining = service.photos.filterNot { it.url == url }
+                require(remaining.size < service.photos.size) { "No such photo" }
+                val updated = repositories.services.update(service.copy(photos = remaining))
+                call.respond(updated.toServiceView(repositories))
+            }
+
             // Add public feedback to a service. Any member may leave feedback.
             post("/services/{id}/feedback") {
                 val userId = requireMember(call.caller())
@@ -1651,6 +1704,7 @@ private fun Service.toServiceView(repositories: Repositories): ServiceView {
         providerInterests = provider?.interests ?: emptyList(),
         price = price,
         listed = listed,
+        photos = photos,
         createdAt = createdAt,
     )
 }

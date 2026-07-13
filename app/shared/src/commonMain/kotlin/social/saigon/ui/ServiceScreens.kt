@@ -2,6 +2,7 @@ package social.saigon.ui
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,9 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -161,10 +165,25 @@ internal fun MyServicesScreen(
     }
 }
 
-/** A single result card in the service search list. */
+/**
+ * The scrim laid over a service photo used as a card/row background (issue: "a gradient from 80%
+ * alpha at the top, to 0% alpha at the bottom"), keeping the card text readable over the photo.
+ */
+internal fun servicePhotoScrim(color: Color): Brush =
+    Brush.verticalGradient(listOf(color.copy(alpha = 0.4f), color.copy(alpha = 0.8f)))
+
+/** A single result row in the service search list — with the service's photo as a faded background. */
 @Composable
 internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
+    val photoUrl = service.photos.firstOrNull()?.url
+    val scrimColor = MaterialTheme.colorScheme.surface
     Card(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            if (photoUrl != null) {
+                // Photo fills the row behind the content, with the top→bottom fade over it.
+                UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
+                Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+            }
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
             Spacer(Modifier.width(12.dp))
@@ -197,6 +216,93 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                 )
             }
         }
+        }
+    }
+}
+
+/**
+ * The service-photo area on the service detail screen (issue: "upload service photos ... display
+ * the service photos on the service page"). Photos are shown to everyone as vertical cards in a
+ * wrapping flex row; tapping a card opens a read-only display. When [canManage] is true (the
+ * provider or a Founder) an "Add a photo" button opens [PhotoUploadDialog], and tapping a card asks
+ * to delete it with a confirmation dialog. Mirrors `ProfilePhotoSection`.
+ */
+@Composable
+private fun ServicePhotoSection(
+    api: SaigonApi,
+    service: ServiceView,
+    canManage: Boolean,
+    onUpdated: (ServiceView) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var showUpload by remember(service.id) { mutableStateOf(false) }
+    var confirmDelete by remember(service.id) { mutableStateOf<ProfilePhoto?>(null) }
+
+    // Nothing to show for a visitor when there are no photos yet.
+    if (service.photos.isEmpty() && !canManage) return
+
+    Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    if (canManage) {
+        Text(
+            "Add photos of your service. Click a photo to delete it.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (service.photos.isNotEmpty()) {
+        PhotoCardsRow(
+            photos = service.photos,
+            // Managers delete on tap; everyone else just opens the read-only display.
+            onPhotoClick = if (canManage) ({ confirmDelete = it }) else null,
+        )
+    } else {
+        Text(
+            "No photos yet.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (canManage) {
+        OutlinedButton(onClick = { showUpload = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("Add a photo")
+        }
+    }
+
+    if (showUpload) {
+        PhotoUploadDialog(
+            api = api,
+            title = "Add a service photo",
+            // Always adding a fresh photo, so there is no current photo to pre-fill.
+            currentPhoto = null,
+            onDismiss = { showUpload = false },
+            onSaved = { photo ->
+                onUpdated(api.addServicePhoto(service.id, photo.url, photo.message))
+                showUpload = false
+            },
+            confirmLabel = "Add photo",
+        )
+    }
+
+    confirmDelete?.let { photo ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete this photo?") },
+            text = { Text("This service photo will be removed for good.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        runCatching { api.deleteServicePhoto(service.id, photo.url) }
+                            .onSuccess { onUpdated(it) }
+                        confirmDelete = null
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -328,6 +434,15 @@ internal fun ServiceDetailScreen(
                         }
                     }
                 }
+
+                // Service photos (issue: "upload service photos ... display the service photos on
+                // the service page"): shown to everyone; the provider/Founder can add or delete them.
+                ServicePhotoSection(
+                    api = api,
+                    service = s,
+                    canManage = isFounder || selfUserId == s.providerId,
+                    onUpdated = { service = it },
+                )
 
                 FeedbackSection(
                     api = api,
