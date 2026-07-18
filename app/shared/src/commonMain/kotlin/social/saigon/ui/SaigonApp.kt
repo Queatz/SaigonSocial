@@ -374,7 +374,7 @@ fun SaigonApp(
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's trusted chat room."
+                        is Screen.RoomList -> "Saigon's Social Light-Sharing Collective."
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },
@@ -647,7 +647,8 @@ private fun TopBar(
                 // glyph or a Material icon dependency) so it renders regardless of which fonts the
                 // Skiko renderer has loaded.
                 IconButton(onClick = onBack) {
-                    val arrowColor = MaterialTheme.colorScheme.onPrimary
+                    val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
+                    val arrowColor = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
                     Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
                         val w = size.width
                         val h = size.height
@@ -684,7 +685,8 @@ private fun TopBar(
                 // so it renders regardless of which fonts the Skiko renderer has loaded. Wrapped in
                 // a Box sized to match the back-arrow's IconButton (48.dp default touch target) so
                 // the top bar keeps the same height whether or not the back arrow is shown.
-                val homeColor = MaterialTheme.colorScheme.onPrimary
+                val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
+                val homeColor = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
                 Box(
                     modifier = Modifier.width(48.dp).height(48.dp),
                     contentAlignment = Alignment.Center,
@@ -735,10 +737,11 @@ private fun TopBar(
                 }
                 Spacer(Modifier.width(8.dp))
             }
+            val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                 )
@@ -746,7 +749,7 @@ private fun TopBar(
                 subtitle?.let {
                     Text(
                         text = it,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                        color = if (primaryText) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                         fontSize = 13.sp,
                     )
                 }

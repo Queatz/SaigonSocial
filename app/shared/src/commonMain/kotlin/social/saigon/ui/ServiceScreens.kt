@@ -402,7 +402,8 @@ internal fun ServiceDetailScreen(
                         }
                     }
                 )
-                if (s.providerLanguages.isNotEmpty()) {
+                // Disabled for now
+                if (false && s.providerLanguages.isNotEmpty()) {
                     Text(
                         "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
                         fontSize = 12.sp,

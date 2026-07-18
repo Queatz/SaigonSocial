@@ -284,9 +284,8 @@ internal fun RoomListScreen(
                                         .size(128.dp),
                                 )
                                 Text(
-                                    text = "Welcome to Saigon's trusted chat room. " +
-                                            "We're real people here for real talk! " +
-                                            "What's on your mind?",
+                                    text = "Welcome to Saigon Social. " +
+                                            "Rooms for every purpose. Let's chat about something! ",
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     textAlign = TextAlign.Center
@@ -1326,9 +1325,8 @@ internal fun servicesProvidedLabel(count: Int): String = when (count) {
 
 /**
  * A bottom sheet listing every service provided by people in the room, opened by the "N provided
- * services" button beside the occupant list/scroller. Each item reuses [ServiceItemRow] so it looks
- * exactly like the "Providing" section of the member-detail sheet; tapping "Details" opens the full
- * service via [onOpenService].
+ * services" button beside the occupant list/scroller. Each item reuses [ServiceCard], matching the
+ * look of the service search/detail screens; tapping a card opens the full service via [onOpenService].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1361,7 +1359,7 @@ private fun RoomServicesSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp)
         ) {
-            Text("Services in this room", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Services provided in this room", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(4.dp))
             Text(
                 text = servicesProvidedLabel(services.size),
@@ -1378,7 +1376,7 @@ private fun RoomServicesSheet(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     services.forEach { service ->
-                        ServiceItemRow(service = service, onOpenService = onOpenService)
+                        ServiceCard(service = service, onClick = { onOpenService(service.id) })
                     }
                 }
             }
