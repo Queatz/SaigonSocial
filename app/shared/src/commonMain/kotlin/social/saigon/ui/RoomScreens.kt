@@ -759,6 +759,9 @@ internal fun RoomChatScreen(
     var loadingMore by remember(room.id) { mutableStateOf(false) }
     var reachedStart by remember(room.id) { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    // Services offered in this room: shown as a horizontal strip along the top of the chat area,
+    // and also backing the "N provided services" button under "In the room".
+    val roomServices = remember(room.id) { mutableStateListOf<ServiceView>() }
 
     LaunchedEffect(room.id) {
         loading = true
@@ -775,6 +778,13 @@ internal fun RoomChatScreen(
             error = e.message ?: "Could not load this room"
         }
         loading = false
+    }
+
+    // Load room services separately so a chat history failure still surfaces what's offered here.
+    LaunchedEffect(room.id) {
+        runCatching { api.services(roomId = room.id) }.getOrNull()?.let {
+            roomServices.clear(); roomServices.addAll(it)
+        }
     }
 
     suspend fun loadOlder() {
@@ -950,12 +960,33 @@ internal fun RoomChatScreen(
                             canStartPrivate = canStartPrivate,
                             api = api,
                             roomId = room.id,
+                            roomServices = roomServices,
                             onTapAvailable = onStartPrivate,
                             onRefreshSelf = onRefreshIdentity,
                             onIdentityEdited = reloadOccupants,
                             onOpenService = onOpenService,
                         )
                         Spacer(Modifier.height(12.dp))
+                    }
+                    // Room services strip along the top of the chat area (kept in addition to the
+                    // "In the room" sheet button). Horizontally scrollable clickable ServiceCards.
+                    if (roomServices.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            roomServices.forEach { service ->
+                                Box(modifier = Modifier.width(280.dp)) {
+                                    ServiceCard(
+                                        service = service,
+                                        onClick = { onOpenService(service.id) },
+                                    )
+                                }
+                            }
+                        }
                     }
                     if (loading) {
                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1034,6 +1065,7 @@ internal fun RoomChatScreen(
                         canStartPrivate = canStartPrivate,
                         api = api,
                         roomId = room.id,
+                        roomServices = roomServices,
                         onTapAvailable = onStartPrivate,
                         onRefreshSelf = onRefreshIdentity,
                         onIdentityEdited = reloadOccupants,
@@ -1882,6 +1914,7 @@ private fun OccupantList(
     canStartPrivate: Boolean,
     api: SaigonApi,
     roomId: String,
+    roomServices: List<ServiceView>,
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
     onIdentityEdited: () -> Unit,
@@ -1890,13 +1923,8 @@ private fun OccupantList(
     // The self quick-action on each card opens the "Edit your room profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
-    // Every service provided in this room, backing the "N provided services" button + sheet.
-    val roomServices = remember(roomId) { mutableStateListOf<ServiceView>() }
+    // Sheet opened by the "N provided services" button; the list itself is owned by the room chat.
     var showServicesSheet by remember(roomId) { mutableStateOf(false) }
-    LaunchedEffect(roomId) {
-        runCatching { api.services(roomId = roomId) }
-            .getOrNull()?.let { roomServices.clear(); roomServices.addAll(it) }
-    }
 
     Box(
         modifier = Modifier
@@ -2196,6 +2224,7 @@ private fun OccupantScroller(
     canStartPrivate: Boolean,
     api: SaigonApi,
     roomId: String,
+    roomServices: List<ServiceView>,
     onTapAvailable: (OccupantView) -> Unit,
     onRefreshSelf: () -> Unit,
     onIdentityEdited: () -> Unit,
@@ -2210,13 +2239,8 @@ private fun OccupantScroller(
     // The self quick-action on each card opens the "Edit your room profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
-    // Every service provided in this room, backing the "N provided services" button + sheet.
-    val roomServices = remember(roomId) { mutableStateListOf<ServiceView>() }
+    // Sheet opened by the "N provided services" button; the list itself is owned by the room chat.
     var showServicesSheet by remember(roomId) { mutableStateOf(false) }
-    LaunchedEffect(roomId) {
-        runCatching { api.services(roomId = roomId) }
-            .getOrNull()?.let { roomServices.clear(); roomServices.addAll(it) }
-    }
     // On mobile the people list is an accordion that starts collapsed so it takes up only a single
     // line ("N people in the room") until the user expands it; the Share action and the scroller of
     // member cards are only revealed once expanded (DESIGN §6).
