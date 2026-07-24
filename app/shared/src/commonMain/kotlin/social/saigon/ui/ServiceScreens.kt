@@ -3,17 +3,20 @@ package social.saigon.ui
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -22,10 +25,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -325,6 +330,9 @@ internal fun ServiceDetailScreen(
     onSignIn: () -> Unit,
     onDeleted: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
+    // Default fills the dedicated route page; the sheet passes a width-only modifier so short
+    // content can hug height (same idea as ThreadSheet) instead of leaving empty bottom space.
+    modifier: Modifier = Modifier.fillMaxSize(),
 ) {
     val scope = rememberCoroutineScope()
     var service by remember(serviceId) { mutableStateOf<ServiceView?>(null) }
@@ -361,13 +369,13 @@ internal fun ServiceDetailScreen(
 
     val s = service
     when {
-        !loaded -> Centered { LoadingSpinner() }
-        s == null -> Centered {
+        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) { LoadingSpinner() }
+        s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(error ?: "This service could not be found.", color = MaterialTheme.colorScheme.error)
         }
         else -> {
             Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+                modifier = modifier.padding(16.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -378,7 +386,7 @@ internal fun ServiceDetailScreen(
                         Text("${UiConstants.vnd(s.price)} • in ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // Copy-link affordance, mirroring rooms and threads (top-right).
-                    ShareButton(isService = true)
+                    ShareButton(isService = true, path = "/services/${s.id}")
                 }
                 if (!s.listed) {
                     Text(
@@ -531,6 +539,68 @@ internal fun ServiceDetailScreen(
                     },
                     onOpenService = onOpenService,
                     onClose = { selectedOccupant = null },
+                )
+            }
+        }
+    }
+}
+
+
+/**
+ * Bottom sheet hosting the full [ServiceDetailScreen] UI so a service can be inspected without
+ * leaving the surrounding screen (e.g. room chat). Mirrors [ThreadSheet] / [RoomServicesSheet]:
+ * fully expanded, animated close, and the same content as the dedicated service route.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ServiceDetailSheet(
+    api: SaigonApi,
+    serviceId: String,
+    selfUserId: String?,
+    isFounder: Boolean,
+    canContact: Boolean,
+    onOpenDirectChat: (ContactProviderResponse) -> Unit,
+    onSignIn: () -> Unit,
+    onDeleted: () -> Unit = {},
+    onOpenService: (String) -> Unit = {},
+    onClose: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    // Fully expand so the detail body (photos, feedback, contact) has room, matching ThreadSheet.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val animateClose: () -> Unit = {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) onClose()
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
+    ) {
+        // Same shell as ThreadSheet: cap at the allotted height, but let short content size
+        // naturally (weight fill=false) so the sheet doesn't grow empty bottom space.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
+                PlainDragHandle()
+                ServiceDetailScreen(
+                    api = api,
+                    serviceId = serviceId,
+                    selfUserId = selfUserId,
+                    isFounder = isFounder,
+                    canContact = canContact,
+                    onOpenDirectChat = onOpenDirectChat,
+                    onSignIn = onSignIn,
+                    onDeleted = {
+                        onDeleted()
+                        animateClose()
+                    },
+                    onOpenService = onOpenService,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
                 )
             }
         }

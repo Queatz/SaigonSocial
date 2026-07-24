@@ -747,6 +747,9 @@ internal fun RoomChatScreen(
     // Tapping a message's profile icon opens that author's detail sheet, resolved from the live
     // occupant list by persistent user id (DESIGN §5). Null means no sheet is shown.
     var selectedOccupant by remember(room.id) { mutableStateOf<OccupantView?>(null) }
+    // Service detail opened in-place as a bottom sheet so inspecting a room service does not
+    // navigate away from the chat (same UI as the dedicated service screen).
+    var selectedServiceId by remember(room.id) { mutableStateOf<String?>(null) }
     // Live thread replies broadcast to the room, so an open thread sheet can append them in realtime
     // for every client — not just the member who sent it. Accumulated (rather than a single latest
     // value) so two replies arriving back-to-back are never dropped before the sheet sees them (DESIGN §9).
@@ -964,7 +967,7 @@ internal fun RoomChatScreen(
                             onTapAvailable = onStartPrivate,
                             onRefreshSelf = onRefreshIdentity,
                             onIdentityEdited = reloadOccupants,
-                            onOpenService = onOpenService,
+                            onOpenService = { selectedServiceId = it },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -982,7 +985,7 @@ internal fun RoomChatScreen(
                                 Box(modifier = Modifier.width(280.dp)) {
                                     ServiceCard(
                                         service = service,
-                                        onClick = { onOpenService(service.id) },
+                                        onClick = { selectedServiceId = service.id },
                                     )
                                 }
                             }
@@ -1069,7 +1072,7 @@ internal fun RoomChatScreen(
                         onTapAvailable = onStartPrivate,
                         onRefreshSelf = onRefreshIdentity,
                         onIdentityEdited = reloadOccupants,
-                        onOpenService = onOpenService,
+                        onOpenService = { selectedServiceId = it },
                     )
                 }
             }
@@ -1127,8 +1130,46 @@ internal fun RoomChatScreen(
                     onStartChat = { selectedOccupant = null; onStartPrivate(person) },
                     onRefresh = onRefreshIdentity,
                     onEdited = reloadOccupants,
-                    onOpenService = onOpenService,
+                    onOpenService = { selectedOccupant = null; selectedServiceId = it },
                     onClose = { selectedOccupant = null },
+                )
+            }
+
+            selectedServiceId?.let { serviceId ->
+                ServiceDetailSheet(
+                    api = api,
+                    serviceId = serviceId,
+                    selfUserId = selfUserId,
+                    isFounder = isFounder,
+                    canContact = canStartPrivate,
+                    onOpenDirectChat = { res ->
+                        selectedServiceId = null
+                        onOpenDirectChat(
+                            DirectChat(res.roomId, res.providerId, res.providerName),
+                        )
+                    },
+                    onSignIn = {
+                        selectedServiceId = null
+                        onSignIn()
+                    },
+                    onDeleted = {
+                        // Refresh the room strip; the sheet animates closed via onClose.
+                        scope.launch {
+                            runCatching { api.services(roomId = room.id) }.getOrNull()?.let {
+                                roomServices.clear(); roomServices.addAll(it)
+                            }
+                        }
+                    },
+                    onOpenService = { selectedServiceId = it },
+                    onClose = {
+                        selectedServiceId = null
+                        // Pick up unlist/edit/photo changes made while the sheet was open.
+                        scope.launch {
+                            runCatching { api.services(roomId = room.id) }.getOrNull()?.let {
+                                roomServices.clear(); roomServices.addAll(it)
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -2028,7 +2069,7 @@ private fun OccupantList(
                 onStartChat = { selected = null; onTapAvailable(person) },
                 onRefresh = onRefreshSelf,
                 onEdited = onIdentityEdited,
-                onOpenService = onOpenService,
+                onOpenService = { selected = null; showServicesSheet = false; onOpenService(it) },
                 onClose = { selected = null },
             )
         }
@@ -2088,7 +2129,7 @@ private fun OccupantInterestsLine(person: OccupantView) {
  * shareable URL and a "Copy link" button so members can hand the room/thread link to someone else.
  */
 @Composable
-internal fun ShareButton(isService: Boolean = false) {
+internal fun ShareButton(isService: Boolean = false, path: String? = null) {
     val scope = rememberCoroutineScope()
     val router = remember { UrlRouter() }
     var showDialog by remember { mutableStateOf(false) }
@@ -2099,7 +2140,18 @@ internal fun ShareButton(isService: Boolean = false) {
         Text("\uD83D\uDD17", fontSize = 16.sp)
     }
     if (showDialog) {
-        val url = remember { router.currentUrl() }
+        // Prefer an explicit path (e.g. "/services/{id}" when the detail UI is hosted in a
+        // sheet over another screen) so the copied link still targets the service itself.
+        val url = remember(path) {
+            if (path == null) router.currentUrl()
+            else {
+                val current = router.currentUrl()
+                val scheme = current.indexOf("://").let { if (it < 0) -1 else it + 3 }
+                val originEnd = if (scheme < 0) -1 else current.indexOf('/', scheme)
+                if (originEnd < 0) current.trimEnd('/') + path
+                else current.substring(0, originEnd) + path
+            }
+        }
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { Text("Share this ${if (isService) "service" else "room"}") },
@@ -2382,7 +2434,7 @@ private fun OccupantScroller(
             onStartChat = { selected = null; onTapAvailable(person) },
             onRefresh = onRefreshSelf,
             onEdited = onIdentityEdited,
-            onOpenService = onOpenService,
+            onOpenService = { selected = null; showServicesSheet = false; onOpenService(it) },
             onClose = { selected = null },
         )
     }
