@@ -15,12 +15,16 @@ import kotlinx.coroutines.delay
  * to avoid flashing a spinner for very fast loads.
  */
 @Composable
-fun LoadingSpinner(modifier: Modifier = Modifier) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(1_000)
-        visible = true
+fun LoadingSpinner(modifier: Modifier = Modifier, useDelay: Boolean = true) {
+    var visible by remember { mutableStateOf(!useDelay) }
+
+    if (useDelay) {
+        LaunchedEffect(Unit) {
+            delay(1_000)
+            visible = true
+        }
     }
+
     if (visible) {
         CircularProgressIndicator(modifier = modifier)
     }

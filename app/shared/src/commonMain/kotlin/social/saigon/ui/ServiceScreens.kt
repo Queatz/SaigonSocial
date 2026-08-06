@@ -330,6 +330,7 @@ internal fun ServiceDetailScreen(
     onSignIn: () -> Unit,
     onDeleted: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
+    onOccupantSelected: (OccupantView) -> Unit = {},
     // Default fills the dedicated route page; the sheet passes a width-only modifier so short
     // content can hug height (same idea as ThreadSheet) instead of leaving empty bottom space.
     modifier: Modifier = Modifier.fillMaxSize(),
@@ -343,6 +344,12 @@ internal fun ServiceDetailScreen(
     var confirmingDelete by remember(serviceId) { mutableStateOf(false) }
     var managing by remember(serviceId) { mutableStateOf(false) }
     var selectedOccupant by remember(serviceId) { mutableStateOf<OccupantView?>(null) }
+
+    LaunchedEffect(selectedOccupant) {
+        if (selectedOccupant != null) {
+            onOccupantSelected(selectedOccupant!!)
+        }
+    }
 
     suspend fun reloadFeedback() {
         runCatching { api.serviceFeedback(serviceId) }.onSuccess {
@@ -369,7 +376,10 @@ internal fun ServiceDetailScreen(
 
     val s = service
     when {
-        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) { LoadingSpinner() }
+        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) { LoadingSpinner(
+            modifier = Modifier.padding(24.dp),
+            useDelay = false // useful to give the sheet some initial height
+        ) }
         s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(error ?: "This service could not be found.", color = MaterialTheme.colorScheme.error)
         }
