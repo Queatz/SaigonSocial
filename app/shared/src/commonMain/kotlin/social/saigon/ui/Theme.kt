@@ -49,7 +49,7 @@ private val SaigonLightColors = lightColorScheme(
     tertiaryContainer = Color(0xFF9DB4D9),
     onTertiaryContainer = Color(0xFF1A2A40),
 
-    background = Color(0xFFF8F6F0),         // warm off-white for professional contrast
+    background = Color(0xFFfcfcfa),         // warm off-white for professional contrast
     onBackground = Color(0xFF1C1B17),
     // Cards / surfaces use clean neutrals for separation and readability.
     surface = Color(0xFFFCFBF7),
@@ -58,7 +58,7 @@ private val SaigonLightColors = lightColorScheme(
     surfaceContainerLow = Color(0xFFFAF7F1),
     surfaceContainer = Color(0xFFF3F1EC),
     surfaceContainerHigh = Color(0xFFEDEBE6),
-    surfaceContainerHighest = Color(0xFFE7E6E2),
+    surfaceContainerHighest = Color(0xFFfaf9f7),
     surfaceVariant = Color(0xFFE6E3D7),     // calm side-panel / bubble fill
     onSurfaceVariant = Color(0xFF4B4538),
 
@@ -269,7 +269,7 @@ fun Modifier.subtleGrain(
 
 @Composable
 fun Modifier.softShadow(shape: Shape = SaigonShapes.medium) =
-    this.shadow(2.dp, shape, spotColor = DefaultShadowColor.copy(alpha = 0.25f))
+    this.shadow(4.dp, shape, spotColor = DefaultShadowColor.copy(alpha = 0.25f))
 
 @Composable
 fun Modifier.innerGlow(shape: Shape = SaigonShapes.medium) =

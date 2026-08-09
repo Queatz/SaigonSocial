@@ -1,5 +1,6 @@
 package social.saigon.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -61,6 +63,9 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
+import org.jetbrains.compose.resources.painterResource
+import saigonsocial.app.shared.generated.resources.Res
+import saigonsocial.app.shared.generated.resources.icon
 
 /**
  * Compose Web app shell + navigation (DESIGN §12), wired to the live [SaigonApi].
@@ -354,7 +359,7 @@ fun SaigonApp(
         ) {
             // Subtle canvas gradient behind every screen (DESIGN §1 — "subtle gradients"), topped
             // with a faint film-grain texture so the background reads as soft and tactile.
-            Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush()).subtleGrain()) {
+            Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush())) {
                 TopBar(
                     title = when (val s = screen) {
                         Screen.RoomList -> "Saigon.Social"
@@ -374,7 +379,7 @@ fun SaigonApp(
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's Social Light-Sharing Collective."
+                        is Screen.RoomList -> "Saigon's Social Talk Hub."
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },
@@ -681,61 +686,20 @@ private fun TopBar(
                 }
                 Spacer(Modifier.width(8.dp))
             } else {
-                // Home icon. Drawn with Canvas (rather than a glyph or a Material icon dependency)
-                // so it renders regardless of which fonts the Skiko renderer has loaded. Wrapped in
-                // a Box sized to match the back-arrow's IconButton (48.dp default touch target) so
-                // the top bar keeps the same height whether or not the back arrow is shown.
-                val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
-                val homeColor = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
+                // App icon on the home screen. Wrapped in a Box sized to match the back-arrow's
+                // IconButton (48.dp default touch target) so the top bar keeps the same height
+                // whether or not the back arrow is shown.
                 Box(
                     modifier = Modifier.width(48.dp).height(48.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
-                        val w = size.width
-                        val h = size.height
-                        val strokeWidth = h * 0.12f
-                        // Roof: two lines from the apex down to each eave.
-                        drawLine(
-                            homeColor,
-                            Offset(w * 0.5f, h * 0.1f),
-                            Offset(w * 0.1f, h * 0.45f),
-                            strokeWidth = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                        drawLine(
-                            homeColor,
-                            Offset(w * 0.5f, h * 0.1f),
-                            Offset(w * 0.9f, h * 0.45f),
-                            strokeWidth = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                        // Walls.
-                        drawLine(
-                            homeColor,
-                            Offset(w * 0.2f, h * 0.4f),
-                            Offset(w * 0.2f, h * 0.9f),
-                            strokeWidth = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                        drawLine(
-                            homeColor,
-                            Offset(w * 0.8f, h * 0.4f),
-                            Offset(w * 0.8f, h * 0.9f),
-                            strokeWidth = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                        // Floor.
-                        drawLine(
-                            homeColor,
-                            Offset(w * 0.2f, h * 0.9f),
-                            Offset(w * 0.8f, h * 0.9f),
-                            strokeWidth = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                    }
+                    Image(
+                        painter = painterResource(Res.drawable.icon),
+                        contentDescription = "Saigon.Social",
+                        modifier = Modifier.size(42.dp),
+                    )
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(16.dp))
             }
             val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
             Column(modifier = Modifier.weight(1f)) {
@@ -755,18 +719,29 @@ private fun TopBar(
                 }
             }
             if (signedIn) {
-                // The user's profile icon doubles as the entry to the profile screen. Clip to a
-                // circle *before* the clickable so the ripple stays inside the icon's bounds.
-                Box(
+                // Icon + name open the profile screen together.
+                Row(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(onClick = onProfile),
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable(onClick = onProfile)
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ProfileIcon(
                         name = profileName ?: "?",
                         size = 36.dp,
                         photoUrl = profilePhotoUrl?.ifBlank { null }
                     )
+                    profileName?.takeIf { it.isNotBlank() }?.let { name ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = name,
+                            color = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                        )
+                    }
                 }
             } else if (showSignIn) {
                 TextButton(onClick = onProfile) {

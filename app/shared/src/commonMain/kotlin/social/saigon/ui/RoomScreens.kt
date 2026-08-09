@@ -32,6 +32,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CardDefaults.cardColors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -93,7 +95,6 @@ internal fun peopleCount(count: Int): String = when (count) {
  * highlighted and not clickable. Edit/Delete management actions are only rendered when
  * [canManageRooms] is true, so the same card can be reused where those actions don't belong.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoomCardItem(
     room: RoomSummary,
@@ -111,7 +112,7 @@ private fun RoomCardItem(
     Column {
         Card(
             onClick = { if (!current) onOpen(room) },
-            modifier = Modifier.fillMaxWidth().softShadow()
+            modifier = Modifier.fillMaxWidth().softShadow(),
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 if (photoUrl != null) {
@@ -280,12 +281,12 @@ internal fun RoomListScreen(
                                     contentDescription = "Saigon.Social",
                                     modifier = Modifier
                                         .align(Alignment.CenterHorizontally)
-                                        .padding(bottom = 24.dp)
+                                        .padding(vertical = 24.dp)
                                         .size(128.dp),
                                 )
                                 Text(
-                                    text = "Welcome to Saigon Social. " +
-                                            "Rooms for every purpose. Let's chat about something! ",
+                                    text = "Welcome to Saigon.Social. " +
+                                            "Let's get taking! ",
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     textAlign = TextAlign.Center
@@ -296,7 +297,7 @@ internal fun RoomListScreen(
                     if (userDisplayName != null) {
                         item {
                             Text(
-                                text = "Hi $userDisplayName, how's it going?",
+                                text = "Hi $userDisplayName, let's get talking!",
                                 style = MaterialTheme.typography.displaySmall,
                                 modifier = Modifier.padding(vertical = 16.dp)
                             )
