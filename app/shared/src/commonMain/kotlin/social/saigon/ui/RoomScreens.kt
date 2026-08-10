@@ -108,88 +108,92 @@ private fun RoomCardItem(
 ) {
     val current = currentRoomId != null && room.id == currentRoomId
     val photoUrl = room.photos.firstOrNull()?.url
-    val scrimColor = MaterialTheme.colorScheme.surface
     Column {
-        Card(
-            onClick = { if (!current) onOpen(room) },
-            modifier = Modifier.fillMaxWidth().softShadow(),
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                if (photoUrl != null) {
-                    UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
-                    Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .innerGlow()
-                        .then(if (current) {
-                            Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
-                        } else {
-                            Modifier
-                        })
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(room.emoji, fontSize = 28.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            room.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            room.atmosphere,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        // The latest message preview, "Sender: text", below the
-                        // atmosphere line (loaded with the room list). Shown only when
-                        // the room actually has a message.
-                        room.lastMessageText?.let { text ->
-                            val sender = room.lastMessageSender?.takeIf { it.isNotBlank() }
+        // Photo-backed cards always use dark-mode colors so text stays light over the image in either theme.
+        // Edit/Delete stay outside so management actions keep the ambient theme.
+        PhotoBackdropTheme(enabled = photoUrl != null) {
+            val scrimColor = MaterialTheme.colorScheme.surface
+            Card(
+                onClick = { if (!current) onOpen(room) },
+                modifier = Modifier.fillMaxWidth().softShadow(),
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (photoUrl != null) {
+                        UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
+                        Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .innerGlow()
+                            .then(if (current) {
+                                Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+                            } else {
+                                Modifier
+                            })
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(room.emoji, fontSize = 28.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = buildAnnotatedString {
-                                    if (sender != null) {
-                                        // Bold the sender's name to make it stand out
-                                        // from the message text on the preview line.
-                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                            append("$sender: ")
-                                        }
-                                    }
-                                    append(text)
-                                },
+                                room.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                room.atmosphere,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                        // For signed-out visitors, surface the primary call-to-action on every
-                        // room so it's obvious that opening a chat is the main thing to do.
-                        if (!signedIn) {
-                            Button(
-                                onClick = { onOpen(room) },
-                                modifier = Modifier
-                                    .widthIn(max = 240.dp)
-                                    .fillMaxWidth()
-                                    .padding(top = 24.dp)
-                                    .align(Alignment.CenterHorizontally),
-                            ) {
-                                Text("Open chat")
+                            // The latest message preview, "Sender: text", below the
+                            // atmosphere line (loaded with the room list). Shown only when
+                            // the room actually has a message.
+                            room.lastMessageText?.let { text ->
+                                val sender = room.lastMessageSender?.takeIf { it.isNotBlank() }
+                                Text(
+                                    text = buildAnnotatedString {
+                                        if (sender != null) {
+                                            // Bold the sender's name to make it stand out
+                                            // from the message text on the preview line.
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                                append("$sender: ")
+                                            }
+                                        }
+                                        append(text)
+                                    },
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            // For signed-out visitors, surface the primary call-to-action on every
+                            // room so it's obvious that opening a chat is the main thing to do.
+                            if (!signedIn) {
+                                Button(
+                                    onClick = { onOpen(room) },
+                                    modifier = Modifier
+                                        .widthIn(max = 240.dp)
+                                        .fillMaxWidth()
+                                        .padding(top = 24.dp)
+                                        .align(Alignment.CenterHorizontally),
+                                ) {
+                                    Text("Open chat")
+                                }
                             }
                         }
+                        // Time since the last message, or the people count when the room
+                        // has no message yet.
+                        Text(
+                            room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Medium,
+                        )
                     }
-                    // Time since the last message, or the people count when the room
-                    // has no message yet.
-                    Text(
-                        room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.secondary,
-                        fontWeight = FontWeight.Medium,
-                    )
                 }
             }
         }
@@ -2899,76 +2903,79 @@ internal fun ThreadRepliesScreen(
 @Composable
 internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
     val photoUrl = service.photos.firstOrNull()?.url
-    val scrimColor = MaterialTheme.colorScheme.surface
-    Card(
-        modifier = Modifier
-            .width(180.dp)
-            .height(240.dp)
-            .softShadow()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (photoUrl != null) {
-                // The service's photo fills the card behind the text, with the top→bottom fade over it.
-                UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
-                Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .innerGlow()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
-                    Text(
-                        text = UiConstants.vnd(service.price),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+    // Photo-backed cards always use dark-mode colors so text stays light over the image in either theme.
+    PhotoBackdropTheme(enabled = photoUrl != null) {
+        val scrimColor = MaterialTheme.colorScheme.surface
+        Card(
+            modifier = Modifier
+                .width(180.dp)
+                .height(240.dp)
+                .softShadow()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable(onClick = onClick)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (photoUrl != null) {
+                    // The service's photo fills the card behind the text, with the top→bottom fade over it.
+                    UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
+                    Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
                 }
                 Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .innerGlow()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
+                        Text(
+                            text = UiConstants.vnd(service.price),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = service.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!service.listed) {
+                            Text(
+                                "Unlisted",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (service.description.isNotBlank()) {
+                            Text(
+                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     Text(
-                        text = service.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        text = "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (!service.listed) {
-                        Text(
-                            "Unlisted",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (service.description.isNotBlank()) {
-                        Text(
-                            "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
-                Text(
-                    text = "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }

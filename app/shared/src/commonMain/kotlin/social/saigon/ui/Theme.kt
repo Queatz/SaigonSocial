@@ -157,6 +157,20 @@ fun SaigonTheme(
 }
 
 /**
+ * Forces the app's dark color scheme for content drawn over a photo backdrop (e.g. room/service
+ * cards with a background image). Keeps text light and readable, and identical in light and dark
+ * app themes. When [enabled] is false the ambient theme is left unchanged.
+ */
+@Composable
+internal fun PhotoBackdropTheme(enabled: Boolean, content: @Composable () -> Unit) {
+    if (enabled) {
+        MaterialTheme(colorScheme = SaigonDarkColors, content = content)
+    } else {
+        content()
+    }
+}
+
+/**
  * A full-screen fill painted with the theme background colour, themed to follow the OS light/dark
  * scheme. Used as the placeholder for the brief window after the Compose canvas mounts but before
  * the real UI is composed (e.g. while web fallback fonts are still loading): without it the canvas

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.RectangleShape
 import org.jetbrains.compose.resources.painterResource
 import saigonsocial.app.shared.generated.resources.Res
 import saigonsocial.app.shared.generated.resources.icon
@@ -621,27 +622,18 @@ private fun TopBar(
     onBack: () -> Unit,
     onProfile: () -> Unit,
 ) {
+    val shape = RectangleShape //RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
     // A subtle gradient sheen across the bar (DESIGN §1) instead of one flat fill.
     Box(modifier = Modifier
         .fillMaxWidth()
-        .shadow(16.dp, RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
-        .clip(RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp))
-        .background(topBarBrush())
-        .innerShadow(                                              // 2. Overlay the inset shadow
-            shape = RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp),
-            shadow = androidx.compose.ui.graphics.shadow.Shadow(
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
-                radius = 12.dp,
-                offset = DpOffset(x = 0.dp, y = -2.dp),
-                spread = 1.dp
-            )
-        )
+        .shadow(16.dp, shape)
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
         if (backgroundPhotoUrl != null) {
             UrlImage(url = backgroundPhotoUrl, modifier = Modifier.matchParentSize())
             Box(modifier = Modifier.matchParentSize()
-                .background(servicePhotoScrim(MaterialTheme.colorScheme.surface))
-                .innerGlow(RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)))
+                .background(servicePhotoScrim(MaterialTheme.colorScheme.surface)))
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -652,8 +644,7 @@ private fun TopBar(
                 // glyph or a Material icon dependency) so it renders regardless of which fonts the
                 // Skiko renderer has loaded.
                 IconButton(onClick = onBack) {
-                    val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
-                    val arrowColor = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
+                    val arrowColor = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
                     Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
                         val w = size.width
                         val h = size.height
@@ -701,7 +692,7 @@ private fun TopBar(
                 }
                 Spacer(Modifier.width(16.dp))
             }
-            val primaryText = isSystemInDarkTheme() || backgroundPhotoUrl == null
+            val primaryText = isSystemInDarkTheme()
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,

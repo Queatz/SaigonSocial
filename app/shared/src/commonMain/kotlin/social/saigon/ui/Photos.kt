@@ -1,5 +1,6 @@
 package social.saigon.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,12 +10,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -32,9 +38,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.modifier.modifierLocalConsumer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,6 +105,134 @@ internal fun UrlImage(
         )
     } else {
         Box(modifier = modifier, contentAlignment = Alignment.Center) { fallback?.invoke() }
+    }
+}
+
+/**
+ * A large 16:9 landscape photo scroller: swipe/drag between [photos], with left/right arrow
+ * controls and a centered bottom dot line that reflects the current index and total count.
+ * Hidden when there are no photos. Used at the top of the service detail screen.
+ */
+@Composable
+internal fun LandscapePhotoScroller(
+    photos: List<ProfilePhoto>,
+    modifier: Modifier = Modifier,
+) {
+    if (photos.isEmpty()) return
+
+    val pagerState = rememberPagerState(pageCount = { photos.size })
+    val scope = rememberCoroutineScope()
+    val canGoBack = pagerState.currentPage > 0
+    val canGoForward = pagerState.currentPage < photos.lastIndex
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            UrlImage(
+                url = photos[page].url,
+                modifier = Modifier.fillMaxSize(),
+                fallback = { LoadingSpinner() },
+            )
+        }
+
+        // Soft bottom scrim so the dots stay readable over busy photos.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)),
+                    ),
+                ),
+        )
+
+        if (photos.size > 1) {
+            PhotoScrollerArrow(
+                facingLeft = true,
+                enabled = canGoBack,
+                onClick = {
+                    scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 8.dp),
+            )
+            PhotoScrollerArrow(
+                facingLeft = false,
+                enabled = canGoForward,
+                onClick = {
+                    scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 8.dp),
+            )
+        }
+
+        // Dot indicator line across the center bottom (current + total via filled/empty dots).
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            photos.forEachIndexed { index, _ ->
+                val selected = index == pagerState.currentPage
+                Box(
+                    modifier = Modifier
+                        .size(if (selected) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (selected) Color.White
+                            else Color.White.copy(alpha = 0.45f),
+                        ),
+                )
+            }
+        }
+    }
+}
+
+/** Circular left/right chevron control for [LandscapePhotoScroller], drawn with Canvas (no glyph fonts). */
+@Composable
+private fun PhotoScrollerArrow(
+    facingLeft: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = if (enabled) 0.35f else 0.15f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        val chevronAlpha = if (enabled) 1f else 0.4f
+        Canvas(modifier = Modifier.size(14.dp)) {
+            val stroke = Stroke(width = size.minDimension * 0.18f)
+            val insetX = size.width * 0.28f
+            val midY = size.height / 2f
+            val tipX = if (facingLeft) insetX else size.width - insetX
+            val baseX = if (facingLeft) size.width - insetX else insetX
+            val path = Path().apply {
+                moveTo(baseX, size.height * 0.18f)
+                lineTo(tipX, midY)
+                lineTo(baseX, size.height * 0.82f)
+            }
+            drawPath(path, color = Color.White.copy(alpha = chevronAlpha), style = stroke)
+        }
     }
 }
 

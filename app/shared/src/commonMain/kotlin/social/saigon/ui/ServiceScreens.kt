@@ -181,46 +181,49 @@ internal fun servicePhotoScrim(color: Color): Brush =
 @Composable
 internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
     val photoUrl = service.photos.firstOrNull()?.url
-    val scrimColor = MaterialTheme.colorScheme.surface
-    Card(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            if (photoUrl != null) {
-                // Photo fills the row behind the content, with the top→bottom fade over it.
-                UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
-                Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+    // Photo-backed cards always use dark-mode colors so text stays light over the image in either theme.
+    PhotoBackdropTheme(enabled = photoUrl != null) {
+        val scrimColor = MaterialTheme.colorScheme.surface
+        Card(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (photoUrl != null) {
+                    // Photo fills the row behind the content, with the top→bottom fade over it.
+                    UrlImage(url = photoUrl, modifier = Modifier.matchParentSize())
+                    Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+                }
+                Row(modifier = Modifier.fillMaxWidth().innerGlow().padding(12.dp)) {
+                    Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            Text(UiConstants.vnd(service.price), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        if (!service.listed) {
+                            Text(
+                                "Unlisted",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (service.description.isNotBlank()) {
+                            Text(
+                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
-        Row(modifier = Modifier.fillMaxWidth().innerGlow().padding(12.dp)) {
-            Text(service.emoji.ifBlank { "🌟" }, fontSize = 28.sp)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    Text(UiConstants.vnd(service.price), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-                if (!service.listed) {
-                    Text(
-                        "Unlisted",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (service.description.isNotBlank()) {
-                    Text(
-                        "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "in ${service.roomEmoji.ifBlank { "🏠" }} ${service.roomName}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         }
     }
 }
@@ -318,7 +321,6 @@ private fun ServicePhotoSection(
  * section whose "Send message" button opens (or reuses) a direct chat seeded with the typed
  * message and navigates the caller straight into that conversation.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ServiceDetailScreen(
     api: SaigonApi,
@@ -385,109 +387,128 @@ internal fun ServiceDetailScreen(
         }
         else -> {
             Column(
-                modifier = modifier.padding(16.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = modifier.verticalScroll(rememberScrollState()),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(s.emoji.ifBlank { "🌟" }, fontSize = 36.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("${UiConstants.vnd(s.price)} • in ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    // Copy-link affordance, mirroring rooms and threads (top-right).
-                    ShareButton(isService = true, path = "/services/${s.id}")
-                }
-                if (!s.listed) {
-                    Text(
-                        "This service is unlisted — it won't show up in the public search.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (s.description.isNotBlank()) {
-                    Text(s.description, fontSize = 15.sp)
-                }
-
-                Text(
-                    text = "Provided by ${nameWithBadge(s.providerName, s.providerRole)}",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
-                        scope.launch {
-                            runCatching { api.occupant(s.roomId, s.providerId) }
-                                .getOrNull()?.let { selectedOccupant = it }
-                        }
-                    }
-                )
-                // Disabled for now
-                if (false && s.providerLanguages.isNotEmpty()) {
-                    Text(
-                        "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // Large 16:9 landscape photo scroller across the top (swipe + arrows + dots).
+                if (s.photos.isNotEmpty()) {
+                    LandscapePhotoScroller(
+                        photos = s.photos,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 16.dp),
                     )
                 }
 
-                // Manage controls for the provider (or the Founder): edit, unlist/relist, delete.
-                if (isFounder || selfUserId == s.providerId) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedButton(enabled = !managing, onClick = { editing = true }) { Text("Edit") }
-                        OutlinedButton(
-                            enabled = !managing,
-                            onClick = {
-                                managing = true
-                                scope.launch {
-                                    runCatching {
-                                        if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
-                                    }.onSuccess { service = it }
-                                    managing = false
-                                }
-                            },
-                        ) { Text(if (s.listed) "Unlist" else "Relist") }
-                        TextButton(enabled = !managing, onClick = { confirmingDelete = true }) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(s.emoji.ifBlank { "🌟" }, fontSize = 36.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text(
+                                "${UiConstants.vnd(s.price)} • in ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Copy-link affordance, mirroring rooms and threads (top-right).
+                        ShareButton(isService = true, path = "/services/${s.id}")
+                    }
+                    if (!s.listed) {
+                        Text(
+                            "This service is unlisted — it won't show up in the public search.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (s.description.isNotBlank()) {
+                        Text(s.description, fontSize = 15.sp)
+                    }
+
+                    Text(
+                        text = "Provided by ${nameWithBadge(s.providerName, s.providerRole)}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
+                            scope.launch {
+                                runCatching { api.occupant(s.roomId, s.providerId) }
+                                    .getOrNull()?.let { selectedOccupant = it }
+                            }
+                        },
+                    )
+                    // Disabled for now
+                    if (false && s.providerLanguages.isNotEmpty()) {
+                        Text(
+                            "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // Manage controls for the provider (or the Founder): edit, unlist/relist, delete.
+                    if (isFounder || selfUserId == s.providerId) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(enabled = !managing, onClick = { editing = true }) { Text("Edit") }
+                            OutlinedButton(
+                                enabled = !managing,
+                                onClick = {
+                                    managing = true
+                                    scope.launch {
+                                        runCatching {
+                                            if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
+                                        }.onSuccess { service = it }
+                                        managing = false
+                                    }
+                                },
+                            ) { Text(if (s.listed) "Unlist" else "Relist") }
+                            TextButton(enabled = !managing, onClick = { confirmingDelete = true }) {
+                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
-                }
 
-                // Service photos (issue: "upload service photos ... display the service photos on
-                // the service page"): shown to everyone; the provider/Founder can add or delete them.
-                ServicePhotoSection(
-                    api = api,
-                    service = s,
-                    canManage = isFounder || selfUserId == s.providerId,
-                    onUpdated = { service = it },
-                )
+                    // Service photos (issue: "upload service photos ... display the service photos on
+                    // the service page"): shown to everyone; the provider/Founder can add or delete them.
+                    ServicePhotoSection(
+                        api = api,
+                        service = s,
+                        canManage = isFounder || selfUserId == s.providerId,
+                        onUpdated = { service = it },
+                    )
 
-                FeedbackSection(
-                    api = api,
-                    serviceId = serviceId,
-                    feedback = feedback,
-                    providerId = s.providerId,
-                    selfUserId = selfUserId,
-                    isFounder = isFounder,
-                    canLeaveFeedback = selfUserId != null,
-                    onChanged = { scope.launch { reloadFeedback() } },
-                )
-
-                if (selfUserId == null) {
-                    // Signed-out visitors can't message yet — invite them to sign in first.
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onSignIn,
-                    ) { Text("Sign in to get in touch with ${s.providerName}") }
-                } else if (canContact && selfUserId != s.providerId) {
-                    ContactProviderSection(
+                    FeedbackSection(
                         api = api,
                         serviceId = serviceId,
-                        providerName = s.providerName,
-                        onOpened = onOpenDirectChat,
+                        feedback = feedback,
+                        providerId = s.providerId,
+                        selfUserId = selfUserId,
+                        isFounder = isFounder,
+                        canLeaveFeedback = selfUserId != null,
+                        onChanged = { scope.launch { reloadFeedback() } },
                     )
+
+                    if (selfUserId == null) {
+                        // Signed-out visitors can't message yet — invite them to sign in first.
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onSignIn,
+                        ) { Text("Sign in to get in touch with ${s.providerName}") }
+                    } else if (canContact && selfUserId != s.providerId) {
+                        ContactProviderSection(
+                            api = api,
+                            serviceId = serviceId,
+                            providerName = s.providerName,
+                            onOpened = onOpenDirectChat,
+                        )
+                    }
                 }
             }
 
