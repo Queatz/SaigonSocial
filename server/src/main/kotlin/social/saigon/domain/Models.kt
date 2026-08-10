@@ -264,6 +264,16 @@ data class Service(
     /** Price in Vietnamese đồng (VND), stored as a whole integer (e.g. 50000 → 50.000đ). */
     val price: Int = 0,
     /**
+     * Semicolon-separated items that are included in the service. Rendered as a bullet list on the
+     * service detail screen ("What's included").
+     */
+    val included: String = "",
+    /**
+     * Semicolon-separated items that are not included in the service. Rendered as a small box with
+     * comma-separated text on the service detail screen ("What's not included").
+     */
+    val notIncluded: String = "",
+    /**
      * Whether the service is publicly listed. Unlisting hides it from the public search and the
      * provider's room profile without deleting it; the provider can relist it later.
      */

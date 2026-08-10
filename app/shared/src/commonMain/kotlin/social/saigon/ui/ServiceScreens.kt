@@ -441,7 +441,7 @@ internal fun ServiceDetailScreen(
                         },
                     )
                     // Disabled for now
-                    if (false && s.providerLanguages.isNotEmpty()) {
+                    if (s.providerLanguages.isNotEmpty()) {
                         Text(
                             "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
                             fontSize = 12.sp,
@@ -474,6 +474,11 @@ internal fun ServiceDetailScreen(
                             }
                         }
                     }
+
+                    ServiceInclusionsSection(
+                        included = s.included,
+                        notIncluded = s.notIncluded,
+                    )
 
                     // Service photos (issue: "upload service photos ... display the service photos on
                     // the service page"): shown to everyone; the provider/Founder can add or delete them.
@@ -638,7 +643,60 @@ internal fun ServiceDetailSheet(
     }
 }
 
-/** A dialog to edit a service's emoji, name, description, and price (provider or Founder). */
+/**
+ * "What's included" / "What's not included" on the service detail screen. Included items are
+ * semicolon-split into a bullet list; not-included items sit in a small box as comma-separated text.
+ */
+@Composable
+private fun ServiceInclusionsSection(included: String, notIncluded: String) {
+    val includedItems = remember(included) { splitSemicolonItems(included) }
+    val notIncludedItems = remember(notIncluded) { splitSemicolonItems(notIncluded) }
+    if (includedItems.isEmpty() && notIncludedItems.isEmpty()) return
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (includedItems.isNotEmpty()) {
+            Text("What's included", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            includedItems.forEach { item ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("•", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+                    Text(item, fontSize = 14.sp)
+                }
+            }
+        }
+        if (notIncludedItems.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "What's not included",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        notIncludedItems.joinToString(", "),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Split a semicolon-separated free-text field into trimmed non-empty items. */
+private fun splitSemicolonItems(raw: String): List<String> =
+    raw.split(';').map { it.trim() }.filter { it.isNotEmpty() }
+
+/** A dialog to edit a service's emoji, name, description, price, and inclusions (provider or Founder). */
 @Composable
 private fun EditServiceDialog(
     api: SaigonApi,
@@ -651,6 +709,8 @@ private fun EditServiceDialog(
     var name by remember { mutableStateOf(service.name) }
     var description by remember { mutableStateOf(service.description) }
     var price by remember { mutableStateOf(if (service.price > 0) service.price.toString() else "") }
+    var included by remember { mutableStateOf(service.included) }
+    var notIncluded by remember { mutableStateOf(service.notIncluded) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -697,6 +757,24 @@ private fun EditServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                OutlinedTextField(
+                    value = included,
+                    onValueChange = { included = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What's included") },
+                    placeholder = { Text("item one; item two; item three") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = notIncluded,
+                    onValueChange = { notIncluded = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What's not included") },
+                    placeholder = { Text("item one; item two") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -714,6 +792,8 @@ private fun EditServiceDialog(
                                 name = name.trim(),
                                 description = description.trim(),
                                 price = price.toIntOrNull() ?: 0,
+                                included = included.trim(),
+                                notIncluded = notIncluded.trim(),
                             )
                             onSaved()
                         } catch (e: Throwable) {

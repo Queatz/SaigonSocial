@@ -350,11 +350,13 @@ class SaigonApi(
         name: String,
         description: String,
         price: Int = 0,
+        included: String = "",
+        notIncluded: String = "",
     ): ServiceView =
         client.post("$baseUrl/rooms/$roomId/services") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(ServiceCreate(roomId, emoji, name, description, price))
+            setBody(ServiceCreate(roomId, emoji, name, description, price, included, notIncluded))
         }.decodeMember()
 
     /** The caller's own services across all rooms, including unlisted ones. Requires a member token. */
@@ -368,11 +370,13 @@ class SaigonApi(
         name: String,
         description: String,
         price: Int,
+        included: String = "",
+        notIncluded: String = "",
     ): ServiceView =
         client.put("$baseUrl/services/$serviceId") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(ServiceUpdate(emoji, name, description, price))
+            setBody(ServiceUpdate(emoji, name, description, price, included, notIncluded))
         }.decodeMember()
 
     /** Unlist a service (make it invisible in the public search). Requires a member token. */

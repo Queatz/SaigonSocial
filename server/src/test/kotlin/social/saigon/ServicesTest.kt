@@ -128,25 +128,36 @@ class ServicesTest {
         val founderToken = ts.issueMemberToken("founder", Role.FOUNDER)
         application { module(repositories = repositories, authConfig = authConfig) }
 
-        // Create with a price (stored as an integer VND amount).
+        // Create with a price and included/not-included lists (semicolon-separated free text).
         val created = client.post("/rooms/r1/services") {
             header(HttpHeaders.Authorization, "Bearer $supToken")
             contentType(ContentType.Application.Json)
-            setBody("""{"roomId":"r1","emoji":"🎸","name":"Guitar lessons","price":50000}""")
+            setBody(
+                """{"roomId":"r1","emoji":"🎸","name":"Guitar lessons","price":50000,""" +
+                    """"included":"1-hour lesson; instrument provided","notIncluded":"sheet music; travel"}""",
+            )
         }
         assertEquals(HttpStatusCode.OK, created.status)
         val body = created.bodyAsText()
         assertTrue(body.contains("\"price\":50000"))
+        assertTrue(body.contains("\"included\":\"1-hour lesson; instrument provided\""))
+        assertTrue(body.contains("\"notIncluded\":\"sheet music; travel\""))
         val serviceId = extractId(body)
 
-        // Edit the price (and name) as the provider.
+        // Edit the price, name, and inclusion fields as the provider.
         val edited = client.put("/services/$serviceId") {
             header(HttpHeaders.Authorization, "Bearer $supToken")
             contentType(ContentType.Application.Json)
-            setBody("""{"emoji":"🎸","name":"Guitar lessons","description":"","price":75000}""")
+            setBody(
+                """{"emoji":"🎸","name":"Guitar lessons","description":"","price":75000,""" +
+                    """"included":"2-hour lesson; picks","notIncluded":"amp"}""",
+            )
         }
         assertEquals(HttpStatusCode.OK, edited.status)
-        assertTrue(edited.bodyAsText().contains("\"price\":75000"))
+        val editedBody = edited.bodyAsText()
+        assertTrue(editedBody.contains("\"price\":75000"))
+        assertTrue(editedBody.contains("\"included\":\"2-hour lesson; picks\""))
+        assertTrue(editedBody.contains("\"notIncluded\":\"amp\""))
 
         // Unlist: hidden from the public search but still returned in the provider's own list.
         client.post("/services/$serviceId/unlist") {

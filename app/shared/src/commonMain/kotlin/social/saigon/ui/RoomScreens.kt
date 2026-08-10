@@ -1485,6 +1485,8 @@ private fun CreateServiceDialog(
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var included by remember { mutableStateOf("") }
+    var notIncluded by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -1531,6 +1533,24 @@ private fun CreateServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                OutlinedTextField(
+                    value = included,
+                    onValueChange = { included = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What's included") },
+                    placeholder = { Text("item one; item two; item three") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = notIncluded,
+                    onValueChange = { notIncluded = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What's not included") },
+                    placeholder = { Text("item one; item two") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1547,7 +1567,9 @@ private fun CreateServiceDialog(
                                 emoji.trim(),
                                 name.trim(),
                                 description.trim(),
-                                price.toIntOrNull() ?: 0
+                                price.toIntOrNull() ?: 0,
+                                included.trim(),
+                                notIncluded.trim(),
                             )
                             onCreated()
                         } catch (e: Throwable) {

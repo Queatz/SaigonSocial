@@ -136,6 +136,10 @@ data class ServiceCreate(
     val description: String = "",
     /** Price in VND (whole integer). */
     val price: Int = 0,
+    /** Semicolon-separated "What's included" items. */
+    val included: String = "",
+    /** Semicolon-separated "What's not included" items. */
+    val notIncluded: String = "",
 )
 
 /** Edit an existing service (provider or Founder). */
@@ -146,6 +150,10 @@ data class ServiceUpdate(
     val description: String = "",
     /** Price in VND (whole integer). */
     val price: Int = 0,
+    /** Semicolon-separated "What's included" items. */
+    val included: String = "",
+    /** Semicolon-separated "What's not included" items. */
+    val notIncluded: String = "",
 )
 
 /**
@@ -172,6 +180,10 @@ data class ServiceView(
     val providerInterests: List<String> = emptyList(),
     /** Price in VND (whole integer, e.g. 50000 → 50.000đ). */
     val price: Int = 0,
+    /** Semicolon-separated "What's included" items. */
+    val included: String = "",
+    /** Semicolon-separated "What's not included" items. */
+    val notIncluded: String = "",
     /** Whether the service is publicly listed (unlisted services are hidden from search). */
     val listed: Boolean = true,
     /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
@@ -991,6 +1003,8 @@ fun Application.registerRoutes(
                         name = req.name.trim(),
                         description = req.description.trim(),
                         price = req.price.coerceAtLeast(0),
+                        included = req.included.trim(),
+                        notIncluded = req.notIncluded.trim(),
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -1027,6 +1041,8 @@ fun Application.registerRoutes(
                         name = req.name.trim(),
                         description = req.description.trim(),
                         price = req.price.coerceAtLeast(0),
+                        included = req.included.trim(),
+                        notIncluded = req.notIncluded.trim(),
                     ),
                 )
                 call.respond(updated.toServiceView(repositories))
@@ -1706,6 +1722,8 @@ private fun Service.toServiceView(repositories: Repositories): ServiceView {
         providerLanguages = provider?.languages ?: emptyList(),
         providerInterests = provider?.interests ?: emptyList(),
         price = price,
+        included = included,
+        notIncluded = notIncluded,
         listed = listed,
         photos = photos,
         createdAt = createdAt,
