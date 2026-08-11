@@ -189,6 +189,76 @@ class ServicesTest {
     }
 
     @Test
+    fun servicePersistsItineraryActivitiesAndCancellationPolicy() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "sup", role = Role.SUPPORTER, displayName = "Minh"))
+        repositories.rooms.create(Room(id = "r1", name = "Room 1", emoji = "🏠", createdBy = "sup"))
+        val authConfig = AuthConfig(secret = "test-secret")
+        val supToken = TokenService(authConfig).issueMemberToken("sup", Role.SUPPORTER)
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        // Create with destinations, activities (Markdown body), and an explicit cancellation policy.
+        val created = client.post("/rooms/r1/services") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "roomId":"r1",
+                  "emoji":"🛵",
+                  "name":"Food tour",
+                  "destinations":[
+                    {"name":"Ben Thanh","address":"Le Loi","url":"https://maps.example/1","photos":[{"url":"https://content.local/d1.jpg","message":""}]},
+                    {"name":"Bui Vien","address":"District 1","url":"https://maps.example/2","photos":[]}
+                  ],
+                  "activities":[
+                    {"name":"Street snacks","text":"**Try** the local *banh mi*","photos":[]}
+                  ],
+                  "cancellationPolicy":"Free cancel up to 12 hours before."
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.OK, created.status)
+        val body = created.bodyAsText()
+        assertTrue(body.contains("\"name\":\"Ben Thanh\""))
+        assertTrue(body.contains("\"url\":\"https://maps.example/1\""))
+        assertTrue(body.contains("\"name\":\"Street snacks\""))
+        assertTrue(body.contains("**Try** the local *banh mi*"))
+        assertTrue(body.contains("Free cancel up to 12 hours before."))
+        val serviceId = extractId(body)
+
+        // Blank cancellation policy on edit falls back to the default 24-hour promise.
+        val edited = client.put("/services/$serviceId") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "emoji":"🛵",
+                  "name":"Food tour",
+                  "destinations":[{"name":"Only stop","address":"","url":"","photos":[]}],
+                  "activities":[],
+                  "cancellationPolicy":"   "
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.OK, edited.status)
+        // Blank input is stored as the default 24-hour promise (may be omitted from JSON when it
+        // equals the kotlinx default, so assert against the persisted row).
+        assertEquals(
+            social.saigon.domain.Service.DEFAULT_CANCELLATION_POLICY,
+            repositories.services.get(serviceId)!!.cancellationPolicy,
+        )
+        assertTrue(edited.bodyAsText().contains("\"name\":\"Only stop\""))
+        // Empty activity list is preserved; the old activity is gone.
+        assertFalse(edited.bodyAsText().contains("Street snacks"))
+        assertEquals(listOf("Only stop"), repositories.services.get(serviceId)!!.destinations.map { it.name })
+        assertTrue(repositories.services.get(serviceId)!!.activities.isEmpty())
+    }
+
+    @Test
     fun serviceOwnerCanAddAndDeletePhotosButOthersCannot() = testApplication {
         val repositories = Repositories()
         repositories.users.create(User(id = "sup", role = Role.SUPPORTER, displayName = "Minh"))

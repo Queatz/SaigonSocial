@@ -1059,7 +1059,7 @@ internal fun RoomChatScreen(
                             }
                         },
                         sendLabel = "Send",
-                        placeholder = if (hasToken) "Message" else "Sign in to reply",
+                        placeholder = if (hasToken) "Message" else "Sign in to chat",
                         enabled = hasToken,
                         onDisabledClick = onSignIn,
                         modifier = Modifier.padding(bottom = 16.dp)
@@ -1487,6 +1487,9 @@ private fun CreateServiceDialog(
     var price by remember { mutableStateOf("") }
     var included by remember { mutableStateOf("") }
     var notIncluded by remember { mutableStateOf("") }
+    val destinations = remember { mutableStateListOf<ServiceDestination>() }
+    val activities = remember { mutableStateListOf<ServiceActivity>() }
+    var cancellationPolicy by remember { mutableStateOf(DEFAULT_CANCELLATION_POLICY) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -1551,6 +1554,24 @@ private fun CreateServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                ServiceDestinationsEditor(
+                    api = api,
+                    destinations = destinations,
+                    enabled = !busy,
+                )
+                ServiceActivitiesEditor(
+                    api = api,
+                    activities = activities,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = cancellationPolicy,
+                    onValueChange = { cancellationPolicy = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Cancellation policy") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1563,13 +1584,17 @@ private fun CreateServiceDialog(
                     scope.launch {
                         try {
                             api.createService(
-                                roomId,
-                                emoji.trim(),
-                                name.trim(),
-                                description.trim(),
-                                price.toIntOrNull() ?: 0,
-                                included.trim(),
-                                notIncluded.trim(),
+                                roomId = roomId,
+                                emoji = emoji.trim(),
+                                name = name.trim(),
+                                description = description.trim(),
+                                price = price.toIntOrNull() ?: 0,
+                                included = included.trim(),
+                                notIncluded = notIncluded.trim(),
+                                destinations = destinations.toList(),
+                                activities = activities.toList(),
+                                cancellationPolicy = cancellationPolicy.trim()
+                                    .ifBlank { DEFAULT_CANCELLATION_POLICY },
                             )
                             onCreated()
                         } catch (e: Throwable) {
@@ -2181,7 +2206,7 @@ internal fun ShareButton(isService: Boolean = false, path: String? = null) {
         }
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("Share this ${if (isService) "service" else "room"}") },
+            title = { Text("Share this ${if (isService) "adventure" else "community"}!") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(

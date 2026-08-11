@@ -247,6 +247,31 @@ data class ThreadSummary(
 )
 
 /**
+ * A stop on a service's itinerary ("Where you'll go"). Order in the parent list is the visit
+ * sequence. [url] powers the "Get directions" button (opened in a new tab).
+ */
+@Serializable
+data class ServiceDestination(
+    val name: String = "",
+    val address: String = "",
+    /** Maps / directions link opened by "Get directions". */
+    val url: String = "",
+    val photos: List<ProfilePhoto> = emptyList(),
+)
+
+/**
+ * An activity on a service ("What you'll do"). [text] is Markdown-supported free text shown on the
+ * service detail screen.
+ */
+@Serializable
+data class ServiceActivity(
+    val name: String = "",
+    /** Markdown body describing the activity. */
+    val text: String = "",
+    val photos: List<ProfilePhoto> = emptyList(),
+)
+
+/**
  * A top-level service a Supporter provides. A service always belongs to a room: it is created from
  * a room, and every UI that shows a service also shows the room it lives in.
  */
@@ -274,6 +299,19 @@ data class Service(
      */
     val notIncluded: String = "",
     /**
+     * Ordered itinerary stops ("Where you'll go"). Sequence is visit order (1, 2, 3…).
+     */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /**
+     * Activities on the adventure ("What you'll do"), each with optional Markdown body + photos.
+     */
+    val activities: List<ServiceActivity> = emptyList(),
+    /**
+     * Free-text cancellation policy shown on the service detail screen. Defaults to a 24-hour free
+     * cancellation promise when the provider leaves it blank at create time.
+     */
+    val cancellationPolicy: String = DEFAULT_CANCELLATION_POLICY,
+    /**
      * Whether the service is publicly listed. Unlisting hides it from the public search and the
      * provider's room profile without deleting it; the provider can relist it later.
      */
@@ -285,7 +323,12 @@ data class Service(
      */
     val photos: List<ProfilePhoto> = emptyList(),
     val createdAt: Long = 0L,
-)
+) {
+    companion object {
+        /** Prefill for new adventures when the provider does not supply a custom policy. */
+        const val DEFAULT_CANCELLATION_POLICY = "Cancellation is free 24 hours before the adventure begins."
+    }
+}
 
 /**
  * A recorded service search. Persisted whenever someone searches the service list by name, so the

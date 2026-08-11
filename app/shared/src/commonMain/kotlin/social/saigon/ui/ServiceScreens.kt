@@ -5,17 +5,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Brush
@@ -39,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.launch
 
 /**
@@ -333,6 +339,8 @@ internal fun ServiceDetailScreen(
     onDeleted: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
     onOccupantSelected: (OccupantView) -> Unit = {},
+    /** Called whenever the loaded service's display title (name + emoji) is known or changes. */
+    onServiceTitle: (name: String, emoji: String) -> Unit = { _, _ -> },
     // Default fills the dedicated route page; the sheet passes a width-only modifier so short
     // content can hug height (same idea as ThreadSheet) instead of leaving empty bottom space.
     modifier: Modifier = Modifier.fillMaxSize(),
@@ -351,6 +359,12 @@ internal fun ServiceDetailScreen(
         if (selectedOccupant != null) {
             onOccupantSelected(selectedOccupant!!)
         }
+    }
+
+    // Keep the app top bar in sync with the loaded/edited service title.
+    LaunchedEffect(service?.name, service?.emoji) {
+        val loadedService = service ?: return@LaunchedEffect
+        onServiceTitle(loadedService.name, loadedService.emoji)
     }
 
     suspend fun reloadFeedback() {
@@ -480,6 +494,12 @@ internal fun ServiceDetailScreen(
                         notIncluded = s.notIncluded,
                     )
 
+                    WhereYoullGoSection(destinations = s.destinations)
+
+                    WhatYoullDoSection(activities = s.activities)
+
+                    CancellationPolicySection(policy = s.cancellationPolicy)
+
                     // Service photos (issue: "upload adventure photos ... display the adventure photos on
                     // the adventure page"): shown to everyone; the provider/Founder can add or delete them.
                     ServicePhotoSection(
@@ -514,6 +534,12 @@ internal fun ServiceDetailScreen(
                             onOpened = onOpenDirectChat,
                         )
                     }
+
+                    YouMightAlsoLikeSection(
+                        api = api,
+                        currentServiceId = serviceId,
+                        onOpenService = onOpenService,
+                    )
                 }
             }
 
@@ -692,11 +718,416 @@ private fun ServiceInclusionsSection(included: String, notIncluded: String) {
     }
 }
 
+/**
+ * Numbered itinerary ("Where you'll go"). Sequence is visit order; each stop can carry photos,
+ * a name, an address, and a directions URL opened in a new tab. Numbered badges are linked by a
+ * vertical timeline line so the visit order reads as a continuous path.
+ */
+@Composable
+private fun WhereYoullGoSection(destinations: List<ServiceDestination>) {
+    if (destinations.isEmpty()) return
+    val lineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("Where you'll go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(12.dp))
+        destinations.forEachIndexed { index, dest ->
+            val isLast = index == destinations.lastIndex
+            // Intrinsic min height lets the rail Column stretch to the stop content so the
+            // connector line runs from this badge down to the next.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxHeight(),
+                ) {
+                    SequenceBadge(number = index + 1)
+                    if (!isLast) {
+                        Box(
+                            modifier = Modifier
+                                .width(2.dp)
+                                .weight(1f)
+                                .background(lineColor),
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = if (isLast) 0.dp else 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (dest.name.isNotBlank()) {
+                        Text(dest.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    }
+                    if (dest.address.isNotBlank()) {
+                        Text(
+                            dest.address,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (dest.photos.isNotEmpty()) {
+                        LandscapePhotoScroller(
+                            photos = dest.photos,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
+                        )
+                    }
+                    if (dest.url.isNotBlank()) {
+                        OutlinedButton(onClick = { openUrl(dest.url) }) {
+                            Text("Get directions")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Activity list ("What you'll do"). Each activity can carry photos, a name, and a Markdown body.
+ */
+@Composable
+private fun WhatYoullDoSection(activities: List<ServiceActivity>) {
+    if (activities.isEmpty()) return
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("What you'll do", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        activities.forEachIndexed { index, activity ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SequenceBadge(number = index + 1)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        activity.name.ifBlank { "Activity ${index + 1}" },
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                }
+                if (activity.photos.isNotEmpty()) {
+                    LandscapePhotoScroller(
+                        photos = activity.photos,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
+                    )
+                }
+                if (activity.text.isNotBlank()) {
+                    Markdown(
+                        content = activity.text,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Plain-text cancellation policy block on the adventure detail screen. */
+@Composable
+private fun CancellationPolicySection(policy: String) {
+    if (policy.isBlank()) return
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Cancellation policy", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(policy, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Up to six other publicly listed adventures, chosen at random and excluding the current one.
+ * Rendered at the bottom of the detail screen with the same cards as the search list.
+ */
+@Composable
+private fun YouMightAlsoLikeSection(
+    api: SaigonApi,
+    currentServiceId: String,
+    onOpenService: (String) -> Unit,
+) {
+    val suggestions = remember(currentServiceId) { mutableStateListOf<ServiceView>() }
+    var loaded by remember(currentServiceId) { mutableStateOf(false) }
+
+    LaunchedEffect(currentServiceId) {
+        loaded = false
+        runCatching { api.services() }
+            .onSuccess { all ->
+                suggestions.clear()
+                suggestions.addAll(
+                    all.filter { it.id != currentServiceId }.shuffled().take(6),
+                )
+            }
+        loaded = true
+    }
+
+    if (!loaded || suggestions.isEmpty()) return
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("You might also like", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        suggestions.forEach { service ->
+            ServiceCard(service = service, onClick = { onOpenService(service.id) })
+        }
+    }
+}
+
+/** Circular 1, 2, 3… badge used by the itinerary and activity lists. */
+@Composable
+private fun SequenceBadge(number: Int) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = number.toString(),
+            color = MaterialTheme.colorScheme.onPrimary,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+        )
+    }
+}
+
 /** Split a semicolon-separated free-text field into trimmed non-empty items. */
 private fun splitSemicolonItems(raw: String): List<String> =
     raw.split(';').map { it.trim() }.filter { it.isNotEmpty() }
 
-/** A dialog to edit a service's emoji, name, description, price, and inclusions (provider or Founder). */
+/**
+ * Shared create/edit editors for the ordered "Where you'll go" list. Each stop is a compact card
+ * with name/address/URL fields, inline photo chips, and remove/add controls — keeps the dialog tidy
+ * without nested dialogs for every field.
+ */
+@Composable
+internal fun ServiceDestinationsEditor(
+    api: SaigonApi,
+    destinations: SnapshotStateList<ServiceDestination>,
+    enabled: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Where you'll go", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text(
+            "Add stops in the order guests will visit them.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        destinations.forEachIndexed { index, dest ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SequenceBadge(number = index + 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Stop ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(
+                            enabled = enabled,
+                            onClick = { destinations.removeAt(index) },
+                        ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    }
+                    OutlinedTextField(
+                        value = dest.name,
+                        onValueChange = { destinations[index] = dest.copy(name = it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Name") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        enabled = enabled,
+                    )
+                    OutlinedTextField(
+                        value = dest.address,
+                        onValueChange = { destinations[index] = dest.copy(address = it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Address") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        enabled = enabled,
+                    )
+                    OutlinedTextField(
+                        value = dest.url,
+                        onValueChange = { destinations[index] = dest.copy(url = it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Directions URL") },
+                        placeholder = { Text("https://maps.google.com/…") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        enabled = enabled,
+                    )
+                    ItemPhotosEditor(
+                        api = api,
+                        photos = dest.photos,
+                        enabled = enabled,
+                        onChange = { destinations[index] = dest.copy(photos = it) },
+                    )
+                }
+            }
+        }
+        OutlinedButton(
+            enabled = enabled,
+            onClick = { destinations.add(ServiceDestination()) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Add a stop") }
+    }
+}
+
+/**
+ * Shared create/edit editors for the "What you'll do" activity list. Mirrors
+ * [ServiceDestinationsEditor]: numbered cards with name, Markdown body, and photos.
+ */
+@Composable
+internal fun ServiceActivitiesEditor(
+    api: SaigonApi,
+    activities: SnapshotStateList<ServiceActivity>,
+    enabled: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("What you'll do", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text(
+            "Describe each activity. Markdown is supported in the text field.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        activities.forEachIndexed { index, activity ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SequenceBadge(number = index + 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Activity ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(
+                            enabled = enabled,
+                            onClick = { activities.removeAt(index) },
+                        ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    }
+                    OutlinedTextField(
+                        value = activity.name,
+                        onValueChange = { activities[index] = activity.copy(name = it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Name") },
+                        singleLine = true,
+                        shape = InputFieldShape,
+                        enabled = enabled,
+                    )
+                    OutlinedTextField(
+                        value = activity.text,
+                        onValueChange = { activities[index] = activity.copy(text = it) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                        label = { Text("Details (Markdown)") },
+                        placeholder = { Text("**Highlights**, lists, links…") },
+                        shape = InputFieldShape,
+                        enabled = enabled,
+                    )
+                    ItemPhotosEditor(
+                        api = api,
+                        photos = activity.photos,
+                        enabled = enabled,
+                        onChange = { activities[index] = activity.copy(photos = it) },
+                    )
+                }
+            }
+        }
+        OutlinedButton(
+            enabled = enabled,
+            onClick = { activities.add(ServiceActivity()) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Add an activity") }
+    }
+}
+
+/**
+ * Compact multi-photo manager for a destination/activity draft: thumbnail row + add/remove.
+ * Uploads go straight to the content server so create/edit can embed the resulting URLs.
+ */
+@Composable
+private fun ItemPhotosEditor(
+    api: SaigonApi,
+    photos: List<ProfilePhoto>,
+    enabled: Boolean,
+    onChange: (List<ProfilePhoto>) -> Unit,
+) {
+    var showUpload by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Photos", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (photos.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                photos.forEach { photo ->
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = enabled) {
+                                onChange(photos.filterNot { it.url == photo.url })
+                            },
+                    ) {
+                        UrlImage(
+                            url = photo.url,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(2.dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("×", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                }
+            }
+            Text(
+                "Tap a photo to remove it.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        OutlinedButton(
+            enabled = enabled,
+            onClick = { showUpload = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Add photo") }
+    }
+
+    if (showUpload) {
+        PhotoUploadDialog(
+            api = api,
+            title = "Add a photo",
+            currentPhoto = null,
+            onDismiss = { showUpload = false },
+            onSaved = { photo ->
+                onChange(photos + photo)
+                showUpload = false
+            },
+            confirmLabel = "Add photo",
+        )
+    }
+}
+
+/** A dialog to edit a service's fields, itinerary, activities, and cancellation policy. */
 @Composable
 private fun EditServiceDialog(
     api: SaigonApi,
@@ -711,6 +1142,15 @@ private fun EditServiceDialog(
     var price by remember { mutableStateOf(if (service.price > 0) service.price.toString() else "") }
     var included by remember { mutableStateOf(service.included) }
     var notIncluded by remember { mutableStateOf(service.notIncluded) }
+    val destinations = remember {
+        mutableStateListOf<ServiceDestination>().also { it.addAll(service.destinations) }
+    }
+    val activities = remember {
+        mutableStateListOf<ServiceActivity>().also { it.addAll(service.activities) }
+    }
+    var cancellationPolicy by remember {
+        mutableStateOf(service.cancellationPolicy.ifBlank { DEFAULT_CANCELLATION_POLICY })
+    }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -775,6 +1215,24 @@ private fun EditServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                ServiceDestinationsEditor(
+                    api = api,
+                    destinations = destinations,
+                    enabled = !busy,
+                )
+                ServiceActivitiesEditor(
+                    api = api,
+                    activities = activities,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = cancellationPolicy,
+                    onValueChange = { cancellationPolicy = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Cancellation policy") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -794,6 +1252,10 @@ private fun EditServiceDialog(
                                 price = price.toIntOrNull() ?: 0,
                                 included = included.trim(),
                                 notIncluded = notIncluded.trim(),
+                                destinations = destinations.toList(),
+                                activities = activities.toList(),
+                                cancellationPolicy = cancellationPolicy.trim()
+                                    .ifBlank { DEFAULT_CANCELLATION_POLICY },
                             )
                             onSaved()
                         } catch (e: Throwable) {
@@ -1036,7 +1498,7 @@ private fun ContactProviderSection(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Text("Get in touch with $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    Text("Book this adventure with $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     OutlinedTextField(
         value = message,
         onValueChange = { message = it; error = null },

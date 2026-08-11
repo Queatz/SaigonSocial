@@ -46,6 +46,8 @@ import social.saigon.domain.RoomCreate
 import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.domain.RoomUpdate
 import social.saigon.domain.Service
+import social.saigon.domain.ServiceActivity
+import social.saigon.domain.ServiceDestination
 import social.saigon.domain.ThreadSummary
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
@@ -140,6 +142,12 @@ data class ServiceCreate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy; blank falls back to the default 24-hour promise. */
+    val cancellationPolicy: String = Service.DEFAULT_CANCELLATION_POLICY,
 )
 
 /** Edit an existing service (provider or Founder). */
@@ -154,6 +162,12 @@ data class ServiceUpdate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy. */
+    val cancellationPolicy: String = Service.DEFAULT_CANCELLATION_POLICY,
 )
 
 /**
@@ -184,6 +198,12 @@ data class ServiceView(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy. */
+    val cancellationPolicy: String = Service.DEFAULT_CANCELLATION_POLICY,
     /** Whether the service is publicly listed (unlisted services are hidden from search). */
     val listed: Boolean = true,
     /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
@@ -1005,6 +1025,10 @@ fun Application.registerRoutes(
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
                         notIncluded = req.notIncluded.trim(),
+                        destinations = sanitizeDestinations(req.destinations),
+                        activities = sanitizeActivities(req.activities),
+                        cancellationPolicy = req.cancellationPolicy.trim()
+                            .ifBlank { Service.DEFAULT_CANCELLATION_POLICY },
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -1043,6 +1067,10 @@ fun Application.registerRoutes(
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
                         notIncluded = req.notIncluded.trim(),
+                        destinations = sanitizeDestinations(req.destinations),
+                        activities = sanitizeActivities(req.activities),
+                        cancellationPolicy = req.cancellationPolicy.trim()
+                            .ifBlank { Service.DEFAULT_CANCELLATION_POLICY },
                     ),
                 )
                 call.respond(updated.toServiceView(repositories))
@@ -1724,11 +1752,35 @@ private fun Service.toServiceView(repositories: Repositories): ServiceView {
         price = price,
         included = included,
         notIncluded = notIncluded,
+        destinations = destinations,
+        activities = activities,
+        cancellationPolicy = cancellationPolicy,
         listed = listed,
         photos = photos,
         createdAt = createdAt,
     )
 }
+
+/** Trim destination fields and drop fully-empty stops so the stored itinerary stays tidy. */
+private fun sanitizeDestinations(items: List<ServiceDestination>): List<ServiceDestination> =
+    items.map { dest ->
+        ServiceDestination(
+            name = dest.name.trim(),
+            address = dest.address.trim(),
+            url = dest.url.trim(),
+            photos = dest.photos,
+        )
+    }.filter { it.name.isNotEmpty() || it.address.isNotEmpty() || it.url.isNotEmpty() || it.photos.isNotEmpty() }
+
+/** Trim activity fields and drop fully-empty entries. */
+private fun sanitizeActivities(items: List<ServiceActivity>): List<ServiceActivity> =
+    items.map { activity ->
+        ServiceActivity(
+            name = activity.name.trim(),
+            text = activity.text.trim(),
+            photos = activity.photos,
+        )
+    }.filter { it.name.isNotEmpty() || it.text.isNotEmpty() || it.photos.isNotEmpty() }
 
 /** Enrich a [Feedback] with the author's display name + role (for the name badge). */
 private fun Feedback.toFeedbackView(repositories: Repositories): FeedbackView {

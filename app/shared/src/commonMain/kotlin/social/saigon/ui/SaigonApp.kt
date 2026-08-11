@@ -99,8 +99,13 @@ private sealed interface Screen {
     /** The `/adventures` search screen (issue §5). */
     data object Services : Screen
 
-    /** A single service's detail screen (issue §6), deep-linkable as "/adventures/{id}". */
-    data class ServiceDetail(val serviceId: String) : Screen
+    /** A single service's detail screen (issue §6), deep-linkable as "/adventures/{id}".
+     *  [serviceName]/[serviceEmoji] fill in once the detail loads so the top bar can show them. */
+    data class ServiceDetail(
+        val serviceId: String,
+        val serviceName: String? = null,
+        val serviceEmoji: String = "",
+    ) : Screen
 }
 
 /**
@@ -376,12 +381,17 @@ fun SaigonApp(
                         Screen.ServiceSearches -> "Adventure searches"
                         Screen.MyServices -> "Adventures hosted"
                         Screen.Services -> "Adventures"
-                        is Screen.ServiceDetail -> "Adventures"
+                        // Prefer the loaded service name (with emoji, matching rooms); fall back
+                        // to the generic list title until the detail fetch completes.
+                        is Screen.ServiceDetail -> s.serviceName?.let { name ->
+                            val emoji = s.serviceEmoji.trim()
+                            if (emoji.isNotEmpty()) "$emoji $name" else name
+                        } ?: "Adventures"
                     },
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's Social Adventure Community."
+                        is Screen.RoomList -> "Saigon's Social Educational Adventure Community."
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },
@@ -601,6 +611,17 @@ fun SaigonApp(
                                 onSignIn = { screen = Screen.Profile },
                                 onDeleted = { screen = Screen.Services },
                                 onOpenService = { screen = Screen.ServiceDetail(it) },
+                                // Mirror Private's onPeerName: once the detail loads (or is edited),
+                                // lift the name into Screen so the top bar title stays in sync.
+                                onServiceTitle = { name, emoji ->
+                                    val current = screen
+                                    if (
+                                        current is Screen.ServiceDetail &&
+                                        (current.serviceName != name || current.serviceEmoji != emoji)
+                                    ) {
+                                        screen = current.copy(serviceName = name, serviceEmoji = emoji)
+                                    }
+                                },
                             )
                         }
                     }

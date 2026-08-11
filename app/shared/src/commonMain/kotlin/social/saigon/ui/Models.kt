@@ -474,6 +474,34 @@ data class ThreadSummary(
     val lastReplyAt: Long? = null,
 )
 
+/**
+ * A stop on an adventure itinerary ("Where you'll go"). Order in the parent list is the visit
+ * sequence. [url] powers the "Get directions" button.
+ */
+@Serializable
+data class ServiceDestination(
+    val name: String = "",
+    val address: String = "",
+    /** Maps / directions link opened by "Get directions". */
+    val url: String = "",
+    val photos: List<ProfilePhoto> = emptyList(),
+)
+
+/**
+ * An activity on an adventure ("What you'll do"). [text] is Markdown-supported free text.
+ */
+@Serializable
+data class ServiceActivity(
+    val name: String = "",
+    /** Markdown body describing the activity. */
+    val text: String = "",
+    val photos: List<ProfilePhoto> = emptyList(),
+)
+
+/** Prefill for new adventures when the provider does not supply a custom cancellation policy. */
+const val DEFAULT_CANCELLATION_POLICY =
+    "Cancellation is free 24 hours before the adventure begins."
+
 /** A service as shown in the `/services` search and detail screens (`GET /services`). */
 @Serializable
 data class ServiceView(
@@ -497,6 +525,12 @@ data class ServiceView(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy. */
+    val cancellationPolicy: String = DEFAULT_CANCELLATION_POLICY,
     /** Whether the service is publicly listed (unlisted services are hidden from search). */
     val listed: Boolean = true,
     /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
@@ -521,6 +555,12 @@ data class ServiceCreate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy; blank falls back to the default 24-hour promise. */
+    val cancellationPolicy: String = DEFAULT_CANCELLATION_POLICY,
 )
 
 /** Edit an existing service (`PUT /services/{id}`). */
@@ -535,6 +575,12 @@ data class ServiceUpdate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Ordered itinerary stops ("Where you'll go"). */
+    val destinations: List<ServiceDestination> = emptyList(),
+    /** Activities ("What you'll do"), Markdown body supported. */
+    val activities: List<ServiceActivity> = emptyList(),
+    /** Free-text cancellation policy. */
+    val cancellationPolicy: String = DEFAULT_CANCELLATION_POLICY,
 )
 
 /** Public feedback on a service (`GET /services/{id}/feedback`). */

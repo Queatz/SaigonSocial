@@ -58,6 +58,9 @@ kotlin {
             implementation(libs.ktor.clientContentNegotiationMp)
             implementation(libs.ktor.clientWebsocketsMp)
             implementation(libs.ktor.serializationJsonMp)
+            // Markdown rendering for adventure "What you'll do" activity bodies.
+            implementation(libs.markdown.renderer)
+            implementation(libs.markdown.renderer.m3)
         }
         jsMain.dependencies {
             implementation(libs.ktor.clientJs)
