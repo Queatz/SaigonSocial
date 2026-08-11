@@ -99,11 +99,32 @@ internal fun ProfileScreen(
             var availability by remember(p.id) { mutableStateOf(p.offlineSchedule.joinToString("; ")) }
             // Availability is a Supporter perk (DESIGN §3, §7); Founders share it too.
             val isSupporter = p.role == Role.SUPPORTER || p.role == Role.FOUNDER
+            val editedInterests = interestsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val editedSchedule = availability.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+            // Only the fields the main "Save profile" action persists count as dirty; username,
+            // password, name, and photos each save through their own flows.
+            val hasChanges = profileEditorHasChanges(
+                baseline = p,
+                interests = editedInterests,
+                introduction = introduction,
+                skills = skills.toList(),
+                intents = intents.toList(),
+                languages = languages.toList(),
+                offlineSchedule = if (isSupporter) editedSchedule else p.offlineSchedule,
+            )
+            var saving by remember(p.id) { mutableStateOf(false) }
 
-            Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            // Scrollable form with a sticky bottom Save bar that only appears after edits, so the
+            // action stays findable on long profiles instead of living mid-scroll.
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .padding(bottom = if (hasChanges) 88.dp else 0.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 // The member's profile photo (issue: "Profile and community profile photos"): a large,
                 // centered photo button at the top; clicking it opens the upload dialog.
                 ProfilePhotoSection(api = api, profile = p, onUpdated = { profile = it })
@@ -276,35 +297,6 @@ internal fun ProfileScreen(
                     )
                 }
 
-                status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary) }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        status = null
-                        scope.launch {
-                            val update = ProfileUpdate(
-                                interests = interestsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                                introduction = introduction,
-                                skills = skills.toList(),
-                                intents = intents.toList(),
-                                languages = languages.toList(),
-                                offlineSchedule = if (isSupporter) {
-                                    availability.split(";").map { it.trim() }.filter { it.isNotEmpty() }
-                                } else {
-                                    null
-                                },
-                            )
-                            status = try {
-                                profile = api.updateProfile(update)
-                                "Saved."
-                            } catch (e: Throwable) {
-                                e.message ?: "Could not save"
-                            }
-                        }
-                    },
-                ) { Text("Save profile") }
-
                 if (isSupporter) {
                     OutlinedButton(onClick = onViewMyServices, modifier = Modifier.fillMaxWidth()) {
                         Text("Adventures hosted by you")
@@ -364,8 +356,81 @@ internal fun ProfileScreen(
                     )
                 }
             }
+
+                // Locked to the bottom of the profile screen while there are unsaved edits.
+                if (hasChanges) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .softShadow(),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // Errors stay here with the button; a successful save clears dirty state
+                            // and dismisses the bar.
+                            status?.let {
+                                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !saving,
+                                onClick = {
+                                    status = null
+                                    saving = true
+                                    scope.launch {
+                                        val update = ProfileUpdate(
+                                            interests = editedInterests,
+                                            introduction = introduction,
+                                            skills = skills.toList(),
+                                            intents = intents.toList(),
+                                            languages = languages.toList(),
+                                            offlineSchedule = if (isSupporter) editedSchedule else null,
+                                        )
+                                        try {
+                                            profile = api.updateProfile(update)
+                                            status = null
+                                        } catch (e: Throwable) {
+                                            status = e.message ?: "Could not save"
+                                        }
+                                        saving = false
+                                    }
+                                },
+                            ) { Text(if (saving) "Saving…" else "Save profile") }
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+/**
+ * Whether the profile editor form differs from the last loaded/saved profile. Used to show the
+ * sticky "Save profile" bar only after the member actually changes something.
+ */
+internal fun profileEditorHasChanges(
+    baseline: ProfileResponse,
+    interests: List<String>,
+    introduction: String,
+    skills: List<Skill>,
+    intents: List<String>,
+    languages: List<String>,
+    offlineSchedule: List<String>,
+): Boolean {
+    if (interests != baseline.interests) return true
+    if (introduction != baseline.introduction) return true
+    if (skills != baseline.skills) return true
+    // Toggle order is not meaningful for these badge lists.
+    if (intents.toSet() != baseline.intents.toSet()) return true
+    if (languages.toSet() != baseline.languages.toSet()) return true
+    if (offlineSchedule != baseline.offlineSchedule) return true
+    return false
 }
 
 /**

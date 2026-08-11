@@ -1570,7 +1570,7 @@ private fun ContactProviderSection(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Text("Book this adventure with $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    Text("Book this adventure with your host $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     OutlinedTextField(
         value = message,
         onValueChange = { message = it; error = null },
