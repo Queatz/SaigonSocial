@@ -22,10 +22,10 @@ class RoomService(private val rooms: RoomRepository) {
      */
     fun create(founderId: String, request: RoomCreate): Room {
         val name = request.name.trim()
-        require(name.isNotEmpty()) { "Room name required" }
-        require(!name.startsWith("#")) { "Room name must not start with '#'" }
+        require(name.isNotEmpty()) { "Community name required" }
+        require(!name.startsWith("#")) { "Community name must not start with '#'" }
         val emoji = request.emoji.trim()
-        require(emoji.isNotEmpty()) { "Room emoji required" }
+        require(emoji.isNotEmpty()) { "Community emoji required" }
         val id = resolveId(request.id)
         return rooms.create(
             Room(
@@ -50,9 +50,9 @@ class RoomService(private val rooms: RoomRepository) {
         val candidate = requested?.trim()
         if (candidate.isNullOrEmpty()) return UUID.randomUUID().toString()
         require(candidate.matches(ID_PATTERN)) {
-            "Room URL may only contain lowercase letters, digits and hyphens"
+            "Community URL may only contain lowercase letters, digits and hyphens"
         }
-        require(rooms.get(candidate) == null) { "That room URL is already taken" }
+        require(rooms.get(candidate) == null) { "That community URL is already taken" }
         return candidate
     }
 
@@ -62,13 +62,13 @@ class RoomService(private val rooms: RoomRepository) {
      * @throws IllegalArgumentException if the room is unknown or a provided field is invalid.
      */
     fun update(roomId: String, request: RoomUpdate): Room {
-        val room = rooms.get(roomId) ?: throw IllegalArgumentException("Unknown room")
+        val room = rooms.get(roomId) ?: throw IllegalArgumentException("Unknown community")
         val name = request.name?.trim()?.also {
-            require(it.isNotEmpty()) { "Room name required" }
-            require(!it.startsWith("#")) { "Room name must not start with '#'" }
+            require(it.isNotEmpty()) { "Community name required" }
+            require(!it.startsWith("#")) { "Community name must not start with '#'" }
         } ?: room.name
         val emoji = request.emoji?.trim()?.also {
-            require(it.isNotEmpty()) { "Room emoji required" }
+            require(it.isNotEmpty()) { "Community emoji required" }
         } ?: room.emoji
         val atmosphere = request.atmosphere?.trim() ?: room.atmosphere
         val photos = request.photos ?: room.photos

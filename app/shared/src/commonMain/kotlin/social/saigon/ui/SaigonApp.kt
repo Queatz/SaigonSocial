@@ -93,13 +93,13 @@ private sealed interface Screen {
     data object RoomSearches : Screen
     data object ServiceSearches : Screen
 
-    /** The caller's own "Services provided" list, reached from their profile. */
+    /** The caller's own "Adventures hosted" list, reached from their profile. */
     data object MyServices : Screen
 
-    /** The `/services` search screen (issue §5). */
+    /** The `/adventures` search screen (issue §5). */
     data object Services : Screen
 
-    /** A single service's detail screen (issue §6), deep-linkable as "/services/{id}". */
+    /** A single service's detail screen (issue §6), deep-linkable as "/adventures/{id}". */
     data class ServiceDetail(val serviceId: String) : Screen
 }
 
@@ -115,8 +115,8 @@ private sealed interface Screen {
 private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.RoomList -> "/"
     is Screen.Room ->
-        if (screen.threadId != null) "/room/${screen.room.id}/thread/${screen.threadId}"
-        else "/room/${screen.room.id}"
+        if (screen.threadId != null) "/community/${screen.room.id}/thread/${screen.threadId}"
+        else "/community/${screen.room.id}"
         
     is Screen.Invite -> "/invite/${screen.code}"
 
@@ -128,8 +128,8 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.RoomSearches -> null
     Screen.ServiceSearches -> null
     Screen.MyServices -> null
-    Screen.Services -> "/services"
-    is Screen.ServiceDetail -> "/services/${screen.serviceId}"
+    Screen.Services -> "/adventures"
+    is Screen.ServiceDetail -> "/adventures/${screen.serviceId}"
 }
 
 @Composable
@@ -151,7 +151,7 @@ fun SaigonApp(
 
         // Mirror the current screen into the browser URL + history so links are shareable and the
         // Back/Forward buttons walk the in-app navigation (DESIGN §12). The supported routes are
-        // "/", "/room/{id}", "/room/{id}/thread/{id}", and "/chat/{roomId}/{userId}" (see
+        // "/", "/community/{id}", "/community/{id}/thread/{id}", and "/chat/{roomId}/{userId}" (see
         // [screenToPath]).
         val scope = rememberCoroutineScope()
         val router = remember { UrlRouter() }
@@ -173,7 +173,8 @@ fun SaigonApp(
             if (segments.firstOrNull() == "invite" && segments.size >= 2) {
                 return Screen.Invite(segments[1])
             }
-            if (segments.firstOrNull() == "services") {
+            // Client URLs use adventures/community; accept legacy services/room paths too.
+            if (segments.firstOrNull() == "adventures" || segments.firstOrNull() == "services") {
                 return if (segments.size >= 2) Screen.ServiceDetail(segments[1]) else Screen.Services
             }
             // A private chat (DESIGN §7) is "/chat/{roomId}/{userId}". It keeps the room it started
@@ -188,7 +189,7 @@ fun SaigonApp(
                 }?.peerName ?: "…"
                 return Screen.Private(roomId, targetUserId, peerName)
             }
-            if (segments.firstOrNull() != "room" || segments.size < 2) return Screen.RoomList
+            if (segments.firstOrNull() !in setOf("community", "room") || segments.size < 2) return Screen.RoomList
             val roomId = segments[1]
             val room = runCatching { api.rooms() }.getOrNull()?.firstOrNull { it.id == roomId }
                 ?: return Screen.RoomList
@@ -371,16 +372,16 @@ fun SaigonApp(
                         Screen.ThreadReplies -> "Thread replies"
                         Screen.Profile -> if (token != null) "Your profile" else "Sign in"
                         Screen.Members -> "Members"
-                        Screen.RoomSearches -> "Room searches"
-                        Screen.ServiceSearches -> "Service searches"
-                        Screen.MyServices -> "Services provided"
-                        Screen.Services -> "Services"
-                        is Screen.ServiceDetail -> "Services"
+                        Screen.RoomSearches -> "Community searches"
+                        Screen.ServiceSearches -> "Adventure searches"
+                        Screen.MyServices -> "Adventures hosted"
+                        Screen.Services -> "Adventures"
+                        is Screen.ServiceDetail -> "Adventures"
                     },
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's Social Talk Hub."
+                        is Screen.RoomList -> "Saigon's Social Adventure Community."
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },

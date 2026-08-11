@@ -150,7 +150,7 @@ private fun RequestInviteDialog(api: SaigonApi, onDismiss: () -> Unit, onSubmitt
                     value = description,
                     onValueChange = { description = it; error = null },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Services you'd like to provide") },
+                    label = { Text("Adventures you'd like to host") },
                     shape = InputFieldShape,
                     enabled = !busy,
                 )

@@ -114,7 +114,7 @@ data class RedeemRequest(val code: String, val username: String, val password: S
 data class ChangeUsernameRequest(val username: String)
 
 /**
- * Set the caller's profile photo (issue: "Profile and room profile photos").
+ * Set the caller's profile photo (issue: "Profile and community profile photos").
  * [url] is a content-server URL from a prior upload; [message] is the user's caption for it.
  */
 @Serializable
@@ -157,7 +157,7 @@ data class ServiceUpdate(
 )
 
 /**
- * Add a photo to a service (issue: "upload service photos"). [url] is a content-server URL from a
+ * Add a photo to a service (issue: "upload adventure photos"). [url] is a content-server URL from a
  * prior upload; [message] is the provider's optional caption for it.
  */
 @Serializable
@@ -490,7 +490,7 @@ fun Application.registerRoutes(
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
                         // The main profile photo drives the avatar. The sheet's photo cards list
-                        // this room's photos first (issue: "Room profile photos"), then the full
+                        // this room's photos first (issue: "Community profile photos"), then the full
                         // main-profile set (main + previous).
                         photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
                         photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
@@ -529,7 +529,7 @@ fun Application.registerRoutes(
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
                     // The main profile photo drives the avatar. The sheet's photo cards list this
-                    // room's photos first (issue: "Room profile photos"), then the full
+                    // room's photos first (issue: "Community profile photos"), then the full
                     // main-profile set (main + previous).
                     photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
                     photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
@@ -544,7 +544,7 @@ fun Application.registerRoutes(
         get("/services") {
             val q = call.request.queryParameters["q"].orEmpty().trim().lowercase()
             // Optional filters so callers can list a single provider's services (their room profile
-            // "Providing" section, or their profile-wide "Services provided" screen), optionally
+            // "Hosting" section, or their profile-wide "Adventures hosted" screen), optionally
             // scoped to one room.
             val provider = call.request.queryParameters["provider"].orEmpty().trim()
             val room = call.request.queryParameters["room"].orEmpty().trim()
@@ -574,7 +574,7 @@ fun Application.registerRoutes(
         get("/services/{id}") {
             val id = call.parameters["id"].orEmpty()
             val service = repositories.services.get(id)
-                ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such service")); return@get }
+                ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such adventure")); return@get }
             call.respond(service.toServiceView(repositories))
         }
 
@@ -622,7 +622,7 @@ fun Application.registerRoutes(
             }
 
             // Set a new profile photo — or update the current one's caption (issue: "Profile and
-            // room profile photos"). A new URL becomes the main photo and rotates the previous
+            // community profile photos"). A new URL becomes the main photo and rotates the previous
             // main photo into the "previous photos" list.
             post("/profile/photo") {
                 val userId = requireMember(call.caller())
@@ -740,7 +740,7 @@ fun Application.registerRoutes(
                 call.respond(identities.getOrCreate(userId, roomId))
             }
 
-            // "Refresh my name & avatar in this room" — instant, user-controlled regeneration.
+            // "Refresh my name & avatar in this community" — instant, user-controlled regeneration.
             post("/rooms/{roomId}/identity/refresh") {
                 val userId = requireMember(call.caller())
                 val roomId = call.requireRoomId()
@@ -749,12 +749,12 @@ fun Application.registerRoutes(
 
             // Edit the caller's room-scoped profile (DESIGN §4, §5): a custom name plus per-room
             // overrides of interests/intents/languages/availability/providing. A Supporter perk
-            // ("Tailor your profile per room"); Sharers stick to the shared profile + name refresh.
+            // ("Tailor your profile per community"); Sharers stick to the shared profile + name refresh.
             put("/rooms/{roomId}/identity") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 require(caller.role == Role.SUPPORTER || caller.role.isAdmin) {
-                    "Only Supporters and the Founder can tailor their profile per room"
+                    "Only Supporters and the Founder can tailor their profile per community"
                 }
                 val roomId = call.requireRoomId()
                 val update = call.receive<RoomIdentityUpdate>()
@@ -766,7 +766,7 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 // Supporters and the Founder may create rooms (DESIGN §6).
                 require(caller.role.isAdmin || caller.role == Role.SUPPORTER) {
-                    "Only Supporters and the Founder can create rooms"
+                    "Only Supporters and the Founder can create communities"
                 }
                 val creatorId = caller.userId ?: throw IllegalArgumentException("Members only")
                 val req = call.receive<RoomCreate>()
@@ -803,7 +803,7 @@ fun Application.registerRoutes(
                 require(messageId.isNotBlank()) { "messageId required" }
                 val message = repositories.messages.get(messageId)
                     ?: throw IllegalArgumentException("That message does not exist.")
-                require(message.roomId == roomId) { "That message is not in this room." }
+                require(message.roomId == roomId) { "That message is not in this community." }
                 if (message.authorId != userId && !caller.role.isAdmin) {
                     throw ForbiddenException("Only the author or the Founder can recall a message.")
                 }
@@ -844,7 +844,7 @@ fun Application.registerRoutes(
                 require(reply.parentMessageId == messageId) { "That reply is not in this thread." }
                 val parent = repositories.messages.get(messageId)
                     ?: throw IllegalArgumentException("That message does not exist.")
-                require(parent.roomId == roomId) { "That reply is not in this room." }
+                require(parent.roomId == roomId) { "That reply is not in this community." }
                 if (reply.authorId != userId && !caller.role.isAdmin) {
                     throw ForbiddenException("Only the author or the Founder can recall a reply.")
                 }
@@ -985,15 +985,15 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val roomId = call.requireRoomId()
                 val room = repositories.rooms.get(roomId)
-                    ?: throw IllegalArgumentException("That room does not exist.")
+                    ?: throw IllegalArgumentException("That community does not exist.")
                 val user = repositories.users.get(userId)
                     ?: throw IllegalArgumentException("Unknown user")
                 require(user.role == Role.SUPPORTER || user.role == Role.FOUNDER) {
-                    "Only Supporters can provide services."
+                    "Only Supporters can host adventures."
                 }
                 val req = call.receive<ServiceCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
-                require(req.name.isNotBlank()) { "A service name is required." }
+                require(req.name.isNotBlank()) { "An adventure name is required." }
                 val service = repositories.services.create(
                     Service(
                         id = UUID.randomUUID().toString(),
@@ -1013,7 +1013,7 @@ fun Application.registerRoutes(
             }
 
             // The caller's own services across all rooms — including unlisted ones, so they can
-            // manage (edit / relist / delete) them from their "Services provided" screen.
+            // manage (edit / relist / delete) them from their "Adventures hosted" screen.
             get("/services/mine") {
                 val userId = requireMember(call.caller())
                 val mine = repositories.services.byProvider(userId)
@@ -1028,13 +1028,13 @@ fun Application.registerRoutes(
                 val userId = requireMember(caller)
                 val serviceId = call.parameters["id"].orEmpty()
                 val service = repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot edit this service."
+                    "You cannot edit this adventure."
                 }
                 val req = call.receive<ServiceUpdate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
-                require(req.name.isNotBlank()) { "A service name is required." }
+                require(req.name.isNotBlank()) { "An adventure name is required." }
                 val updated = repositories.services.update(
                     service.copy(
                         emoji = req.emoji.trim(),
@@ -1065,9 +1065,9 @@ fun Application.registerRoutes(
                 val userId = requireMember(caller)
                 val serviceId = call.parameters["id"].orEmpty()
                 val service = repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot delete this service."
+                    "You cannot delete this adventure."
                 }
                 repositories.services.delete(serviceId)
                 repositories.users.get(service.providerId)?.let { provider ->
@@ -1078,16 +1078,16 @@ fun Application.registerRoutes(
                 call.respond(mapOf("deleted" to serviceId))
             }
 
-            // Add a photo to a service (issue: "upload service photos"). Allowed for the provider
+            // Add a photo to a service (issue: "upload adventure photos"). Allowed for the provider
             // or a Founder. The new photo is prepended so the most recent one shows first.
             post("/services/{id}/photos") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val serviceId = call.parameters["id"].orEmpty()
                 val service = repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot add photos to this service."
+                    "You cannot add photos to this adventure."
                 }
                 val req = call.receive<AddServicePhotoRequest>()
                 val photoUrl = req.url.trim()
@@ -1110,9 +1110,9 @@ fun Application.registerRoutes(
                 val userId = requireMember(caller)
                 val serviceId = call.parameters["id"].orEmpty()
                 val service = repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot delete photos from this service."
+                    "You cannot delete photos from this adventure."
                 }
                 val url = call.request.queryParameters["url"].orEmpty()
                 require(url.isNotBlank()) { "url required" }
@@ -1127,7 +1127,7 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val serviceId = call.parameters["id"].orEmpty()
                 repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 val req = call.receive<FeedbackCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
                 val feedback = repositories.feedback.create(
@@ -1169,7 +1169,7 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val serviceId = call.parameters["id"].orEmpty()
                 val service = repositories.services.get(serviceId)
-                    ?: throw IllegalArgumentException("That service does not exist.")
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
                 val req = call.receive<ContactProviderRequest>()
                 val message = req.message.trim()
                 require(message.isNotBlank()) { "A message is required." }
@@ -1437,7 +1437,7 @@ data class RoomSummary(
     val lastMessageSender: String? = null,
     /** Unix epoch millis of the most recent message; null if the room has no messages. */
     val lastMessageAt: Long? = null,
-    /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
+    /** Room photos (issue: "Community photos will show up visibly in the community lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
 )
 
@@ -1483,7 +1483,7 @@ data class ProfileResponse(
     val passwordSet: Boolean = false,
     /** The member's current (main) profile photo; null until they upload one. */
     val photo: ProfilePhoto? = null,
-    /** Previous profile photos, newest first (issue: "Profile and room profile photos"). */
+    /** Previous profile photos, newest first (issue: "Profile and community profile photos"). */
     val previousPhotos: List<ProfilePhoto> = emptyList(),
 )
 
@@ -1696,9 +1696,9 @@ private suspend fun ApplicationCall.setServiceListed(repositories: Repositories,
     val userId = requireMember(caller)
     val serviceId = parameters["id"].orEmpty()
     val service = repositories.services.get(serviceId)
-        ?: throw IllegalArgumentException("That service does not exist.")
+        ?: throw IllegalArgumentException("That adventure does not exist.")
     require(service.providerId == userId || caller.role.isAdmin) {
-        "You cannot change this service."
+        "You cannot change this adventure."
     }
     val updated = repositories.services.update(service.copy(listed = listed))
     respond(updated.toServiceView(repositories))
@@ -1761,8 +1761,8 @@ private suspend fun authorName(
     } ?: authorId
 
 /**
- * Resolve the avatar photo URL to show for a member in a room context (issue: "everything room
- * related ... should take the latest photo from the room profile if there is one, otherwise fall
+ * Resolve the avatar photo URL to show for a member in a room context (issue: "everything community
+ * related ... should take the latest photo from the community profile if there is one, otherwise fall
  * back to the user profile"). Prefers the room identity's latest photo, then the member's main
  * profile photo; empty when neither exists (non-member / no photo).
  */

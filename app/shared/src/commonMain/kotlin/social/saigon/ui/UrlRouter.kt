@@ -7,18 +7,18 @@ package social.saigon.ui
  * Back/Forward buttons walk the in-app navigation:
  *
  *  - `/`                        → the room list (home)
- *  - `/room/{id}`               → a room / public chat
- *  - `/room/{id}/thread/{id}`   → that room with the thread sheet open
+ *  - `/community/{id}`               → a community / public chat
+ *  - `/community/{id}/thread/{id}`   → that community with the thread sheet open
  *  - `/chat/{roomId}/{userId}`  → a one-on-one private chat (DESIGN §7)
  *
  * On the web this is backed by `window.location` + `window.history`; other targets (Android) fall
  * back to a no-op router since there is no browser history to drive.
  */
 expect class UrlRouter() {
-    /** The current path, e.g. "/" or "/room/abc/thread/xyz". */
+    /** The current path, e.g. "/" or "/community/abc/thread/xyz". */
     fun current(): String
 
-    /** The full, shareable URL of the current screen, e.g. "https://saigon.social/room/abc". */
+    /** The full, shareable URL of the current screen, e.g. "https://saigon.social/community/abc". */
     fun currentUrl(): String
 
     /** Navigate forward, adding a new entry to the history back stack. */

@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /**
- * The `/services` search screen (issue §5). A search bar filters services by name (case-insensitive
+ * The `/adventures` search screen (issue §5). A search bar filters services by name (case-insensitive
  * partial match, done server-side), and each result card shows the emoji, name, a truncated
  * description, the room the service lives in, and the provider (with their role badge + a couple of
  * readily-available profile facets). Tapping a card opens the service detail screen.
@@ -70,7 +70,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
             results.clear()
             results.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load services"
+            error = e.message ?: "Could not load adventures"
         } finally {
             loaded = true
         }
@@ -84,7 +84,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Search services") },
+            label = { Text("Search adventures") },
             singleLine = true,
             shape = InputFieldShape,
         )
@@ -94,7 +94,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
         when {
             !loaded -> LoadingSpinner()
             results.isEmpty() -> Text(
-                if (query.isBlank()) "No services yet." else "No services match \"$query\".",
+                if (query.isBlank()) "No adventures yet." else "No adventures match \"$query\".",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -103,7 +103,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Popular services",
+                    text = "Popular adventures",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     modifier = Modifier.padding(top = 16.dp)
@@ -117,7 +117,7 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
 }
 
 /**
- * The caller's own "Services provided" list (reached from their profile). Lists every service the
+ * The caller's own "Adventures hosted" list (reached from their profile). Lists every service the
  * signed-in user provides, across all rooms, with a polite empty state. Tapping a card opens the
  * service detail screen.
  */
@@ -140,7 +140,7 @@ internal fun MyServicesScreen(
             results.clear()
             results.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load your services"
+            error = e.message ?: "Could not load your adventures"
         } finally {
             loaded = true
         }
@@ -154,7 +154,7 @@ internal fun MyServicesScreen(
         when {
             !loaded -> LoadingSpinner()
             results.isEmpty() -> Text(
-                "You haven't offered any services yet. Open a room and offer one from your room profile.",
+                "You haven't offered any adventures yet. Open a community and offer one from your community profile.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -229,8 +229,8 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
 }
 
 /**
- * The service-photo area on the service detail screen (issue: "upload service photos ... display
- * the service photos on the service page"). Photos are shown to everyone as vertical cards in a
+ * The service-photo area on the service detail screen (issue: "upload adventure photos ... display
+ * the adventure photos on the adventure page"). Photos are shown to everyone as vertical cards in a
  * wrapping flex row; tapping a card opens a read-only display. When [canManage] is true (the
  * provider or a Founder) an "Add a photo" button opens [PhotoUploadDialog], and tapping a card asks
  * to delete it with a confirmation dialog. Mirrors `ProfilePhotoSection`.
@@ -252,7 +252,7 @@ private fun ServicePhotoSection(
     Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     if (canManage) {
         Text(
-            "Add photos of your service. Click a photo to delete it.",
+            "Add photos of your adventure. Click a photo to delete it.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -282,7 +282,7 @@ private fun ServicePhotoSection(
     if (showUpload) {
         PhotoUploadDialog(
             api = api,
-            title = "Add a service photo",
+            title = "Add an adventure photo",
             // Always adding a fresh photo, so there is no current photo to pre-fill.
             currentPhoto = null,
             onDismiss = { showUpload = false },
@@ -298,7 +298,7 @@ private fun ServicePhotoSection(
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("Delete this photo?") },
-            text = { Text("This service photo will be removed for good.") },
+            text = { Text("This adventure photo will be removed for good.") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
@@ -317,7 +317,7 @@ private fun ServicePhotoSection(
 
 /**
  * The service detail screen (issue §6). Shows the full service info (emoji, name, description,
- * provider with role badge, room), the aggregated feedback display, and a "Contact provider"
+ * provider with role badge, room), the aggregated feedback display, and a "Contact host"
  * section whose "Send message" button opens (or reuses) a direct chat seeded with the typed
  * message and navigates the caller straight into that conversation.
  */
@@ -370,7 +370,7 @@ internal fun ServiceDetailScreen(
             service = api.service(serviceId)
             reloadFeedback()
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load this service"
+            error = e.message ?: "Could not load this adventure"
         } finally {
             loaded = true
         }
@@ -383,7 +383,7 @@ internal fun ServiceDetailScreen(
             useDelay = false // useful to give the sheet some initial height
         ) }
         s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(error ?: "This service could not be found.", color = MaterialTheme.colorScheme.error)
+            Text(error ?: "This adventure could not be found.", color = MaterialTheme.colorScheme.error)
         }
         else -> {
             Column(
@@ -416,11 +416,11 @@ internal fun ServiceDetailScreen(
                             )
                         }
                         // Copy-link affordance, mirroring rooms and threads (top-right).
-                        ShareButton(isService = true, path = "/services/${s.id}")
+                        ShareButton(isService = true, path = "/adventures/${s.id}")
                     }
                     if (!s.listed) {
                         Text(
-                            "This service is unlisted — it won't show up in the public search.",
+                            "This adventure is unlisted — it won't show up in the public search.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -430,7 +430,7 @@ internal fun ServiceDetailScreen(
                     }
 
                     Text(
-                        text = "Provided by ${nameWithBadge(s.providerName, s.providerRole)}",
+                        text = "Hosted by ${nameWithBadge(s.providerName, s.providerRole)}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
@@ -480,8 +480,8 @@ internal fun ServiceDetailScreen(
                         notIncluded = s.notIncluded,
                     )
 
-                    // Service photos (issue: "upload service photos ... display the service photos on
-                    // the service page"): shown to everyone; the provider/Founder can add or delete them.
+                    // Service photos (issue: "upload adventure photos ... display the adventure photos on
+                    // the adventure page"): shown to everyone; the provider/Founder can add or delete them.
                     ServicePhotoSection(
                         api = api,
                         service = s,
@@ -528,7 +528,7 @@ internal fun ServiceDetailScreen(
             if (confirmingDelete) {
                 AlertDialog(
                     onDismissRequest = { confirmingDelete = false },
-                    title = { Text("Delete this service?") },
+                    title = { Text("Delete this adventure?") },
                     text = { Text("This can't be undone.") },
                     confirmButton = {
                         TextButton(onClick = {
@@ -716,7 +716,7 @@ private fun EditServiceDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Edit service") },
+        title = { Text("Edit adventure") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -735,7 +735,7 @@ private fun EditServiceDialog(
                     value = name,
                     onValueChange = { name = it; error = null },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Service name") },
+                    label = { Text("Adventure name") },
                     singleLine = true,
                     shape = InputFieldShape,
                     enabled = !busy,
@@ -1023,7 +1023,7 @@ private fun LeaveFeedbackDialog(
     )
 }
 
-/** The "Contact provider" section: a message input + a "Send message" button (issue §6). */
+/** The "Contact host" section: a message input + a "Send message" button (issue §6). */
 @Composable
 private fun ContactProviderSection(
     api: SaigonApi,

@@ -68,7 +68,7 @@ internal fun timeAgo(epochMillis: Long): String {
  * list, the founder member directory, and the identity bar so every person is shown with a
  * consistent avatar rather than a raw id.
  *
- * When the member has a profile photo ([photoUrl], issue: "Profile and room profile photos") it is
+ * When the member has a profile photo ([photoUrl], issue: "Profile and community profile photos") it is
  * shown cropped to the circle; the [name]'s first letter renders underneath as the fallback while
  * the photo loads (or when there is none).
  */

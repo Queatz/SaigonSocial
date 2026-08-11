@@ -26,7 +26,7 @@ import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Saigon.Social visual identity (DESIGN §1 — "A digital room for the city").
+ * Saigon.Social visual identity (DESIGN §1 — "A digital community for the city").
  *
  * Reimagined professional palette: deep forest green primary paired with earthy browns and muted
  * blues for a grounded, trustworthy feel. High contrast neutrals over warm off-white (light) and

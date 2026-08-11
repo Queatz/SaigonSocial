@@ -2,7 +2,7 @@ package social.saigon.ui
 
 import androidx.compose.runtime.Composable
 
-// --- Platform photo picking (issue: "Profile and room profile photos") ---
+// --- Platform photo picking (issue: "Profile and community profile photos") ---
 
 /**
  * A platform image picker for profile-photo uploads. Returns a launcher: invoking it opens the

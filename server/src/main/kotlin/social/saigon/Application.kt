@@ -115,7 +115,7 @@ fun Application.module(
     routing {
         get("/") {
             call.respondText(
-                "Saigon's trusted chat room.",
+                "Saigon's trusted chat community.",
             )
         }
     }

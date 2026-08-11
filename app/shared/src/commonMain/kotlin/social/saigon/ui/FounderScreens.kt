@@ -83,8 +83,8 @@ internal fun FounderInviteSection(api: SaigonApi) {
     // Spell out what each tier can do so the founder picks the right one for the new member.
     Text(
         when (role) {
-            Role.SHARER -> "Sharer: Can chat in the rooms and initiate direct chats with supporters."
-            Role.SUPPORTER -> "Supporter: Can create rooms and receive direct chat requests from sharers."
+            Role.SHARER -> "Sharer: Can chat in the communities and initiate direct chats with supporters."
+            Role.SUPPORTER -> "Supporter: Can create communities and receive direct chat requests from sharers."
             else -> ""
         },
         fontSize = 12.sp,
@@ -213,7 +213,7 @@ internal fun FounderMembersScreen(api: SaigonApi) {
 
 /**
  * Stand-alone page hosting the founder-only list of recent room searches ([FounderRoomSearchesSection]),
- * reached via the "Room searches" button on the profile screen. Scrolls independently with the same
+ * reached via the "Community searches" button on the profile screen. Scrolls independently with the same
  * page padding the profile editor uses so it reads as its own screen.
  */
 @Composable
@@ -244,16 +244,16 @@ internal fun FounderRoomSearchesSection(api: SaigonApi) {
             searches.clear()
             searches.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load room searches"
+            error = e.message ?: "Could not load community searches"
         } finally {
             loaded = true
         }
     }
 
-    Text("Room searches", fontWeight = FontWeight.Bold)
+    Text("Community searches", fontWeight = FontWeight.Bold)
     Text(
-        "The latest searches people ran against the room list, newest first. Use them to understand " +
-            "what kinds of rooms people are looking for.",
+        "The latest searches people ran against the community list, newest first. Use them to understand " +
+            "what kinds of communities people are looking for.",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -263,7 +263,7 @@ internal fun FounderRoomSearchesSection(api: SaigonApi) {
     when {
         !loaded -> LoadingSpinner()
         searches.isEmpty() -> Text(
-            "No room searches yet.",
+            "No community searches yet.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -273,7 +273,7 @@ internal fun FounderRoomSearchesSection(api: SaigonApi) {
 
 /**
  * Stand-alone page hosting the founder-only list of recent service searches
- * ([FounderServiceSearchesSection]), reached via the "Service searches" button on the profile
+ * ([FounderServiceSearchesSection]), reached via the "Adventure searches" button on the profile
  * screen.
  */
 @Composable
@@ -304,16 +304,16 @@ internal fun FounderServiceSearchesSection(api: SaigonApi) {
             searches.clear()
             searches.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load service searches"
+            error = e.message ?: "Could not load adventure searches"
         } finally {
             loaded = true
         }
     }
 
-    Text("Service searches", fontWeight = FontWeight.Bold)
+    Text("Adventure searches", fontWeight = FontWeight.Bold)
     Text(
-        "The latest searches people ran against the service list, newest first. Use them to " +
-            "understand what kinds of services people are looking for.",
+        "The latest searches people ran against the adventure list, newest first. Use them to " +
+            "understand what kinds of adventures people are looking for.",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -323,7 +323,7 @@ internal fun FounderServiceSearchesSection(api: SaigonApi) {
     when {
         !loaded -> LoadingSpinner()
         searches.isEmpty() -> Text(
-            "No service searches yet.",
+            "No adventure searches yet.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

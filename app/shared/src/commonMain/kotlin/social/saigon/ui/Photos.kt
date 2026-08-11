@@ -54,7 +54,7 @@ import io.ktor.client.request.get
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
-// --- Profile photo display (issue: "Profile and room profile photos") ---
+// --- Profile photo display (issue: "Profile and community profile photos") ---
 
 /**
  * Fetches and decodes profile photos from the content server, with a session-wide in-memory cache
@@ -362,7 +362,7 @@ internal fun PhotoDisplayDialog(
 internal class PickedPhoto(val bytes: ByteArray, val mimeType: String, val preview: ImageBitmap)
 
 /**
- * A reusable photo-upload dialog (issue: "Profile and room profile photos"): a rounded-rectangle
+ * A reusable photo-upload dialog (issue: "Profile and community profile photos"): a rounded-rectangle
  * area to drop or click to choose a photo — previewed once picked but still clickable to swap —
  * plus a caption box. On confirm it uploads any newly-picked bytes to the content server and hands
  * the resulting [ProfilePhoto] (URL + caption) to [onSaved]; with no new photo picked it reuses

@@ -100,7 +100,7 @@ internal fun ProfileScreen(
                 modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // The member's profile photo (issue: "Profile and room profile photos"): a large,
+                // The member's profile photo (issue: "Profile and community profile photos"): a large,
                 // centered photo button at the top; clicking it opens the upload dialog.
                 ProfilePhotoSection(api = api, profile = p, onUpdated = { profile = it })
 
@@ -244,7 +244,7 @@ internal fun ProfileScreen(
 
                 if (isSupporter) {
                     OutlinedButton(onClick = onViewMyServices, modifier = Modifier.fillMaxWidth()) {
-                        Text("Services provided")
+                        Text("Adventures hosted")
                     }
                 }
 
@@ -273,10 +273,10 @@ internal fun ProfileScreen(
                         Text("View members")
                     }
                     OutlinedButton(onClick = onViewRoomSearches, modifier = Modifier.fillMaxWidth()) {
-                        Text("Room searches")
+                        Text("Community searches")
                     }
                     OutlinedButton(onClick = onViewServiceSearches, modifier = Modifier.fillMaxWidth()) {
-                        Text("Service searches")
+                        Text("Adventure searches")
                     }
                 }
 
@@ -306,7 +306,7 @@ internal fun ProfileScreen(
 }
 
 /**
- * The profile-photo area at the top of the profile screen (issue: "Profile and room profile
+ * The profile-photo area at the top of the profile screen (issue: "Profile and community profile
  * photos"): a large, centered profile button (the photo, or the letter avatar until one exists)
  * with its label underneath. Clicking it opens [PhotoUploadDialog]. Previous profile photos are
  * shown below as vertical cards in a wrapping flex row; clicking a card asks to delete it.
@@ -530,9 +530,9 @@ private fun BecomeSupporterBubble() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
-                    "🤝 Provide your services on your profile",
-                    "🎯 Tailor your profile in each room",
-                    "🏠 Create rooms your own rooms",
+                    "🤝 Host your adventures on your profile",
+                    "🎯 Tailor your profile in each community",
+                    "🏠 Create your own communities",
                     "💬 Accept direct chats from people",
                 ).forEach { line ->
                     Text(

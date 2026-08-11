@@ -274,7 +274,7 @@ internal fun RoomListScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     // Hero section (logo + welcome text) is for first-time/visitor context only;
-                    // once the user is signed in we hide it so the "Search rooms" row sits right
+                    // once the user is signed in we hide it so the "Search communities" row sits right
                     // below the top bar.
                     if (!signedIn) {
                         item {
@@ -374,7 +374,7 @@ internal fun RoomListScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Popular services",
+                                    text = "Popular adventures",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp
                                 )
@@ -401,7 +401,7 @@ internal fun RoomListScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "No services yet.",
+                                        text = "No adventures yet.",
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -430,7 +430,7 @@ internal fun RoomListScreen(
                                 OutlinedTextField(
                                     value = search,
                                     onValueChange = { search = it },
-                                    label = { Text("Search rooms") },
+                                    label = { Text("Search communities") },
                                     singleLine = true,
                                     shape = InputFieldShape,
                                     modifier = Modifier.weight(1f),
@@ -449,7 +449,7 @@ internal fun RoomListScreen(
                     val searching = search.trim().isNotEmpty()
                     item {
                         Text(
-                            text = if (searching) "Results" else "Popular rooms",
+                            text = if (searching) "Results" else "Popular communities",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(top = 16.dp)
@@ -458,7 +458,7 @@ internal fun RoomListScreen(
                     if (rooms!!.isEmpty() && searching) {
                         item {
                             Text(
-                                text = "No rooms found.",
+                                text = "No communities found.",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -483,7 +483,7 @@ internal fun RoomListScreen(
     if (showCreate) {
         RoomFormDialog(
             api = api,
-            title = "New room",
+            title = "New community",
             initial = null,
             error = createError,
             submitting = creatingRoom,
@@ -504,7 +504,7 @@ internal fun RoomListScreen(
                             reload()
                         },
                         onFailure = {
-                            createError = it.message ?: "Could not create the room. Please try again."
+                            createError = it.message ?: "Could not create the community. Please try again."
                         },
                     )
                 }
@@ -515,7 +515,7 @@ internal fun RoomListScreen(
     editing?.let { room ->
         RoomFormDialog(
             api = api,
-            title = "Edit room",
+            title = "Edit community",
             initial = room,
             onDismiss = { editing = null },
             onConfirm = { name, emoji, atmosphere, _, photos ->
@@ -531,7 +531,7 @@ internal fun RoomListScreen(
     deleting?.let { room ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete room") },
+            title = { Text("Delete community") },
             text = { Text("Delete \"${room.name}\"? This can't be undone.") },
             confirmButton = {
                 TextButton(onClick = {
@@ -635,7 +635,7 @@ private fun RoomFormDialog(
 
                 Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text(
-                    "Add photos of your room. Click a photo to delete it.",
+                    "Add photos of your community. Click a photo to delete it.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -679,7 +679,7 @@ private fun RoomFormDialog(
     if (showUpload) {
         PhotoUploadDialog(
             api = api,
-            title = "Add a room photo",
+            title = "Add a community photo",
             currentPhoto = null,
             onDismiss = { showUpload = false },
             onSaved = { photo ->
@@ -694,7 +694,7 @@ private fun RoomFormDialog(
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("Delete this photo?") },
-            text = { Text("This room photo will be removed from the list.") },
+            text = { Text("This community photo will be removed from the list.") },
             confirmButton = {
                 TextButton(onClick = {
                     photos = photos.filterNot { it.url == photo.url }
@@ -768,7 +768,7 @@ internal fun RoomChatScreen(
     var reachedStart by remember(room.id) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     // Services offered in this room: shown as a horizontal strip along the top of the chat area,
-    // and also backing the "N provided services" button under "In the room".
+    // and also backing the "N hosted adventures" button under "In the community".
     val roomServices = remember(room.id) { mutableStateListOf<ServiceView>() }
 
     LaunchedEffect(room.id) {
@@ -783,7 +783,7 @@ internal fun RoomChatScreen(
             // that raced the old socket's close), and we must never show one person twice (DESIGN §6).
             occupants.clear(); occupants.addAll(api.occupants(room.id).distinctBy { it.userId })
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load this room"
+            error = e.message ?: "Could not load this community"
         }
         loading = false
     }
@@ -895,7 +895,7 @@ internal fun RoomChatScreen(
                         onIncomingChat(chat)
                     },
                     onPresenceChanged = {
-                        // Someone joined or left (DESIGN §6): refresh the live "In the room" list so
+                        // Someone joined or left (DESIGN §6): refresh the live "In the community" list so
                         // it reflects who is actually present right now, not just at room-open time.
                         scope.launch {
                             runCatching { api.occupants(room.id) }.getOrNull()?.let {
@@ -917,7 +917,7 @@ internal fun RoomChatScreen(
         return
     }
 
-    // Reload the live "In the room" list, e.g. after the caller refreshes their name or saves a
+    // Reload the live "In the community" list, e.g. after the caller refreshes their name or saves a
     // room-scoped profile edit, so their own card reflects the change (DESIGN §5, §6).
     val reloadOccupants: () -> Unit = {
         scope.launch {
@@ -927,7 +927,7 @@ internal fun RoomChatScreen(
         }
     }
     // Refresh the caller's room-scoped identity (a fresh anonymous name) and reload the occupant
-    // list so the user's own entry in "In the room" picks up the new name (DESIGN §5). Surfaced from
+    // list so the user's own entry in "In the community" picks up the new name (DESIGN §5). Surfaced from
     // the member-detail sheet on the user's own card, replacing the standalone identity bar.
     val onRefreshIdentity: () -> Unit = {
         scope.launch {
@@ -977,7 +977,7 @@ internal fun RoomChatScreen(
                         Spacer(Modifier.height(12.dp))
                     }
                     // Room services strip along the top of the chat area (kept in addition to the
-                    // "In the room" sheet button). Horizontally scrollable clickable ServiceCards.
+                    // "In the community" sheet button). Horizontally scrollable clickable ServiceCards.
                     if (roomServices.isNotEmpty()) {
                         Row(
                             modifier = Modifier
@@ -1187,7 +1187,7 @@ private fun List<OccupantView>.selfFirst(selfUserId: String?): List<OccupantView
 
 /**
  * A bottom sheet showing the full details of a single room member (DESIGN §5, §6, §7). Opened by
- * tapping anyone in the "In the room" list — including yourself. The primary action adapts to who
+ * tapping anyone in the "In the community" list — including yourself. The primary action adapts to who
  * is shown: "🔄 Refresh" for your own identity (merging the former identity bar), "Start chat" for
  * Supporters/Founders you can reach, and "Close" for everyone else.
  */
@@ -1207,12 +1207,12 @@ internal fun OccupantDetailSheet(
 ) {
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
-    // Supporters/Founders tailor their profile per room ("Edit your room profile"); Sharers only
+    // Supporters/Founders tailor their profile per room ("Edit your community profile"); Sharers only
     // refresh their anonymous name (DESIGN §4, §5). Tracks whether the edit dialog is open.
     var editingRoomProfile by remember { mutableStateOf(false) }
     var offeringService by remember { mutableStateOf(false) }
     val canEditRoomProfile = person.role == Role.SUPPORTER || person.role == Role.FOUNDER
-    // The services this member provides in this room, shown under a "Providing" section. Reloaded
+    // The services this member provides in this room, shown under a "Hosting" section. Reloaded
     // whenever the member creates a new one (via [servicesReload]) so it appears without reopening.
     val services = remember(person.userId, roomId) { mutableStateListOf<ServiceView>() }
     var servicesReload by remember(person.userId, roomId) { mutableStateOf(0) }
@@ -1272,7 +1272,7 @@ internal fun OccupantDetailSheet(
                 Spacer(Modifier.height(4.dp))
                 Text(person.interests.joinToString(" · "), fontSize = 14.sp)
             }
-            // Photo cards: this room's photos come first (issue: "Room profile photos"), then the
+            // Photo cards: this room's photos come first (issue: "Community profile photos"), then the
             // main-profile set, exactly as the server orders them. Shown above "Here for".
             if (person.photos.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1301,7 +1301,7 @@ internal fun OccupantDetailSheet(
             }
             if (services.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text("Provides", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Hosts", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     services.forEach { service ->
@@ -1319,12 +1319,12 @@ internal fun OccupantDetailSheet(
                     OutlinedButton(
                         onClick = { editingRoomProfile = true },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("✏️ Edit your room profile") }
+                    ) { Text("✏️ Edit your community profile") }
                     // A service always belongs to the room it's created from (issue §1).
                     Button(
                         onClick = { offeringService = true },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("➕ Provide a service in this room") }
+                    ) { Text("➕ Host an adventure in this community") }
                 }
 
                 isSelf -> OutlinedButton(
@@ -1363,7 +1363,7 @@ internal fun OccupantDetailSheet(
 }
 
 /**
- * A single service list item, rendered identically in the member-detail sheet's "Providing"
+ * A single service list item, rendered identically in the member-detail sheet's "Hosting"
  * section and the room-wide [RoomServicesSheet] so the two always stay in visual sync. Shows the
  * service's emoji + name, its price (and description when present), and a "Details" button that
  * opens the full service via [onOpenService].
@@ -1393,17 +1393,17 @@ private fun ServiceItemRow(service: ServiceView, onOpenService: (String) -> Unit
 }
 
 /**
- * Dynamic label for the "provided services" button that reveals [RoomServicesSheet]: "1 provided
- * service" / "N provided services", matching the room's live service count.
+ * Dynamic label for the "hosted adventures" button that reveals [RoomServicesSheet]: "1 hosted
+ * adventure" / "N hosted adventures", matching the room's live service count.
  */
 internal fun servicesProvidedLabel(count: Int): String = when (count) {
-    1 -> "$count provided service"
-    else -> "$count provided services"
+    1 -> "$count hosted adventure"
+    else -> "$count hosted adventures"
 }
 
 /**
- * A bottom sheet listing every service provided by people in the room, opened by the "N provided
- * services" button beside the occupant list/scroller. Each item reuses [ServiceCard], matching the
+ * A bottom sheet listing every service provided by people in the room, opened by the "N hosted
+ * adventures" button beside the occupant list/scroller. Each item reuses [ServiceCard], matching the
  * look of the service search/detail screens; tapping a card opens the full service via [onOpenService].
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1437,7 +1437,7 @@ private fun RoomServicesSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp)
         ) {
-            Text("Services provided in this room", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Adventures hosted in this community", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(4.dp))
             Text(
                 text = servicesProvidedLabel(services.size),
@@ -1447,7 +1447,7 @@ private fun RoomServicesSheet(
             Spacer(Modifier.height(16.dp))
             if (services.isEmpty()) {
                 Text(
-                    "Nobody's offering a service here yet.",
+                    "Nobody's offering an adventure here yet.",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1492,7 +1492,7 @@ private fun CreateServiceDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Provide a service") },
+        title = { Text("Host an adventure") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1511,7 +1511,7 @@ private fun CreateServiceDialog(
                     value = name,
                     onValueChange = { name = it; error = null },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Service name") },
+                    label = { Text("Adventure name") },
                     singleLine = true,
                     shape = InputFieldShape,
                     enabled = !busy,
@@ -1573,7 +1573,7 @@ private fun CreateServiceDialog(
                             )
                             onCreated()
                         } catch (e: Throwable) {
-                            error = e.message ?: "Could not create the service."
+                            error = e.message ?: "Could not create the adventure."
                         } finally {
                             busy = false
                         }
@@ -1586,7 +1586,7 @@ private fun CreateServiceDialog(
 }
 
 /**
- * The "Edit your room profile" dialog (DESIGN §4, §5). A Supporter/Founder perk that lets the
+ * The "Edit your community profile" dialog (DESIGN §4, §5). A Supporter/Founder perk that lets the
  * caller tailor their name and profile facets — interests, intents, languages, availability, and
  * services provided — just for the current room. Each facet starts out inheriting the caller's main
  * profile; a per-row "Use my profile default" reset drops the room-scoped override so that facet
@@ -1612,7 +1612,7 @@ private fun EditRoomProfileDialog(
             profile = api.profile()
             identity = api.identity(roomId)
         } catch (e: Throwable) {
-            loadError = e.message ?: "Could not load your room profile."
+            loadError = e.message ?: "Could not load your community profile."
         }
     }
 
@@ -1670,7 +1670,7 @@ private fun EditRoomProfileForm(
         mutableStateOf((identity.offlineSchedule ?: profile.offlineSchedule).joinToString("; "))
     }
 
-    // Room-scoped photos (issue: "Room profile photos"). Unlike the facets above these aren't an
+    // Room-scoped photos (issue: "Community profile photos"). Unlike the facets above these aren't an
     // inherit/override toggle: they belong only to this room and are sent as-is on save. The upload
     // itself happens in the shared dialog; here we just track the resulting list.
     val photos = remember { mutableStateListOf<ProfilePhoto>().apply { addAll(identity.photos) } }
@@ -1682,14 +1682,14 @@ private fun EditRoomProfileForm(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit your room profile") },
+        title = { Text("Edit your community profile") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    "Tailor how you appear in this room.",
+                    "Tailor how you appear in this community.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1708,14 +1708,14 @@ private fun EditRoomProfileForm(
                     value = name,
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Your name in this room") },
+                    label = { Text("Your name in this community") },
                     placeholder = { Text(profile.displayName) },
                     singleLine = true,
                     shape = InputFieldShape,
                 )
                 if (name.isBlank()) {
                     Text(
-                        "Without a room name you appear as \"${profile.displayName}\", your profile name.",
+                        "Without a community name you appear as \"${profile.displayName}\", your profile name.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1818,7 +1818,7 @@ private fun EditRoomProfileForm(
                 // Photos: room-scoped photos that lead this member's photo list in this room.
                 Text("Photos", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(
-                    "Photos you add here show first in your profile for this room.",
+                    "Photos you add here show first in your profile for this community.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1864,7 +1864,7 @@ private fun EditRoomProfileForm(
                             api.updateRoomIdentity(roomId, update)
                             onSaved()
                         } catch (e: Throwable) {
-                            error = e.message ?: "Could not save your room profile."
+                            error = e.message ?: "Could not save your community profile."
                         } finally {
                             saving = false
                         }
@@ -1880,7 +1880,7 @@ private fun EditRoomProfileForm(
         // it's only persisted for the room when the form is saved.
         PhotoUploadDialog(
             api = api,
-            title = "Add a room photo",
+            title = "Add a community photo",
             currentPhoto = null,
             onDismiss = { addingPhoto = false },
             onSaved = { photo ->
@@ -1894,7 +1894,7 @@ private fun EditRoomProfileForm(
         AlertDialog(
             onDismissRequest = { confirmDeletePhoto = null },
             title = { Text("Remove this photo?") },
-            text = { Text("It will no longer show in your profile for this room.") },
+            text = { Text("It will no longer show in your profile for this community.") },
             confirmButton = {
                 TextButton(onClick = {
                     photos.remove(photo)
@@ -1988,10 +1988,10 @@ private fun OccupantList(
     onIdentityEdited: () -> Unit,
     onOpenService: (String) -> Unit = {},
 ) {
-    // The self quick-action on each card opens the "Edit your room profile" dialog for
+    // The self quick-action on each card opens the "Edit your community profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
-    // Sheet opened by the "N provided services" button; the list itself is owned by the room chat.
+    // Sheet opened by the "N hosted adventures" button; the list itself is owned by the room chat.
     var showServicesSheet by remember(roomId) { mutableStateOf(false) }
 
     Box(
@@ -2012,7 +2012,7 @@ private fun OccupantList(
                 .padding(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("In the room", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("In the community", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 ShareButton()
             }
             Spacer(Modifier.height(8.dp))
@@ -2167,7 +2167,7 @@ internal fun ShareButton(isService: Boolean = false, path: String? = null) {
         Text("\uD83D\uDD17", fontSize = 16.sp)
     }
     if (showDialog) {
-        // Prefer an explicit path (e.g. "/services/{id}" when the detail UI is hosted in a
+        // Prefer an explicit path (e.g. "/adventures/{id}" when the detail UI is hosted in a
         // sheet over another screen) so the copied link still targets the service itself.
         val url = remember(path) {
             if (path == null) router.currentUrl()
@@ -2235,12 +2235,12 @@ private fun RoomNavPanel(
             .fillMaxHeight()
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Popular rooms", fontWeight = FontWeight.Bold)
+            Text("Popular communities", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
                 onValueChange = onSearchChange,
-                label = { Text("Search rooms") },
+                label = { Text("Search communities") },
                 singleLine = true,
                 shape = InputFieldShape,
                 modifier = Modifier.fillMaxWidth(),
@@ -2263,12 +2263,12 @@ private fun RoomNavPanel(
 
 /**
  * Single-line summary for the collapsed mobile occupant accordion (DESIGN §6): "1 person in the
- * room", "2 people in the room", or a friendly note when the room is empty.
+ * community", "2 people in the community", or a friendly note when the room is empty.
  */
 internal fun occupantSummary(count: Int): String = when (count) {
     0 -> "Nobody's here right now"
-    1 -> "1 person in the room"
-    else -> "$count people in the room"
+    1 -> "1 person in the community"
+    else -> "$count people in the community"
 }
 
 /**
@@ -2315,13 +2315,13 @@ private fun OccupantScroller(
     val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
     // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
     var selected by remember { mutableStateOf<OccupantView?>(null) }
-    // The self quick-action on each card opens the "Edit your room profile" dialog for
+    // The self quick-action on each card opens the "Edit your community profile" dialog for
     // Supporters/Founders (DESIGN §4, §5); null means it is closed.
     var editingSelf by remember { mutableStateOf(false) }
-    // Sheet opened by the "N provided services" button; the list itself is owned by the room chat.
+    // Sheet opened by the "N hosted adventures" button; the list itself is owned by the room chat.
     var showServicesSheet by remember(roomId) { mutableStateOf(false) }
     // On mobile the people list is an accordion that starts collapsed so it takes up only a single
-    // line ("N people in the room") until the user expands it; the Share action and the scroller of
+    // line ("N people in the community") until the user expands it; the Share action and the scroller of
     // member cards are only revealed once expanded (DESIGN §6).
     var expanded by remember { mutableStateOf(false) }
     // The whole accordion — its summary/header row and the expanded scroller of member cards — lives
@@ -2347,7 +2347,7 @@ private fun OccupantScroller(
                 Spacer(Modifier.weight(1f))
             } else {
                 Text(
-                    text = if (expanded) "In the room" else occupantSummary(people.size),
+                    text = if (expanded) "In the community" else occupantSummary(people.size),
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
@@ -2779,7 +2779,7 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
     if (chats.isEmpty()) {
         Centered {
             Text(
-                "No direct chats yet. Tap an available person in a room to start one.",
+                "No direct chats yet. Tap an available person in a community to start one.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2858,7 +2858,7 @@ internal fun ThreadRepliesScreen(
     if (threads.isEmpty()) {
         Centered {
             Text(
-                "No active threads. Participate in room threads to see them here.",
+                "No active threads. Participate in community threads to see them here.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
