@@ -352,6 +352,9 @@ internal fun ServiceDetailScreen(
     var confirmingDelete by remember(serviceId) { mutableStateOf(false) }
     var managing by remember(serviceId) { mutableStateOf(false) }
     var selectedOccupant by remember(serviceId) { mutableStateOf<OccupantView?>(null) }
+    // Host details for the "About your host" section (photo, intro, etc.). Same payload as the
+    // occupant detail sheet so "Learn more" can open it without a second fetch when possible.
+    var host by remember(serviceId) { mutableStateOf<OccupantView?>(null) }
 
     LaunchedEffect(selectedOccupant) {
         if (selectedOccupant != null) {
@@ -376,11 +379,17 @@ internal fun ServiceDetailScreen(
         runCatching { api.service(serviceId) }.onSuccess { service = it }
     }
 
+    suspend fun reloadHost(roomId: String, providerId: String) {
+        host = runCatching { api.occupant(roomId, providerId) }.getOrNull()
+    }
+
     LaunchedEffect(serviceId) {
         error = null
+        host = null
         try {
             service = api.service(serviceId)
             reloadFeedback()
+            service?.let { reloadHost(it.roomId, it.providerId) }
         } catch (e: Throwable) {
             error = e.message ?: "Could not load this adventure"
         } finally {
@@ -565,6 +574,28 @@ internal fun ServiceDetailScreen(
                         currentServiceId = serviceId,
                         onOpenService = onOpenService,
                     )
+
+                    AboutYourHostSection(
+                        host = host,
+                        fallbackName = s.providerName,
+                        fallbackRole = s.providerRole,
+                        fallbackLanguages = s.providerLanguages,
+                        fallbackInterests = s.providerInterests,
+                        onLearnMore = {
+                            val known = host
+                            if (known != null) {
+                                selectedOccupant = known
+                            } else {
+                                scope.launch {
+                                    runCatching { api.occupant(s.roomId, s.providerId) }
+                                        .getOrNull()?.let {
+                                            host = it
+                                            selectedOccupant = it
+                                        }
+                                }
+                            }
+                        },
+                    )
                 }
             }
 
@@ -615,13 +646,19 @@ internal fun ServiceDetailScreen(
                         scope.launch {
                             runCatching { api.refreshIdentity(s.roomId) }
                             runCatching { api.occupant(s.roomId, s.providerId) }
-                                .getOrNull()?.let { selectedOccupant = it }
+                                .getOrNull()?.let {
+                                    selectedOccupant = it
+                                    if (it.userId == s.providerId) host = it
+                                }
                         }
                     },
                     onEdited = {
                         scope.launch {
                             runCatching { api.occupant(s.roomId, s.providerId) }
-                                .getOrNull()?.let { selectedOccupant = it }
+                                .getOrNull()?.let {
+                                    selectedOccupant = it
+                                    if (it.userId == s.providerId) host = it
+                                }
                         }
                     },
                     onOpenService = onOpenService,
@@ -1584,6 +1621,109 @@ private fun LeaveFeedbackDialog(
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Resolved fields for the adventure detail "About your host" section. Prefers the room-scoped
+ * [host] occupant payload and falls back to the service's embedded provider facets.
+ */
+internal data class AboutHostDisplay(
+    val name: String,
+    val role: Role,
+    val photoUrl: String,
+    val interests: List<String>,
+    val languages: List<String>,
+    val introduction: String,
+)
+
+/** Merge host occupant details with service-level provider fallbacks for the about-host section. */
+internal fun aboutHostDisplay(
+    host: OccupantView?,
+    fallbackName: String,
+    fallbackRole: Role,
+    fallbackLanguages: List<String>,
+    fallbackInterests: List<String>,
+): AboutHostDisplay = AboutHostDisplay(
+    name = host?.name?.takeIf { it.isNotBlank() } ?: fallbackName,
+    role = host?.role ?: fallbackRole,
+    photoUrl = host?.photoUrl.orEmpty(),
+    interests = host?.interests ?: fallbackInterests,
+    languages = host?.languages ?: fallbackLanguages,
+    introduction = host?.introduction.orEmpty(),
+)
+
+/**
+ * Closing "About your host" block on the adventure detail screen: profile photo, name, interests,
+ * spoken languages, introduction, and a button that opens the host's [OccupantDetailSheet].
+ * Prefers the full room-scoped [host] payload; falls back to the service's embedded provider
+ * facets when the occupant fetch has not completed (or failed).
+ */
+@Composable
+private fun AboutYourHostSection(
+    host: OccupantView?,
+    fallbackName: String,
+    fallbackRole: Role,
+    fallbackLanguages: List<String>,
+    fallbackInterests: List<String>,
+    onLearnMore: () -> Unit,
+) {
+    val display = aboutHostDisplay(
+        host = host,
+        fallbackName = fallbackName,
+        fallbackRole = fallbackRole,
+        fallbackLanguages = fallbackLanguages,
+        fallbackInterests = fallbackInterests,
+    )
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("About your host", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            ProfileIcon(
+                name = display.name,
+                size = 64.dp,
+                photoUrl = display.photoUrl.ifBlank { null },
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                nameWithBadge(display.name, display.role),
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+            )
+        }
+        if (display.interests.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Interests", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(display.interests.joinToString(" · "), fontSize = 14.sp)
+            }
+        }
+        if (display.languages.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Speaks", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(
+                    display.languages.joinToString(" · ") { UiConstants.languageLabel(it) },
+                    fontSize = 14.sp,
+                )
+            }
+        }
+        if (display.introduction.isNotBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Introduction", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(display.introduction, fontSize = 14.sp)
+            }
+        }
+        OutlinedButton(
+            onClick = onLearnMore,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Learn more about ${display.name}")
+        }
+    }
 }
 
 /** The "Contact host" section: a message input + a "Send message" button (issue §6). */
