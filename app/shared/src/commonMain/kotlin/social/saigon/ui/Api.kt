@@ -555,7 +555,10 @@ class SaigonApi(
         return response.body()
     }
 
-    /** The caller's room-scoped identity, generated on first join (DESIGN §5). Requires a token. */
+    /**
+     * The caller's room-scoped identity (DESIGN §5). A new profile starts with their main display
+     * name; a random name is only produced on explicit refresh. Requires a token.
+     */
     suspend fun identity(roomId: String): RoomIdentity =
         client.get("$baseUrl/rooms/$roomId/identity") { HttpRequestAuth(this) }.decodeMember()
 

@@ -153,7 +153,10 @@ data class ThreadReply(
     val displayAuthor: String get() = authorName.ifBlank { authorId }
 }
 
-/** The caller's room-scoped anonymous identity (`GET /rooms/{id}/identity`, DESIGN §5). */
+/**
+ * The caller's room-scoped identity (`GET /rooms/{id}/identity`, DESIGN §5).
+ * A new room profile starts with the member's main display name; refresh produces an anonymous one.
+ */
 @Serializable
 data class RoomIdentity(
     val userId: String,

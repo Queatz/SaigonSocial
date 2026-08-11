@@ -611,6 +611,7 @@ fun SaigonApp(
                                 onSignIn = { screen = Screen.Profile },
                                 onDeleted = { screen = Screen.Services },
                                 onOpenService = { screen = Screen.ServiceDetail(it) },
+                                onOpenRoom = { screen = Screen.Room(it) },
                                 // Mirror Private's onPeerName: once the detail loads (or is edited),
                                 // lift the name into Screen so the top bar title stays in sync.
                                 onServiceTitle = { name, emoji ->

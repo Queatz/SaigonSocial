@@ -334,6 +334,8 @@ internal fun ServiceDetailScreen(
     onSignIn: () -> Unit,
     onDeleted: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
+    /** Opens the community this adventure belongs to ([Screen.Room] via [RoomSummary]). */
+    onOpenRoom: (RoomSummary) -> Unit = {},
     onOccupantSelected: (OccupantView) -> Unit = {},
     /** Called whenever the loaded service's display title (name + emoji) is known or changes. */
     onServiceTitle: (name: String, emoji: String) -> Unit = { _, _ -> },
@@ -419,11 +421,33 @@ internal fun ServiceDetailScreen(
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text(
-                                "${UiConstants.vnd(s.price)} • in ${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            // Price stays plain text; the community name is a link to Screen.Room.
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "${UiConstants.vnd(s.price)} • in ",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    "${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clip(MaterialTheme.shapes.extraSmall)
+                                        .clickable {
+                                            onOpenRoom(
+                                                RoomSummary(
+                                                    id = s.roomId,
+                                                    name = s.roomName,
+                                                    emoji = s.roomEmoji,
+                                                    atmosphere = "",
+                                                    occupants = 0,
+                                                ),
+                                            )
+                                        },
+                                )
+                            }
                         }
                         // Copy-link affordance, mirroring rooms and threads (top-right).
                         ShareButton(isService = true, path = "/adventures/${s.id}")
@@ -626,6 +650,7 @@ internal fun ServiceDetailSheet(
     onSignIn: () -> Unit,
     onDeleted: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
+    onOpenRoom: (RoomSummary) -> Unit = {},
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -661,6 +686,10 @@ internal fun ServiceDetailSheet(
                         animateClose()
                     },
                     onOpenService = onOpenService,
+                    onOpenRoom = { room ->
+                        animateClose()
+                        onOpenRoom(room)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false),

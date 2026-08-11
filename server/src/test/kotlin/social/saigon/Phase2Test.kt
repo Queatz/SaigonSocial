@@ -16,8 +16,12 @@ import social.saigon.ai.IdentityGenerator
 import social.saigon.auth.AuthConfig
 import social.saigon.auth.TokenService
 import social.saigon.domain.Role
+import social.saigon.domain.User
 import social.saigon.identity.IdentityService
 import social.saigon.repository.InMemoryRoomIdentityRepository
+import social.saigon.repository.InMemoryUserRepository
+import social.saigon.repository.Repositories
+import social.saigon.repository.UserRepository
 
 class Phase2Test {
 
@@ -36,18 +40,24 @@ class Phase2Test {
         }
     }
 
-    private fun service(generator: IdentityGenerator = SequentialIdentityGenerator()): IdentityService =
-        IdentityService(InMemoryRoomIdentityRepository(), generator)
+    private fun usersWith(displayName: String = "Real Name", id: String = "u1"): UserRepository =
+        InMemoryUserRepository().also {
+            it.create(User(id = id, role = Role.SHARER, displayName = displayName))
+        }
+
+    private fun service(
+        generator: IdentityGenerator = SequentialIdentityGenerator(),
+        users: UserRepository = usersWith(),
+    ): IdentityService = IdentityService(InMemoryRoomIdentityRepository(), generator, users)
 
     @Test
-    fun firstJoinStartsEmptySoItFallsBackToTheMainProfile() = runBlocking {
+    fun firstJoinStartsWithDisplayNameNotAGeneratedOne() = runBlocking {
         val gen = SequentialIdentityGenerator()
-        val svc = service(gen)
+        val svc = service(gen, usersWith("Real Name"))
 
-        // A new room profile has no generated name/avatar of its own: it falls back to the user's
-        // main profile until they customize or refresh it.
+        // A new room profile starts as the member's main display name — never a random generated one.
         val first = svc.getOrCreate("u1", "room1")
-        assertTrue(first.name.isBlank())
+        assertEquals("Real Name", first.name)
         assertTrue(first.avatarUrl.isBlank())
         assertEquals(0, gen.calls)
 
@@ -176,11 +186,14 @@ class Phase2Test {
     }
 
     @Test
-    fun identityEndpointsGenerateAndRefresh() = testApplication {
+    fun identityEndpointsStartWithDisplayNameAndRefresh() = testApplication {
         val authConfig = AuthConfig(secret = "test-secret")
+        val repositories = Repositories()
+        repositories.users.create(User(id = "u1", role = Role.SHARER, displayName = "Real Name"))
         val token = TokenService(authConfig).issueMemberToken("u1", Role.SHARER)
         application {
             module(
+                repositories = repositories,
                 identityGenerator = SequentialIdentityGenerator(),
                 authConfig = authConfig,
             )
@@ -190,15 +203,18 @@ class Phase2Test {
         assertEquals(HttpStatusCode.OK, first.status)
         val firstBody = first.bodyAsText()
         assertTrue(firstBody.contains("\"roomId\":\"room1\""))
+        // New room profile name is the member's display name, not a random generated one.
+        assertTrue(firstBody.contains("\"name\":\"Real Name\""), firstBody)
 
         // Stable on re-fetch.
         val second = client.get("/rooms/room1/identity") { bearerAuth(token) }
         assertEquals(firstBody, second.bodyAsText())
 
-        // Refresh produces a different identity.
+        // Refresh produces a different identity (anonymous name via the generator).
         val refreshed = client.post("/rooms/room1/identity/refresh") { bearerAuth(token) }
         assertEquals(HttpStatusCode.OK, refreshed.status)
         assertNotEquals(firstBody, refreshed.bodyAsText())
+        assertTrue(refreshed.bodyAsText().contains("\"name\":\"Minh\""), refreshed.bodyAsText())
     }
 
     @Test

@@ -1166,6 +1166,11 @@ internal fun RoomChatScreen(
                         }
                     },
                     onOpenService = { selectedServiceId = it },
+                    // Leave the sheet for another community; same-room taps just close it.
+                    onOpenRoom = { summary ->
+                        selectedServiceId = null
+                        if (summary.id != room.id) onOpenRoom(summary)
+                    },
                     onClose = {
                         selectedServiceId = null
                         // Pick up unlist/edit/photo changes made while the sheet was open.
@@ -1720,7 +1725,9 @@ private fun EditRoomProfileForm(
     onSaved: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf(identity.name) }
+    // Room profile name starts as the main display name when the identity has none of its own
+    // (issue: "Room profile name should start out as the actual user's display name").
+    var name by remember { mutableStateOf(identity.name.ifBlank { profile.displayName }) }
 
     // Each facet: a "customized" flag (true once it holds a room-scoped override) plus its working
     // value, seeded from the override when present, else from the main profile default.
@@ -1780,8 +1787,8 @@ private fun EditRoomProfileForm(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Name: a new room profile has no name of its own and falls back to the main
-                // profile name; "New name" generates a fresh anonymous one on demand.
+                // Name: a new room profile starts as the main display name; "New name" generates a
+                // fresh anonymous one on demand (issue: room profile starts as display name).
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Name", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
@@ -1952,7 +1959,7 @@ private fun EditRoomProfileForm(
                 )
                 if (photos.isNotEmpty()) {
                     PhotoCardsRow(
-                        title = identity.name,
+                        title = name.ifBlank { profile.displayName },
                         photos = photos.toList(),
                         onPhotoClick = { editingPhoto = it },
                     )

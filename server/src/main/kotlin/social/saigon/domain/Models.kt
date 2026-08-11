@@ -185,8 +185,9 @@ data class RoomSearch(
 )
 
 /**
- * Room-scoped, user-controlled anonymous identity (DESIGN §5).
- * Unique per (user, room) pair; regenerated on demand.
+ * Room-scoped, user-controlled identity (DESIGN §5). Unique per (user, room) pair.
+ * A new profile starts with the member's main display name; [name]/avatar regenerate only on
+ * explicit refresh.
  */
 @Serializable
 data class RoomIdentity(

@@ -294,7 +294,7 @@ fun Application.registerRoutes(
 ) {
     val json = Json { ignoreUnknownKeys = true }
     val profiles = ProfileService(repositories.users)
-    val identities = IdentityService(repositories.identities, identityGenerator)
+    val identities = IdentityService(repositories.identities, identityGenerator, repositories.users)
     val roomService = RoomService(repositories.rooms)
     val threadService = ThreadService(repositories.threads, repositories.messages)
     val privateChatService = PrivateChatService(repositories.privateChats, repositories.users)
@@ -794,8 +794,9 @@ fun Application.registerRoutes(
 
             // --- Phase 2: Per-Room Identity (DESIGN §5) ---
 
-            // The caller's anonymous identity in a room. Generated via Qwen AI on first join and
-            // kept stable until the user refreshes it (no time-based resets).
+            // The caller's room-scoped identity. A new profile starts with their main display name
+            // (not a random one); Qwen AI is only used when they explicitly refresh. Kept stable
+            // until the user refreshes it (no time-based resets).
             get("/rooms/{roomId}/identity") {
                 val userId = requireMember(call.caller())
                 val roomId = call.requireRoomId()

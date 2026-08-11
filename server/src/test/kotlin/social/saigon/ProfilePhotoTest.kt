@@ -224,7 +224,7 @@ class ProfilePhotoTest {
         ProfileService(repositories.users).setPhoto("u1", "https://content.local/content/main1.jpg", "")
         ProfileService(repositories.users).setPhoto("u2", "https://content.local/content/main2.jpg", "")
         // Store a room-scoped photo for u1 in room1 via the same identity repo the server uses.
-        val identities = IdentityService(repositories.identities, NoopIdentityGenerator())
+        val identities = IdentityService(repositories.identities, NoopIdentityGenerator(), repositories.users)
         runBlocking {
             identities.updateProfile(
                 "u1",

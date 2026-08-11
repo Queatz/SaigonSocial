@@ -4,32 +4,41 @@ import social.saigon.ai.IdentityGenerator
 import social.saigon.domain.RoomIdentity
 import social.saigon.domain.RoomIdentityUpdate
 import social.saigon.repository.RoomIdentityRepository
+import social.saigon.repository.UserRepository
 
 /**
  * Room-scoped, user-controlled identity management (TASKS Phase 2, DESIGN §5).
  *
- * Each (user, room) pair has its own identity. A new room profile starts out *empty* — no
- * generated name or avatar — so it falls back to the user's main profile everywhere it is shown.
- * The [IdentityGenerator] (Qwen AI in production) is only invoked when the user explicitly asks
- * for a fresh anonymous name via [refresh]. The identity is stable and independent across rooms;
- * there are no time-based or forced resets — the user is always in control.
+ * Each (user, room) pair has its own identity. A new room profile starts out with the user's main
+ * display name (and no generated avatar) — not a random anonymous name. The [IdentityGenerator]
+ * (Qwen AI in production) is only invoked when the user explicitly asks for a fresh anonymous name
+ * via [refresh]. The identity is stable and independent across rooms; there are no time-based or
+ * forced resets — the user is always in control.
  */
 class IdentityService(
     private val identities: RoomIdentityRepository,
     private val generator: IdentityGenerator,
+    private val users: UserRepository,
 ) {
 
     /**
-     * The caller's identity in [roomId], persisting an empty one on first join.
+     * The caller's identity in [roomId], persisting one on first join.
      *
-     * A new room profile deliberately has no name or avatar of its own: every facet — including
-     * the name — falls back to the user's main profile until they customize it or [refresh] a
-     * fresh anonymous name. Idempotent: repeated calls return the same stored identity, so a user
-     * keeps a stable identity within a room across reconnects (DESIGN §5, "No time-based reset").
+     * A new room profile starts with the member's main [social.saigon.domain.User.displayName] and
+     * an empty avatar: no random name is generated until they explicitly [refresh]. Idempotent:
+     * repeated calls return the same stored identity, so a user keeps a stable identity within a
+     * room across reconnects (DESIGN §5, "No time-based reset").
      */
     suspend fun getOrCreate(userId: String, roomId: String): RoomIdentity =
         identities.get(userId, roomId)
-            ?: identities.put(RoomIdentity(userId = userId, roomId = roomId, name = "", avatarUrl = ""))
+            ?: identities.put(
+                RoomIdentity(
+                    userId = userId,
+                    roomId = roomId,
+                    name = users.get(userId)?.displayName.orEmpty(),
+                    avatarUrl = "",
+                ),
+            )
 
     /**
      * Instantly regenerate the caller's name + avatar in [roomId] — the "Refresh my name & avatar
@@ -72,7 +81,12 @@ class IdentityService(
         // name + avatar regenerate; the user's room-scoped customizations stay put (DESIGN §5).
         val existing = identities.get(userId, roomId)
         return identities.put(
-            (existing ?: RoomIdentity(userId = userId, roomId = roomId, name = "", avatarUrl = "")).copy(
+            (existing ?: RoomIdentity(
+                userId = userId,
+                roomId = roomId,
+                name = users.get(userId)?.displayName.orEmpty(),
+                avatarUrl = "",
+            )).copy(
                 name = generated.name,
                 avatarUrl = generated.avatarUrl,
             ),
