@@ -306,13 +306,49 @@ class ServicesTest {
         }
         assertEquals(HttpStatusCode.Unauthorized, anonymous.status)
 
+        // The provider can update caption/image in place.
+        val updated = client.put("/services/$serviceId/photos") {
+            header(HttpHeaders.Authorization, "Bearer $supToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "originalUrl":"https://content.local/content/s1.jpg",
+                  "url":"https://content.local/content/s1b.jpg",
+                  "message":"Updated studio"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.OK, updated.status)
+        val updatedBody = updated.bodyAsText()
+        assertTrue(updatedBody.contains("\"url\":\"https://content.local/content/s1b.jpg\""))
+        assertTrue(updatedBody.contains("\"message\":\"Updated studio\""))
+        assertFalse(updatedBody.contains("s1.jpg\""))
+
+        // A different member cannot edit photos on someone else's service.
+        val forbiddenUpdate = client.put("/services/$serviceId/photos") {
+            header(HttpHeaders.Authorization, "Bearer $otherToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "originalUrl":"https://content.local/content/s1b.jpg",
+                  "url":"https://content.local/content/nope.jpg",
+                  "message":"nope"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.BadRequest, forbiddenUpdate.status)
+
         // The provider deletes the photo by URL.
         val deleted = client.delete("/services/$serviceId/photos") {
             header(HttpHeaders.Authorization, "Bearer $supToken")
-            parameter("url", "https://content.local/content/s1.jpg")
+            parameter("url", "https://content.local/content/s1b.jpg")
         }
         assertEquals(HttpStatusCode.OK, deleted.status)
-        assertFalse(client.get("/services/$serviceId").bodyAsText().contains("s1.jpg"))
+        assertFalse(client.get("/services/$serviceId").bodyAsText().contains("s1b.jpg"))
     }
 
     @Test

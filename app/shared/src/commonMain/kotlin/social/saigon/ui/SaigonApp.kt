@@ -379,7 +379,7 @@ fun SaigonApp(
                         Screen.Members -> "Members"
                         Screen.RoomSearches -> "Community searches"
                         Screen.ServiceSearches -> "Adventure searches"
-                        Screen.MyServices -> "Adventures hosted"
+                        Screen.MyServices -> "Adventures hosted by you"
                         Screen.Services -> "Adventures"
                         // Prefer the loaded service name (with emoji, matching rooms); fall back
                         // to the generic list title until the detail fetch completes.
@@ -391,7 +391,7 @@ fun SaigonApp(
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's Social Educational Adventure Community."
+                        is Screen.RoomList -> "Saigon's Social Educational Adventures!"
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },

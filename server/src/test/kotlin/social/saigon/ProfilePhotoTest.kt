@@ -89,6 +89,52 @@ class ProfilePhotoTest {
     }
 
     @Test
+    fun previousPhotosCanBeUpdatedInPlace() {
+        val (svc, repo) = service()
+        sharer(repo)
+        svc.setPhoto("u1", "https://content.local/content/a.jpg", "Old caption")
+        svc.setPhoto("u1", "https://content.local/content/b.jpg", "Main")
+
+        // Caption-only edit keeps the same URL in the previous list.
+        val captioned = svc.updatePreviousPhoto(
+            "u1",
+            originalUrl = "https://content.local/content/a.jpg",
+            url = "https://content.local/content/a.jpg",
+            message = "New caption",
+        )
+        assertEquals("New caption", captioned.previousPhotos.single().message)
+        assertEquals("https://content.local/content/a.jpg", captioned.previousPhotos.single().url)
+        // Main photo is untouched.
+        assertEquals("https://content.local/content/b.jpg", captioned.photo?.url)
+
+        // Replacing the image swaps the URL in place without rotating into main.
+        val replaced = svc.updatePreviousPhoto(
+            "u1",
+            originalUrl = "https://content.local/content/a.jpg",
+            url = "https://content.local/content/a2.jpg",
+            message = "Replaced",
+        )
+        assertEquals(listOf("https://content.local/content/a2.jpg"), replaced.previousPhotos.map { it.url })
+        assertEquals("Replaced", replaced.previousPhotos.single().message)
+        assertEquals("https://content.local/content/b.jpg", replaced.photo?.url)
+    }
+
+    @Test
+    fun updatingAnUnknownPreviousPhotoIsRejected() {
+        val (svc, repo) = service()
+        sharer(repo)
+        svc.setPhoto("u1", "https://content.local/content/a.jpg", "")
+        assertFailsWith<IllegalArgumentException> {
+            svc.updatePreviousPhoto(
+                "u1",
+                originalUrl = "https://content.local/content/nope.jpg",
+                url = "https://content.local/content/b.jpg",
+                message = "x",
+            )
+        }
+    }
+
+    @Test
     fun deletingAnUnknownOrCurrentPhotoIsRejected() {
         val (svc, repo) = service()
         sharer(repo)

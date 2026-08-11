@@ -238,8 +238,8 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
  * The service-photo area on the service detail screen (issue: "upload adventure photos ... display
  * the adventure photos on the adventure page"). Photos are shown to everyone as vertical cards in a
  * wrapping flex row; tapping a card opens a read-only display. When [canManage] is true (the
- * provider or a Founder) an "Add a photo" button opens [PhotoUploadDialog], and tapping a card asks
- * to delete it with a confirmation dialog. Mirrors `ProfilePhotoSection`.
+ * provider or a Founder) an "Add a photo" button opens [PhotoUploadDialog], and tapping a card opens
+ * the "Edit this photo" dialog to replace, recaption, or delete it. Mirrors `ProfilePhotoSection`.
  */
 @Composable
 private fun ServicePhotoSection(
@@ -248,9 +248,8 @@ private fun ServicePhotoSection(
     canManage: Boolean,
     onUpdated: (ServiceView) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var showUpload by remember(service.id) { mutableStateOf(false) }
-    var confirmDelete by remember(service.id) { mutableStateOf<ProfilePhoto?>(null) }
+    var editingPhoto by remember(service.id) { mutableStateOf<ProfilePhoto?>(null) }
 
     // Nothing to show for a visitor when there are no photos yet.
     if (service.photos.isEmpty() && !canManage) return
@@ -258,7 +257,7 @@ private fun ServicePhotoSection(
     Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     if (canManage) {
         Text(
-            "Add photos of your adventure. Click a photo to delete it.",
+            "Add photos of your adventure. Click a photo to edit it.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -268,8 +267,8 @@ private fun ServicePhotoSection(
         PhotoCardsRow(
             title = service.name,
             photos = service.photos,
-            // Managers delete on tap; everyone else just opens the read-only display.
-            onPhotoClick = if (canManage) ({ confirmDelete = it }) else null,
+            // Managers edit on tap; everyone else just opens the read-only display.
+            onPhotoClick = if (canManage) ({ editingPhoto = it }) else null,
         )
     } else {
         Text(
@@ -300,22 +299,19 @@ private fun ServicePhotoSection(
         )
     }
 
-    confirmDelete?.let { photo ->
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete this photo?") },
-            text = { Text("This adventure photo will be removed for good.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        runCatching { api.deleteServicePhoto(service.id, photo.url) }
-                            .onSuccess { onUpdated(it) }
-                        confirmDelete = null
-                    }
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+    editingPhoto?.let { photo ->
+        PhotoUploadDialog(
+            api = api,
+            title = "Edit this photo",
+            currentPhoto = photo,
+            onDismiss = { editingPhoto = null },
+            onSaved = { updated ->
+                onUpdated(api.updateServicePhoto(service.id, photo.url, updated.url, updated.message))
+                editingPhoto = null
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            onDelete = {
+                onUpdated(api.deleteServicePhoto(service.id, photo.url))
+                editingPhoto = null
             },
         )
     }

@@ -252,6 +252,18 @@ class SaigonApi(
         }.decodeMember()
 
     /**
+     * Update one of the caller's *previous* profile photos: replace the image and/or caption in
+     * place. [originalUrl] identifies the entry being edited. Requires a member token; returns the
+     * refreshed profile.
+     */
+    suspend fun updateProfilePhoto(originalUrl: String, photoUrl: String, message: String = ""): ProfileResponse =
+        client.put("$baseUrl/profile/photos") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(UpdatePhotoRequest(originalUrl = originalUrl, url = photoUrl, message = message))
+        }.decodeMember()
+
+    /**
      * Delete one of the caller's *previous* profile photos by its URL. The current main photo
      * cannot be deleted — only replaced. Requires a member token; returns the refreshed profile.
      */
@@ -432,6 +444,23 @@ class SaigonApi(
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
             setBody(AddServicePhotoRequest(url = photoUrl, message = message))
+        }.decodeMember()
+
+    /**
+     * Update one of a service's photos (replace image and/or caption). [originalUrl] identifies the
+     * entry being edited. Allowed for the provider or a Founder. Requires a member token; returns
+     * the refreshed service.
+     */
+    suspend fun updateServicePhoto(
+        serviceId: String,
+        originalUrl: String,
+        photoUrl: String,
+        message: String = "",
+    ): ServiceView =
+        client.put("$baseUrl/services/$serviceId/photos") {
+            HttpRequestAuth(this)
+            contentType(ContentType.Application.Json)
+            setBody(UpdatePhotoRequest(originalUrl = originalUrl, url = photoUrl, message = message))
         }.decodeMember()
 
     /**

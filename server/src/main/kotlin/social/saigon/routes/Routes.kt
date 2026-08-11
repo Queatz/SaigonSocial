@@ -177,6 +177,17 @@ data class ServiceUpdate(
 @Serializable
 data class AddServicePhotoRequest(val url: String, val message: String = "")
 
+/**
+ * Update an existing photo in a list (previous profile photos or service photos). [originalUrl]
+ * identifies the entry to edit; [url]/[message] are the replacement image and caption.
+ */
+@Serializable
+data class UpdatePhotoRequest(
+    val originalUrl: String,
+    val url: String,
+    val message: String = "",
+)
+
 /** A service enriched with its room name and provider details for list + detail screens. */
 @Serializable
 data class ServiceView(
@@ -648,6 +659,20 @@ fun Application.registerRoutes(
                 val userId = requireMember(call.caller())
                 val req = call.receive<SetProfilePhotoRequest>()
                 call.respond(profiles.setPhoto(userId, req.url, req.message).toProfileResponse())
+            }
+
+            // Update one of the caller's *previous* profile photos (replace image and/or caption).
+            put("/profile/photos") {
+                val userId = requireMember(call.caller())
+                val req = call.receive<UpdatePhotoRequest>()
+                call.respond(
+                    profiles.updatePreviousPhoto(
+                        userId,
+                        req.originalUrl,
+                        req.url,
+                        req.message,
+                    ).toProfileResponse(),
+                )
             }
 
             // Delete one of the caller's *previous* profile photos by its URL (`?url=`).
@@ -1128,6 +1153,31 @@ fun Application.registerRoutes(
                 val updated = repositories.services.update(
                     service.copy(photos = listOf(photo) + service.photos),
                 )
+                call.respond(updated.toServiceView(repositories))
+            }
+
+            // Update one of a service's photos (replace image and/or caption). Allowed for the
+            // provider or a Founder.
+            put("/services/{id}/photos") {
+                val caller = call.caller()
+                val userId = requireMember(caller)
+                val serviceId = call.parameters["id"].orEmpty()
+                val service = repositories.services.get(serviceId)
+                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                require(service.providerId == userId || caller.role.isAdmin) {
+                    "You cannot edit photos on this adventure."
+                }
+                val req = call.receive<UpdatePhotoRequest>()
+                val oldUrl = req.originalUrl.trim()
+                val photoUrl = req.url.trim()
+                require(oldUrl.isNotBlank()) { "The original photo URL is required." }
+                require(photoUrl.isNotBlank()) { "A photo URL is required." }
+                val index = service.photos.indexOfFirst { it.url == oldUrl }
+                require(index >= 0) { "No such photo" }
+                val existing = service.photos[index]
+                val photos = service.photos.toMutableList()
+                photos[index] = existing.copy(url = photoUrl, message = req.message.trim())
+                val updated = repositories.services.update(service.copy(photos = photos))
                 call.respond(updated.toServiceView(repositories))
             }
 

@@ -542,6 +542,17 @@ data class ServiceView(
 @Serializable
 data class AddServicePhotoRequest(val url: String, val message: String = "")
 
+/**
+ * Update an existing photo in a list (`PUT /profile/photos` or `PUT /services/{id}/photos`).
+ * [originalUrl] identifies the entry; [url]/[message] are the replacement image and caption.
+ */
+@Serializable
+data class UpdatePhotoRequest(
+    val originalUrl: String,
+    val url: String,
+    val message: String = "",
+)
+
 /** Create a service from a room (`POST /rooms/{id}/services`). */
 @Serializable
 data class ServiceCreate(

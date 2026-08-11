@@ -70,6 +70,26 @@ class ProfileService(private val users: UserRepository) {
     }
 
     /**
+     * Update one of the user's *previous* profile photos identified by [originalUrl]: replace the
+     * image URL and/or caption in place. The current main photo is edited via [setPhoto] instead.
+     */
+    fun updatePreviousPhoto(userId: String, originalUrl: String, url: String, message: String): User {
+        val user = get(userId)
+        require(user.role.can(Capability.EDIT_PROFILE)) { "Role ${user.role} cannot edit a profile" }
+        val oldUrl = originalUrl.trim()
+        val photoUrl = url.trim()
+        require(oldUrl.isNotEmpty()) { "The original photo URL is required" }
+        require(photoUrl.isNotEmpty()) { "A photo URL is required" }
+        val caption = message.trim()
+        val index = user.previousPhotos.indexOfFirst { it.url == oldUrl }
+        require(index >= 0) { "No such photo" }
+        val existing = user.previousPhotos[index]
+        val updatedPhotos = user.previousPhotos.toMutableList()
+        updatedPhotos[index] = existing.copy(url = photoUrl, message = caption)
+        return users.update(user.copy(previousPhotos = updatedPhotos))
+    }
+
+    /**
      * Delete one of the user's *previous* profile photos by its [url]. The current main photo
      * cannot be deleted — only replaced by [setPhoto].
      */

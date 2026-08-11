@@ -244,7 +244,7 @@ internal fun ProfileScreen(
 
                 if (isSupporter) {
                     OutlinedButton(onClick = onViewMyServices, modifier = Modifier.fillMaxWidth()) {
-                        Text("Adventures hosted")
+                        Text("Adventures hosted by you")
                     }
                 }
 
@@ -309,7 +309,8 @@ internal fun ProfileScreen(
  * The profile-photo area at the top of the profile screen (issue: "Profile and community profile
  * photos"): a large, centered profile button (the photo, or the letter avatar until one exists)
  * with its label underneath. Clicking it opens [PhotoUploadDialog]. Previous profile photos are
- * shown below as vertical cards in a wrapping flex row; clicking a card asks to delete it.
+ * shown below as vertical cards in a wrapping flex row; clicking a card opens the "Edit this photo"
+ * dialog to replace, recaption, or delete it.
  */
 @Composable
 private fun ProfilePhotoSection(
@@ -317,9 +318,8 @@ private fun ProfilePhotoSection(
     profile: ProfileResponse,
     onUpdated: (ProfileResponse) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var showUpload by remember(profile.id) { mutableStateOf(false) }
-    var confirmDelete by remember(profile.id) { mutableStateOf<ProfilePhoto?>(null) }
+    var editingPhoto by remember(profile.id) { mutableStateOf<ProfilePhoto?>(null) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -344,18 +344,18 @@ private fun ProfilePhotoSection(
         }
     }
 
-    // Previous profile photos: vertical cards in a wrapping flex row; click a card to delete it.
+    // Previous profile photos: vertical cards in a wrapping flex row; click a card to edit it.
     if (profile.previousPhotos.isNotEmpty()) {
         Text("Previous profile photos", fontWeight = FontWeight.Bold)
         Text(
-            "Click a photo to delete it.",
+            "Click a photo to edit it.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         PhotoCardsRow(
             title = profile.displayName,
             photos = profile.previousPhotos,
-            onPhotoClick = { confirmDelete = it },
+            onPhotoClick = { editingPhoto = it },
         )
     }
 
@@ -374,22 +374,19 @@ private fun ProfilePhotoSection(
         )
     }
 
-    confirmDelete?.let { photo ->
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete this photo?") },
-            text = { Text("This previous profile photo will be removed for good.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        runCatching { api.deleteProfilePhoto(photo.url) }
-                            .onSuccess { onUpdated(it) }
-                        confirmDelete = null
-                    }
-                }) { Text("Delete") }
+    editingPhoto?.let { photo ->
+        PhotoUploadDialog(
+            api = api,
+            title = "Edit this photo",
+            currentPhoto = photo,
+            onDismiss = { editingPhoto = null },
+            onSaved = { updated ->
+                onUpdated(api.updateProfilePhoto(photo.url, updated.url, updated.message))
+                editingPhoto = null
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            onDelete = {
+                onUpdated(api.deleteProfilePhoto(photo.url))
+                editingPhoto = null
             },
         )
     }

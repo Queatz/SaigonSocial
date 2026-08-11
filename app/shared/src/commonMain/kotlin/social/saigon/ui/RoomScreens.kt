@@ -567,7 +567,7 @@ private fun RoomFormDialog(
     var id by remember { mutableStateOf("") }
     var photos by remember { mutableStateOf(initial?.photos ?: emptyList()) }
     var showUpload by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf<ProfilePhoto?>(null) }
+    var editingPhoto by remember { mutableStateOf<ProfilePhoto?>(null) }
     val isCreate = initial == null
     // Explicit focus order so Tab/Shift-Tab moves between the fields in a predictable cycle.
     val nameFocus = remember { FocusRequester() }
@@ -635,7 +635,7 @@ private fun RoomFormDialog(
 
                 Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text(
-                    "Add photos of your community. Click a photo to delete it.",
+                    "Add photos of your community. Click a photo to edit it.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -644,7 +644,7 @@ private fun RoomFormDialog(
                     PhotoCardsRow(
                         title = initial?.name ?: "Photo",
                         photos = photos,
-                        onPhotoClick = { confirmDelete = it },
+                        onPhotoClick = { editingPhoto = it },
                     )
                 } else {
                     Text(
@@ -690,19 +690,19 @@ private fun RoomFormDialog(
         )
     }
 
-    confirmDelete?.let { photo ->
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete this photo?") },
-            text = { Text("This community photo will be removed from the list.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    photos = photos.filterNot { it.url == photo.url }
-                    confirmDelete = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+    editingPhoto?.let { photo ->
+        PhotoUploadDialog(
+            api = api,
+            title = "Edit this photo",
+            currentPhoto = photo,
+            onDismiss = { editingPhoto = null },
+            onSaved = { updated ->
+                photos = photos.map { if (it.url == photo.url) updated else it }
+                editingPhoto = null
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            onDelete = {
+                photos = photos.filterNot { it.url == photo.url }
+                editingPhoto = null
             },
         )
     }
@@ -1700,7 +1700,7 @@ private fun EditRoomProfileForm(
     // itself happens in the shared dialog; here we just track the resulting list.
     val photos = remember { mutableStateListOf<ProfilePhoto>().apply { addAll(identity.photos) } }
     var addingPhoto by remember { mutableStateOf(false) }
-    var confirmDeletePhoto by remember { mutableStateOf<ProfilePhoto?>(null) }
+    var editingPhoto by remember { mutableStateOf<ProfilePhoto?>(null) }
 
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -1851,7 +1851,7 @@ private fun EditRoomProfileForm(
                     PhotoCardsRow(
                         title = identity.name,
                         photos = photos.toList(),
-                        onPhotoClick = { confirmDeletePhoto = it },
+                        onPhotoClick = { editingPhoto = it },
                     )
                 }
                 OutlinedButton(
@@ -1915,18 +1915,21 @@ private fun EditRoomProfileForm(
             confirmLabel = "Add photo",
         )
     }
-    confirmDeletePhoto?.let { photo ->
-        AlertDialog(
-            onDismissRequest = { confirmDeletePhoto = null },
-            title = { Text("Remove this photo?") },
-            text = { Text("It will no longer show in your profile for this community.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    photos.remove(photo)
-                    confirmDeletePhoto = null
-                }) { Text("Remove") }
+    editingPhoto?.let { photo ->
+        PhotoUploadDialog(
+            api = api,
+            title = "Edit this photo",
+            currentPhoto = photo,
+            onDismiss = { editingPhoto = null },
+            onSaved = { updated ->
+                val index = photos.indexOfFirst { it.url == photo.url }
+                if (index >= 0) photos[index] = updated
+                editingPhoto = null
             },
-            dismissButton = { TextButton(onClick = { confirmDeletePhoto = null }) { Text("Cancel") } },
+            onDelete = {
+                photos.removeAll { it.url == photo.url }
+                editingPhoto = null
+            },
         )
     }
 }

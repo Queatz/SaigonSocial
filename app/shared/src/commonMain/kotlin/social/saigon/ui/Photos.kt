@@ -368,7 +368,10 @@ internal class PickedPhoto(val bytes: ByteArray, val mimeType: String, val previ
  * the resulting [ProfilePhoto] (URL + caption) to [onSaved]; with no new photo picked it reuses
  * [currentPhoto]'s URL so a caption-only edit still round-trips. [onSaved] is where the caller
  * persists the result (e.g. set the main profile photo, or add it to a room's photo list), and any
- * error it throws is shown inline. Used by both the main profile screen and the room profile form.
+ * error it throws is shown inline.
+ *
+ * When [onDelete] is provided (the "Edit this photo" flow), a red Delete button appears so the
+ * existing photo can be removed without a separate confirmation dialog.
  */
 @Composable
 internal fun PhotoUploadDialog(
@@ -378,6 +381,8 @@ internal fun PhotoUploadDialog(
     onDismiss: () -> Unit,
     onSaved: suspend (ProfilePhoto) -> Unit,
     confirmLabel: String = "Save photo",
+    /** When non-null, shows a red Delete control that runs this callback (edit/delete flow). */
+    onDelete: (suspend () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<PickedPhoto?>(null) }
@@ -493,7 +498,27 @@ internal fun PhotoUploadDialog(
             ) { Text(if (busy) "Uploading…" else confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Edit flow: red Delete sits next to Cancel so replace/caption/delete share one dialog.
+                if (onDelete != null && currentPhoto != null) {
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            error = null
+                            busy = true
+                            scope.launch {
+                                try {
+                                    onDelete()
+                                } catch (e: Throwable) {
+                                    error = e.message ?: "Could not delete your photo."
+                                    busy = false
+                                }
+                            }
+                        },
+                    ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }
+                TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+            }
         },
     )
 }
