@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -13,16 +15,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +43,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -309,4 +316,242 @@ internal fun DimmableToggleButton(
             .alpha(alpha),
         content = content,
     )
+}
+
+/**
+ * A landscape "large chip" card for a single [Skill]: emoji, name, optional description, and a
+ * 0–5 level meter. Used on the occupant detail sheet (read-only) and the profile / room-profile
+ * editors (tappable).
+ */
+@Composable
+internal fun SkillCard(
+    skill: Skill,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(skill.emoji.ifBlank { "✨" }, fontSize = 22.sp)
+            Column(modifier = Modifier.widthIn(max = 160.dp)) {
+                Text(
+                    skill.name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (skill.description.isNotBlank()) {
+                    Text(
+                        skill.description,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SkillLevelDots(level = skill.level)
+                    Text(
+                        Skill.levelName(skill.level),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Five dots showing a skill's self-rated level (filled up to [level], empty after). */
+@Composable
+internal fun SkillLevelDots(level: Int, modifier: Modifier = Modifier) {
+    val clamped = level.coerceIn(Skill.MIN_LEVEL, Skill.MAX_LEVEL)
+    val filled = MaterialTheme.colorScheme.primary
+    val empty = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        repeat(Skill.MAX_LEVEL) { index ->
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (index < clamped) filled else empty),
+            )
+        }
+    }
+}
+
+/**
+ * A wrapping row of [SkillCard]s. When [onSkillClick] is set (edit surfaces), tapping a card opens
+ * the edit path; otherwise cards are display-only.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SkillsRow(
+    skills: List<Skill>,
+    modifier: Modifier = Modifier,
+    onSkillClick: ((Int) -> Unit)? = null,
+) {
+    if (skills.isEmpty()) return
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        skills.forEachIndexed { index, skill ->
+            SkillCard(
+                skill = skill,
+                onClick = onSkillClick?.let { handler -> { handler(index) } },
+            )
+        }
+    }
+}
+
+/**
+ * Add / edit a skill dialog. When [initial] is non-null the form is pre-filled for editing and a
+ * Delete button is offered via [onDelete]. Level is chosen with named [DimmableToggleButton]s.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SkillEditorDialog(
+    initial: Skill? = null,
+    onDismiss: () -> Unit,
+    onSave: (Skill) -> Unit,
+    onDelete: (() -> Unit)? = null,
+) {
+    var emoji by remember(initial) { mutableStateOf(initial?.emoji.orEmpty()) }
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var description by remember(initial) { mutableStateOf(initial?.description.orEmpty()) }
+    var level by remember(initial) { mutableStateOf(initial?.level ?: 3) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+    val trimmedName = name.trim()
+    val trimmedEmoji = emoji.trim()
+    val trimmedDescription = description.trim()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Add a skill" else "Edit skill") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Pick an emoji, a short name, an optional description, and your level.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Emoji") },
+                    placeholder = { Text("🎸") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Skill name") },
+                    placeholder = { Text("Guitar") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it.take(Skill.MAX_DESCRIPTION_LENGTH) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Description") },
+                    placeholder = { Text("Open mics & jazz standards") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                Text("Level", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Skill.LEVEL_NAMES.forEachIndexed { option, label ->
+                        val selected = option == level
+                        DimmableToggleButton(
+                            selected = selected,
+                            onClick = { level = option },
+                        ) {
+                            Text(
+                                "$option · $label",
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SkillLevelDots(level = level)
+                    Text(
+                        Skill.levelName(level),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = trimmedName.isNotEmpty(),
+                onClick = {
+                    onSave(
+                        Skill(
+                            emoji = trimmedEmoji.ifBlank { "✨" },
+                            name = trimmedName,
+                            description = trimmedDescription,
+                            level = level.coerceIn(Skill.MIN_LEVEL, Skill.MAX_LEVEL),
+                        ),
+                    )
+                },
+            ) { Text(if (initial == null) "Add" else "Save") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onDelete != null) {
+                    TextButton(onClick = { confirmingDelete = true }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
+
+    if (confirmingDelete && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("Delete this skill?") },
+            text = { Text("This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingDelete = false
+                    onDelete()
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
+            },
+        )
+    }
 }

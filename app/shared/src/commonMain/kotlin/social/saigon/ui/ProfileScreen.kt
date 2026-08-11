@@ -77,7 +77,11 @@ internal fun ProfileScreen(
         error != null -> Centered { Text(error!!, color = MaterialTheme.colorScheme.error) }
         p == null -> Centered { LoadingSpinner() }
         else -> {
-            var introduction by remember(p.id) { mutableStateOf(p.interests.joinToString(", ")) }
+            var interestsText by remember(p.id) { mutableStateOf(p.interests.joinToString(", ")) }
+            var introduction by remember(p.id) { mutableStateOf(p.introduction) }
+            val skills = remember(p.id) { p.skills.toMutableStateList() }
+            var addingSkill by remember(p.id) { mutableStateOf(false) }
+            var editingSkillIndex by remember(p.id) { mutableStateOf<Int?>(null) }
             val intents = remember(p.id) { p.intents.toMutableStateList() }
             // Custom "Here for" badges the member has beyond the launch set (DESIGN §4): any intent
             // on their profile that isn't one of the fixed options, plus any created this session.
@@ -104,6 +108,24 @@ internal fun ProfileScreen(
                 // centered photo button at the top; clicking it opens the upload dialog.
                 ProfilePhotoSection(api = api, profile = p, onUpdated = { profile = it })
 
+                // Skills sit under the photos on public profiles; the editor lives here too so
+                // members can manage the same list they see on the detail sheet.
+                Text("Skills", fontWeight = FontWeight.Bold)
+                Text(
+                    "Are you a master? A novice? Tap a skill to edit it.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SkillsRow(
+                    skills = skills.toList(),
+                    onSkillClick = { editingSkillIndex = it },
+                )
+                OutlinedButton(
+                    onClick = { addingSkill = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = skills.size < Skill.MAX_SKILLS,
+                ) { Text("➕ Add a skill", fontSize = 12.sp) }
+
                 if (p.role == Role.SHARER) {
                     BecomeSupporterBubble()
                 }
@@ -111,11 +133,21 @@ internal fun ProfileScreen(
                 Text("${p.displayName} · ${p.role.label}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 OutlinedTextField(
-                    value = introduction,
-                    onValueChange = { introduction = it },
+                    value = interestsText,
+                    onValueChange = { interestsText = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Your interests (comma-separated)") },
                     shape = InputFieldShape,
+                )
+
+                OutlinedTextField(
+                    value = introduction,
+                    onValueChange = { introduction = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Introduction") },
+                    placeholder = { Text("A short intro about you…") },
+                    shape = InputFieldShape,
+                    minLines = 3,
                 )
 
                 Text("Here for", fontWeight = FontWeight.Bold)
@@ -204,6 +236,35 @@ internal fun ProfileScreen(
                     )
                 }
 
+                if (addingSkill) {
+                    SkillEditorDialog(
+                        onDismiss = { addingSkill = false },
+                        onSave = { skill ->
+                            if (skills.size < Skill.MAX_SKILLS) skills.add(skill)
+                            addingSkill = false
+                        },
+                    )
+                }
+                editingSkillIndex?.let { index ->
+                    val current = skills.getOrNull(index)
+                    if (current != null) {
+                        SkillEditorDialog(
+                            initial = current,
+                            onDismiss = { editingSkillIndex = null },
+                            onSave = { updated ->
+                                if (index in skills.indices) skills[index] = updated
+                                editingSkillIndex = null
+                            },
+                            onDelete = {
+                                if (index in skills.indices) skills.removeAt(index)
+                                editingSkillIndex = null
+                            },
+                        )
+                    } else {
+                        editingSkillIndex = null
+                    }
+                }
+
                 if (isSupporter) {
                     Text("Supporter", fontWeight = FontWeight.Bold)
                     OutlinedTextField(
@@ -223,7 +284,9 @@ internal fun ProfileScreen(
                         status = null
                         scope.launch {
                             val update = ProfileUpdate(
-                                interests = introduction.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                                interests = interestsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                                introduction = introduction,
+                                skills = skills.toList(),
                                 intents = intents.toList(),
                                 languages = languages.toList(),
                                 offlineSchedule = if (isSupporter) {

@@ -50,6 +50,41 @@ data class ProfilePhoto(
     val createdAt: Long = 0L,
 )
 
+/**
+ * A skill on a member's profile: emoji + name + optional description + self-rated level 0–5.
+ * Rendered as landscape "large chip" cards under the member's photos.
+ *
+ * Levels are labeled: 0 Curious, 1 Beginner, 2 Intermediate, 3 Advanced, 4 Expert, 5 Authority.
+ */
+@Serializable
+data class Skill(
+    val emoji: String = "",
+    val name: String = "",
+    /** Optional one-line description shown under the name on skill cards. */
+    val description: String = "",
+    val level: Int = 0,
+) {
+    companion object {
+        const val MIN_LEVEL = 0
+        const val MAX_LEVEL = 5
+        const val MAX_SKILLS = 20
+        const val MAX_DESCRIPTION_LENGTH = 120
+
+        /** Display names for levels 0–5 (index == level). */
+        val LEVEL_NAMES: List<String> = listOf(
+            "Curious",
+            "Beginner",
+            "Intermediate",
+            "Advanced",
+            "Expert",
+            "Authority",
+        )
+
+        fun levelName(level: Int): String =
+            LEVEL_NAMES.getOrElse(level.coerceIn(MIN_LEVEL, MAX_LEVEL)) { LEVEL_NAMES[0] }
+    }
+}
+
 /** A person currently in a room with intent + languages (`GET /rooms/{id}/occupants`, DESIGN §6). */
 @Serializable
 data class OccupantView(
@@ -62,8 +97,12 @@ data class OccupantView(
     val role: Role,
     val intents: List<String> = emptyList(),
     val languages: List<String> = emptyList(),
-    /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
+    /** Free-text interest tags shown on the detail sheet (DESIGN §4). */
     val interests: List<String> = emptyList(),
+    /** Plain-text introduction shown below interests on the detail sheet. */
+    val introduction: String = "",
+    /** Skills shown under photos on the detail sheet as landscape chip cards. */
+    val skills: List<Skill> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
@@ -127,6 +166,8 @@ data class RoomIdentity(
      * customization Supporters/Founders set via the "Edit your room profile" dialog.
      */
     val interests: List<String>? = null,
+    val introduction: String? = null,
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
@@ -147,6 +188,8 @@ data class RoomIdentity(
 data class RoomIdentityUpdate(
     val name: String? = null,
     val interests: List<String>? = null,
+    val introduction: String? = null,
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
@@ -161,6 +204,10 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String> = emptyList(),
+    /** Plain-text introduction shown below interests. */
+    val introduction: String = "",
+    /** Skills shown under photos as landscape chip cards. */
+    val skills: List<Skill> = emptyList(),
     val intents: List<String> = emptyList(),
     val languages: List<String> = emptyList(),
     val offlineSchedule: List<String> = emptyList(),
@@ -196,6 +243,8 @@ data class UploadResponse(val url: String)
 @Serializable
 data class ProfileUpdate(
     val interests: List<String>? = null,
+    val introduction: String? = null,
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,

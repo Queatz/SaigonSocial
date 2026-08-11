@@ -46,6 +46,45 @@ data class ProfilePhoto(
 )
 
 /**
+ * A skill on a member's profile: an emoji, a short name, optional description, and a self-rated
+ * level from 0–5. Rendered as landscape "large chip" cards under the member's photos.
+ *
+ * Levels are labeled: 0 Curious, 1 Beginner, 2 Intermediate, 3 Advanced, 4 Expert, 5 Authority.
+ */
+@Serializable
+data class Skill(
+    /** Leading emoji icon for the skill (e.g. "🎸"). */
+    val emoji: String = "",
+    /** Short skill name (e.g. "Guitar"). */
+    val name: String = "",
+    /** Optional one-line description shown under the name on skill cards. */
+    val description: String = "",
+    /** Self-rated level from 0 (Curious) to 5 (Authority). */
+    val level: Int = 0,
+) {
+    companion object {
+        const val MIN_LEVEL = 0
+        const val MAX_LEVEL = 5
+        const val MAX_SKILLS = 20
+        /** Soft cap so a skill chip stays a short blurb, not a paragraph. */
+        const val MAX_DESCRIPTION_LENGTH = 120
+
+        /** Display names for levels 0–5 (index == level). */
+        val LEVEL_NAMES: List<String> = listOf(
+            "Curious",
+            "Beginner",
+            "Intermediate",
+            "Advanced",
+            "Expert",
+            "Authority",
+        )
+
+        fun levelName(level: Int): String =
+            LEVEL_NAMES.getOrElse(level.coerceIn(MIN_LEVEL, MAX_LEVEL)) { LEVEL_NAMES[0] }
+    }
+}
+
+/**
  * Persistent user profile (DESIGN §4). Tied to the real person behind room-specific identities.
  */
 @Serializable
@@ -66,6 +105,16 @@ data class User(
     val passwordSetAt: Long? = null,
     /** Free-text interest tags. Max 5. */
     val interests: List<String> = emptyList(),
+    /**
+     * Plain-text introduction shown on the member's profile / occupant detail sheet, below their
+     * interests. Free-form; empty when unset.
+     */
+    val introduction: String = "",
+    /**
+     * Skills the member lists on their profile (emoji + name + level 0–5). Shown under photos on
+     * the occupant detail sheet as landscape "large chip" cards.
+     */
+    val skills: List<Skill> = emptyList(),
     /**
      * Primary intent badges the user selected (DESIGN §4). Multiple choice. Each badge is a
      * free-text label (usually an emoji + short phrase, e.g. "💬 Just Chatting"). Supporters and
@@ -97,6 +146,8 @@ data class User(
 ) {
     companion object {
         const val MAX_INTERESTS = 5
+        /** Soft cap on introduction length so a profile can't become a wall of text. */
+        const val MAX_INTRODUCTION_LENGTH = 1000
     }
 }
 
@@ -149,6 +200,10 @@ data class RoomIdentity(
      * list) is a deliberate room-scoped customization. Supporters/Founders tailor these per room.
      */
     val interests: List<String>? = null,
+    /** Per-room override of the plain-text introduction; null inherits the main profile. */
+    val introduction: String? = null,
+    /** Per-room override of the skills list; null inherits the main profile. */
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,
@@ -170,6 +225,10 @@ data class RoomIdentity(
 data class RoomIdentityUpdate(
     val name: String? = null,
     val interests: List<String>? = null,
+    /** Per-room introduction override; null clears the override so the main profile is inherited. */
+    val introduction: String? = null,
+    /** Per-room skills override; null clears the override so the main profile is inherited. */
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,

@@ -48,6 +48,7 @@ import social.saigon.domain.RoomUpdate
 import social.saigon.domain.Service
 import social.saigon.domain.ServiceActivity
 import social.saigon.domain.ServiceDestination
+import social.saigon.domain.Skill
 import social.saigon.domain.ThreadSummary
 import social.saigon.domain.User
 import social.saigon.domain.WarningReason
@@ -529,6 +530,8 @@ fun Application.registerRoutes(
                         intents = identity.intents ?: user.intents,
                         languages = identity.languages ?: user.languages,
                         interests = identity.interests ?: user.interests,
+                        introduction = identity.introduction ?: user.introduction,
+                        skills = identity.skills ?: user.skills,
                         offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
                         // "Available for chat" indicator for active Supporters (DESIGN §7).
                         available = privateChatService.isAvailable(userId),
@@ -568,6 +571,8 @@ fun Application.registerRoutes(
                     intents = identity.intents ?: user.intents,
                     languages = identity.languages ?: user.languages,
                     interests = identity.interests ?: user.interests,
+                    introduction = identity.introduction ?: user.introduction,
+                    skills = identity.skills ?: user.skills,
                     offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
                     // "Available for chat" indicator for active Supporters (DESIGN §7).
                     available = privateChatService.isAvailable(userId),
@@ -1547,8 +1552,12 @@ data class OccupantView(
     val role: Role,
     val intents: List<String> = emptyList(),
     val languages: List<String>,
-    /** The member's free-text introduction (their interests), shown on the detail sheet (DESIGN §4). */
+    /** Free-text interest tags shown on the detail sheet (DESIGN §4). */
     val interests: List<String> = emptyList(),
+    /** Plain-text introduction shown below interests on the detail sheet. */
+    val introduction: String = "",
+    /** Skills (emoji + name + level 0–5) shown under photos on the detail sheet. */
+    val skills: List<Skill> = emptyList(),
     /** Time frame(s) the member is often available offline, shown on the detail sheet (DESIGN §4). */
     val offlineSchedule: List<String> = emptyList(),
     /** "Available for chat" indicator for active Supporters (DESIGN §7). */
@@ -1566,6 +1575,10 @@ data class ProfileResponse(
     val role: Role,
     val displayName: String,
     val interests: List<String>,
+    /** Plain-text introduction shown below interests. */
+    val introduction: String = "",
+    /** Skills (emoji + name + level 0–5) shown under photos. */
+    val skills: List<Skill> = emptyList(),
     val intents: List<String> = emptyList(),
     val languages: List<String>,
     val offlineSchedule: List<String>,
@@ -1769,6 +1782,8 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
     role = role,
     displayName = displayName,
     interests = interests,
+    introduction = introduction,
+    skills = skills,
     intents = intents,
     languages = languages,
     offlineSchedule = offlineSchedule,

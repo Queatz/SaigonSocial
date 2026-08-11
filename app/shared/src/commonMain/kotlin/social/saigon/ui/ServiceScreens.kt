@@ -526,7 +526,7 @@ internal fun ServiceDetailScreen(
                         Button(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = onSignIn,
-                        ) { Text("Sign in to get in touch with ${s.providerName}") }
+                        ) { Text("Sign in to chat with ${s.providerName}") }
                     } else if (canContact && selfUserId != s.providerId) {
                         ContactProviderSection(
                             api = api,

@@ -51,6 +51,10 @@ class IdentityService(
             current.copy(
                 name = update.name?.trim()?.takeIf { it.isNotEmpty() } ?: current.name,
                 interests = update.interests,
+                // Introduction/skills follow the same inherit/override contract as the other facets:
+                // a null clears the override so the main profile is used again.
+                introduction = update.introduction,
+                skills = update.skills,
                 intents = update.intents,
                 languages = update.languages,
                 offlineSchedule = update.offlineSchedule,

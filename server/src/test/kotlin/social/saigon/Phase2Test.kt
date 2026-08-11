@@ -84,12 +84,15 @@ class Phase2Test {
     fun updateProfileStoresPerRoomOverridesAndCustomName() = runBlocking {
         val svc = service()
         svc.getOrCreate("u1", "room1")
+        val skill = social.saigon.domain.Skill(emoji = "🎸", name = "Guitar", level = 4)
         val updated = svc.updateProfile(
             "u1",
             "room1",
             social.saigon.domain.RoomIdentityUpdate(
                 name = "Coffee Nomad",
                 interests = listOf("espresso", "vinyl"),
+                introduction = "I host vinyl listening nights.",
+                skills = listOf(skill),
                 intents = listOf("☕ Casual"),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("weekends"),
@@ -97,6 +100,8 @@ class Phase2Test {
         )
         assertEquals("Coffee Nomad", updated.name)
         assertEquals(listOf("espresso", "vinyl"), updated.interests)
+        assertEquals("I host vinyl listening nights.", updated.introduction)
+        assertEquals(listOf(skill), updated.skills)
         assertEquals(listOf("☕ Casual"), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("weekends"), updated.offlineSchedule)
@@ -126,11 +131,17 @@ class Phase2Test {
         svc.updateProfile(
             "u1",
             "room1",
-            social.saigon.domain.RoomIdentityUpdate(interests = listOf("chess")),
+            social.saigon.domain.RoomIdentityUpdate(
+                interests = listOf("chess"),
+                introduction = "Room intro",
+                skills = listOf(social.saigon.domain.Skill(emoji = "♟️", name = "Chess", level = 5)),
+            ),
         )
         // A null field clears the override so the facet inherits from the main profile again.
         val cleared = svc.updateProfile("u1", "room1", social.saigon.domain.RoomIdentityUpdate())
         assertEquals(null, cleared.interests)
+        assertEquals(null, cleared.introduction)
+        assertEquals(null, cleared.skills)
     }
 
     @Test

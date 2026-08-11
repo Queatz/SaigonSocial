@@ -4,6 +4,7 @@ import social.saigon.domain.Capability
 import social.saigon.domain.EmojiOptions
 import social.saigon.domain.ProfilePhoto
 import social.saigon.domain.ProfileUpdate
+import social.saigon.domain.Skill
 import social.saigon.domain.User
 import social.saigon.domain.can
 import social.saigon.repository.UserRepository
@@ -30,6 +31,8 @@ class ProfileService(private val users: UserRepository) {
         require(user.role.can(Capability.EDIT_PROFILE)) { "Role ${user.role} cannot edit a profile" }
 
         val interests = update.interests?.let(::normalizeInterests) ?: user.interests
+        val introduction = update.introduction?.let(::normalizeIntroduction) ?: user.introduction
+        val skills = update.skills?.let(::normalizeSkills) ?: user.skills
         val languages = update.languages?.let(::normalizeLanguages) ?: user.languages
         val schedule = update.offlineSchedule?.let(::normalizeSchedule) ?: user.offlineSchedule
         val intents = update.intents?.let(::normalizeIntents) ?: user.intents
@@ -37,6 +40,8 @@ class ProfileService(private val users: UserRepository) {
         return users.update(
             user.copy(
                 interests = interests,
+                introduction = introduction,
+                skills = skills,
                 languages = languages,
                 offlineSchedule = schedule,
                 intents = intents,
@@ -131,6 +136,33 @@ class ProfileService(private val users: UserRepository) {
             "At most ${User.MAX_INTERESTS} interests allowed"
         }
         return cleaned
+    }
+
+    private fun normalizeIntroduction(introduction: String): String {
+        val cleaned = introduction.trim()
+        require(cleaned.length <= User.MAX_INTRODUCTION_LENGTH) {
+            "Introduction must be at most ${User.MAX_INTRODUCTION_LENGTH} characters"
+        }
+        return cleaned
+    }
+
+    private fun normalizeSkills(skills: List<Skill>): List<Skill> {
+        require(skills.size <= Skill.MAX_SKILLS) {
+            "At most ${Skill.MAX_SKILLS} skills allowed"
+        }
+        return skills.map { skill ->
+            val emoji = skill.emoji.trim()
+            val name = skill.name.trim()
+            val description = skill.description.trim()
+            require(name.isNotEmpty()) { "Each skill needs a name" }
+            require(description.length <= Skill.MAX_DESCRIPTION_LENGTH) {
+                "Skill description must be at most ${Skill.MAX_DESCRIPTION_LENGTH} characters"
+            }
+            require(skill.level in Skill.MIN_LEVEL..Skill.MAX_LEVEL) {
+                "Skill level must be between ${Skill.MIN_LEVEL} and ${Skill.MAX_LEVEL}"
+            }
+            Skill(emoji = emoji, name = name, description = description, level = skill.level)
+        }
     }
 
     // Languages are free-text (a launch set plus any custom languages a Supporter/Founder adds),

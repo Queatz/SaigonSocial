@@ -101,6 +101,10 @@ object Languages {
 @Serializable
 data class ProfileUpdate(
     val interests: List<String>? = null,
+    /** Plain-text introduction; null leaves the existing value unchanged. */
+    val introduction: String? = null,
+    /** Skills list (emoji + name + level 0–5); null leaves the existing list unchanged. */
+    val skills: List<Skill>? = null,
     val intents: List<String>? = null,
     val languages: List<String>? = null,
     val offlineSchedule: List<String>? = null,

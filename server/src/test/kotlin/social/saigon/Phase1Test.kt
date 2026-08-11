@@ -49,6 +49,16 @@ class Phase1Test {
             "u1",
             ProfileUpdate(
                 interests = listOf("guitar", " coffee ", "guitar"),
+                introduction = "  Hello from Saigon  ",
+                skills = listOf(
+                    social.saigon.domain.Skill(
+                        emoji = "🎸",
+                        name = " Guitar ",
+                        description = " Open mics ",
+                        level = 4,
+                    ),
+                    social.saigon.domain.Skill(emoji = "☕", name = "Latte art", level = 2),
+                ),
                 intents = listOf("🧠 Deep Talk"),
                 languages = listOf("vi", "en"),
                 offlineSchedule = listOf("Mon-Fri 7-9 PM"),
@@ -56,9 +66,61 @@ class Phase1Test {
         )
         // Trimmed + de-duplicated.
         assertEquals(listOf("guitar", "coffee"), updated.interests)
+        assertEquals("Hello from Saigon", updated.introduction)
+        assertEquals(2, updated.skills.size)
+        assertEquals("Guitar", updated.skills[0].name)
+        assertEquals("Open mics", updated.skills[0].description)
+        assertEquals(4, updated.skills[0].level)
+        assertEquals("Expert", social.saigon.domain.Skill.levelName(updated.skills[0].level))
         assertEquals(listOf("🧠 Deep Talk"), updated.intents)
         assertEquals(listOf("vi", "en"), updated.languages)
         assertEquals(listOf("Mon-Fri 7-9 PM"), updated.offlineSchedule)
+    }
+
+    @Test
+    fun rejectsInvalidSkillLevel() {
+        val (svc, repo) = service()
+        sharer(repo)
+        assertFailsWith<IllegalArgumentException> {
+            svc.update(
+                "u1",
+                ProfileUpdate(
+                    skills = listOf(social.saigon.domain.Skill(emoji = "🎸", name = "Guitar", level = 9)),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun rejectsBlankSkillName() {
+        val (svc, repo) = service()
+        sharer(repo)
+        assertFailsWith<IllegalArgumentException> {
+            svc.update(
+                "u1",
+                ProfileUpdate(
+                    skills = listOf(social.saigon.domain.Skill(emoji = "🎸", name = "  ", level = 2)),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun nullIntroductionAndSkillsLeaveExistingValuesUntouched() {
+        val (svc, repo) = service()
+        sharer(repo)
+        svc.update(
+            "u1",
+            ProfileUpdate(
+                introduction = "Hi there",
+                skills = listOf(social.saigon.domain.Skill(emoji = "📚", name = "Reading", level = 3)),
+            ),
+        )
+        val updated = svc.update("u1", ProfileUpdate(languages = listOf("ko")))
+        assertEquals("Hi there", updated.introduction)
+        assertEquals(1, updated.skills.size)
+        assertEquals("Reading", updated.skills.single().name)
+        assertEquals(listOf("ko"), updated.languages)
     }
 
     @Test

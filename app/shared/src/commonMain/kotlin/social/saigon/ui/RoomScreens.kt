@@ -1272,11 +1272,25 @@ internal fun OccupantDetailSheet(
                 Spacer(Modifier.height(4.dp))
                 Text(person.interests.joinToString(" · "), fontSize = 14.sp)
             }
+            // Plain-text introduction sits just below interests at the top of the sheet.
+            if (person.introduction.isNotBlank()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Introduction", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(person.introduction, fontSize = 14.sp)
+            }
             // Photo cards: this room's photos come first (issue: "Community profile photos"), then the
             // main-profile set, exactly as the server orders them. Shown above "Here for".
             if (person.photos.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 PhotoCardsRow(title = person.name, photos = person.photos)
+            }
+            // Skills render as landscape "large chip" cards under the photos.
+            if (person.skills.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Skills", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                SkillsRow(skills = person.skills)
             }
             if (person.intents.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1702,6 +1716,18 @@ private fun EditRoomProfileForm(
         mutableStateOf((identity.interests ?: profile.interests).joinToString(", "))
     }
 
+    var introductionCustom by remember { mutableStateOf(identity.introduction != null) }
+    var introductionText by remember {
+        mutableStateOf(identity.introduction ?: profile.introduction)
+    }
+
+    var skillsCustom by remember { mutableStateOf(identity.skills != null) }
+    val skills = remember {
+        mutableStateListOf<Skill>().apply { addAll(identity.skills ?: profile.skills) }
+    }
+    var addingSkill by remember { mutableStateOf(false) }
+    var editingSkillIndex by remember { mutableStateOf<Int?>(null) }
+
     var intentsCustom by remember { mutableStateOf(identity.intents != null) }
     val intents = remember {
         mutableStateListOf<String>().apply { addAll(identity.intents ?: profile.intents) }
@@ -1781,6 +1807,48 @@ private fun EditRoomProfileForm(
                     label = { Text("Interests (comma-separated)") },
                     shape = InputFieldShape,
                 )
+
+                // Introduction (plain text below interests).
+                RoomFacetHeader(
+                    title = "Introduction",
+                    customized = introductionCustom,
+                    onReset = {
+                        introductionCustom = false
+                        introductionText = profile.introduction
+                    },
+                )
+                OutlinedTextField(
+                    value = introductionText,
+                    onValueChange = { introductionText = it; introductionCustom = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Introduction") },
+                    placeholder = { Text("A short intro about you…") },
+                    shape = InputFieldShape,
+                    minLines = 3,
+                )
+
+                // Skills (landscape chip cards under photos on the public sheet).
+                RoomFacetHeader(
+                    title = "Skills",
+                    customized = skillsCustom,
+                    onReset = {
+                        skillsCustom = false
+                        skills.clear()
+                        skills.addAll(profile.skills)
+                    },
+                )
+                SkillsRow(
+                    skills = skills.toList(),
+                    onSkillClick = {
+                        editingSkillIndex = it
+                        skillsCustom = true
+                    },
+                )
+                OutlinedButton(
+                    onClick = { addingSkill = true; skillsCustom = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = skills.size < Skill.MAX_SKILLS,
+                ) { Text("➕ Add a skill", fontSize = 12.sp) }
 
                 // Intents (toggle buttons).
                 RoomFacetHeader(
@@ -1898,6 +1966,8 @@ private fun EditRoomProfileForm(
                             interests = if (interestsCustom) {
                                 interestsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                             } else null,
+                            introduction = if (introductionCustom) introductionText else null,
+                            skills = if (skillsCustom) skills.toList() else null,
                             intents = if (intentsCustom) intents.toList() else null,
                             languages = if (languagesCustom) languages.toList() else null,
                             offlineSchedule = if (availabilityCustom) {
@@ -1953,6 +2023,44 @@ private fun EditRoomProfileForm(
                 editingPhoto = null
             },
         )
+    }
+
+    if (addingSkill) {
+        SkillEditorDialog(
+            onDismiss = { addingSkill = false },
+            onSave = { skill ->
+                if (skills.size < Skill.MAX_SKILLS) {
+                    skills.add(skill)
+                    skillsCustom = true
+                }
+                addingSkill = false
+            },
+        )
+    }
+    editingSkillIndex?.let { index ->
+        val current = skills.getOrNull(index)
+        if (current != null) {
+            SkillEditorDialog(
+                initial = current,
+                onDismiss = { editingSkillIndex = null },
+                onSave = { updated ->
+                    if (index in skills.indices) {
+                        skills[index] = updated
+                        skillsCustom = true
+                    }
+                    editingSkillIndex = null
+                },
+                onDelete = {
+                    if (index in skills.indices) {
+                        skills.removeAt(index)
+                        skillsCustom = true
+                    }
+                    editingSkillIndex = null
+                },
+            )
+        } else {
+            editingSkillIndex = null
+        }
     }
 }
 
