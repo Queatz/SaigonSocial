@@ -1211,6 +1211,8 @@ internal fun OccupantDetailSheet(
     // refresh their anonymous name (DESIGN §4, §5). Tracks whether the edit dialog is open.
     var editingRoomProfile by remember { mutableStateOf(false) }
     var offeringService by remember { mutableStateOf(false) }
+    // Tapping a compact skill chip opens a read-only dialog with the full skill details.
+    var viewingSkill by remember { mutableStateOf<Skill?>(null) }
     val canEditRoomProfile = person.role == Role.SUPPORTER || person.role == Role.FOUNDER
     // The services this member provides in this room, shown under a "Hosting" section. Reloaded
     // whenever the member creates a new one (via [servicesReload]) so it appears without reopening.
@@ -1285,12 +1287,17 @@ internal fun OccupantDetailSheet(
                 Spacer(Modifier.height(16.dp))
                 PhotoCardsRow(title = person.name, photos = person.photos)
             }
-            // Skills render as landscape "large chip" cards under the photos.
+            // Skills render as landscape "large chip" cards under the photos. Compact chips hide
+            // description/level name; tapping one opens a dialog with the full details.
             if (person.skills.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 Text("Skills", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
-                SkillsRow(skills = person.skills)
+                SkillsRow(
+                    skills = person.skills,
+                    full = false,
+                    onSkillClick = { index -> viewingSkill = person.skills.getOrNull(index) },
+                )
             }
             if (person.intents.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1372,6 +1379,12 @@ internal fun OccupantDetailSheet(
             roomId = roomId,
             onDismiss = { offeringService = false },
             onCreated = { offeringService = false; servicesReload++ },
+        )
+    }
+    viewingSkill?.let { skill ->
+        SkillDetailDialog(
+            skill = skill,
+            onDismiss = { viewingSkill = null },
         )
     }
 }

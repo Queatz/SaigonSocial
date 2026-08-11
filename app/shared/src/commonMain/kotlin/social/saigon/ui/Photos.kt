@@ -177,27 +177,27 @@ internal fun LandscapePhotoScroller(
                     .align(Alignment.CenterEnd)
                     .padding(end = 8.dp),
             )
-        }
 
-        // Dot indicator line across the center bottom (current + total via filled/empty dots).
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            photos.forEachIndexed { index, _ ->
-                val selected = index == pagerState.currentPage
-                Box(
-                    modifier = Modifier
-                        .size(if (selected) 8.dp else 6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (selected) Color.White
-                            else Color.White.copy(alpha = 0.45f),
-                        ),
-                )
+            // Dot indicator line across the center bottom (current + total via filled/empty dots).
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                photos.forEachIndexed { index, _ ->
+                    val selected = index == pagerState.currentPage
+                    Box(
+                        modifier = Modifier
+                            .size(if (selected) 8.dp else 6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (selected) Color.White
+                                else Color.White.copy(alpha = 0.45f),
+                            ),
+                    )
+                }
             }
         }
     }
@@ -417,7 +417,8 @@ internal fun PhotoUploadDialog(
                 // current one) but can still be clicked to choose a different photo. While a file
                 // is dragged over the page the border/background highlight to show it's a target.
                 val areaShape = RoundedCornerShape(16.dp)
-                val areaBorder = if (dragActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                val areaBorder =
+                    if (dragActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                 val areaBackground = if (dragActive) {
                     MaterialTheme.colorScheme.primaryContainer
                 } else {
@@ -442,16 +443,19 @@ internal fun PhotoUploadDialog(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(16.dp),
                         )
+
                         preview != null -> Image(
                             bitmap = preview,
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
+
                         currentPhoto != null -> UrlImage(
                             url = currentPhoto.url,
                             modifier = Modifier.fillMaxSize(),
                         )
+
                         else -> Text(
                             "Drop a photo here, or click to choose one",
                             fontSize = 13.sp,

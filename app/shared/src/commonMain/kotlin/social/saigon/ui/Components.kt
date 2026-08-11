@@ -327,6 +327,7 @@ internal fun DimmableToggleButton(
 internal fun SkillCard(
     skill: Skill,
     modifier: Modifier = Modifier,
+    full: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
     Surface(
@@ -350,7 +351,7 @@ internal fun SkillCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (skill.description.isNotBlank()) {
+                if (skill.description.isNotBlank() && full) {
                     Text(
                         skill.description,
                         fontSize = 12.sp,
@@ -364,13 +365,15 @@ internal fun SkillCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     SkillLevelDots(level = skill.level)
-                    Text(
-                        Skill.levelName(skill.level),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (full) {
+                        Text(
+                            Skill.levelName(skill.level),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -396,14 +399,14 @@ internal fun SkillLevelDots(level: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * A wrapping row of [SkillCard]s. When [onSkillClick] is set (edit surfaces), tapping a card opens
- * the edit path; otherwise cards are display-only.
+ * A wrapping row of [SkillCard]s. When [onSkillClick] is set, tapping a card invokes the handler
+ * (edit surfaces open the editor; the occupant sheet opens a read-only detail dialog).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SkillsRow(
     skills: List<Skill>,
     modifier: Modifier = Modifier,
+    full: Boolean = true,
     onSkillClick: ((Int) -> Unit)? = null,
 ) {
     if (skills.isEmpty()) return
@@ -415,10 +418,58 @@ internal fun SkillsRow(
         skills.forEachIndexed { index, skill ->
             SkillCard(
                 skill = skill,
+                full = full,
                 onClick = onSkillClick?.let { handler -> { handler(index) } },
             )
         }
     }
+}
+
+/**
+ * Read-only dialog showing the full details of a single [Skill]: emoji, name, description, and
+ * named level with dots. Opened from [SkillsRow] on the occupant detail sheet.
+ */
+@Composable
+internal fun SkillDetailDialog(
+    skill: Skill,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(skill.emoji.ifBlank { "✨" }, fontSize = 28.sp)
+                Text(skill.name.ifBlank { "Skill" }, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (skill.description.isNotBlank()) {
+                    Text(skill.description, fontSize = 14.sp)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Level", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SkillLevelDots(level = skill.level)
+                        Text(
+                            "${skill.level} · ${Skill.levelName(skill.level)}",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
 
 /**
