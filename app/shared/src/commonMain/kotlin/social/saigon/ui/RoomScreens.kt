@@ -978,7 +978,7 @@ internal fun RoomChatScreen(
                     }
                     // Room services strip along the top of the chat area (kept in addition to the
                     // "In the community" sheet button). Horizontally scrollable clickable ServiceCards.
-                    if (roomServices.isNotEmpty()) {
+                    if (roomServices.isNotEmpty() && wide) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

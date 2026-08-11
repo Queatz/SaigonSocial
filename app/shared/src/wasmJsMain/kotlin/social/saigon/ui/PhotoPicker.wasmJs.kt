@@ -33,12 +33,30 @@ private fun openPhotoPickerJs(onPicked: (JsString, JsString) -> Unit): Unit = js
     """,
 )
 
-private fun registerPhotoDropJs(onDropped: (JsString, JsString) -> Unit): Unit = js(
+private fun registerPhotoDropJs(
+    onDropped: (JsString, JsString) -> Unit,
+    onDragActive: (Boolean) -> Unit,
+): Unit = js(
     """
     {
+        var depth = 0;
         window.saigonPhotoDragOver = function (event) { event.preventDefault(); };
+        window.saigonPhotoDragEnter = function (event) {
+            event.preventDefault();
+            depth++;
+            if (depth === 1) onDragActive(true);
+        };
+        window.saigonPhotoDragLeave = function (event) {
+            depth--;
+            if (depth <= 0) {
+                depth = 0;
+                onDragActive(false);
+            }
+        };
         window.saigonPhotoDrop = function (event) {
             event.preventDefault();
+            depth = 0;
+            onDragActive(false);
             var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
             if (!file) return;
             var reader = new FileReader();
@@ -51,6 +69,8 @@ private fun registerPhotoDropJs(onDropped: (JsString, JsString) -> Unit): Unit =
             reader.readAsArrayBuffer(file);
         };
         document.addEventListener('dragover', window.saigonPhotoDragOver);
+        document.addEventListener('dragenter', window.saigonPhotoDragEnter);
+        document.addEventListener('dragleave', window.saigonPhotoDragLeave);
         document.addEventListener('drop', window.saigonPhotoDrop);
     }
     """,
@@ -62,6 +82,14 @@ private fun unregisterPhotoDropJs(): Unit = js(
         if (window.saigonPhotoDragOver) {
             document.removeEventListener('dragover', window.saigonPhotoDragOver);
             window.saigonPhotoDragOver = null;
+        }
+        if (window.saigonPhotoDragEnter) {
+            document.removeEventListener('dragenter', window.saigonPhotoDragEnter);
+            window.saigonPhotoDragEnter = null;
+        }
+        if (window.saigonPhotoDragLeave) {
+            document.removeEventListener('dragleave', window.saigonPhotoDragLeave);
+            window.saigonPhotoDragLeave = null;
         }
         if (window.saigonPhotoDrop) {
             document.removeEventListener('drop', window.saigonPhotoDrop);
@@ -92,16 +120,29 @@ internal actual fun rememberPhotoPicker(onPicked: (bytes: ByteArray, mimeType: S
 }
 
 @Composable
-internal actual fun PhotoDropEffect(enabled: Boolean, onDropped: (bytes: ByteArray, mimeType: String) -> Unit) {
-    val current = rememberUpdatedState(onDropped)
+internal actual fun PhotoDropEffect(
+    enabled: Boolean,
+    onDropped: (bytes: ByteArray, mimeType: String) -> Unit,
+    onDragActiveChange: (Boolean) -> Unit,
+) {
+    val currentDrop = rememberUpdatedState(onDropped)
+    val currentDrag = rememberUpdatedState(onDragActiveChange)
     DisposableEffect(enabled) {
         if (enabled) {
             // Document-level handlers: Compose renders to a canvas, so per-element DOM drop
             // targets don't exist — while the upload dialog is open, any drop on the page counts.
-            registerPhotoDropJs { base64, mime ->
-                deliverPhoto(base64, mime) { bytes, type -> current.value(bytes, type) }
+            registerPhotoDropJs(
+                onDropped = { base64, mime ->
+                    deliverPhoto(base64, mime) { bytes, type -> currentDrop.value(bytes, type) }
+                },
+                onDragActive = { active -> currentDrag.value(active) },
+            )
+        }
+        onDispose {
+            if (enabled) {
+                unregisterPhotoDropJs()
+                currentDrag.value(false)
             }
         }
-        onDispose { if (enabled) unregisterPhotoDropJs() }
     }
 }

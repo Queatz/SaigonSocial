@@ -15,8 +15,13 @@ internal expect fun rememberPhotoPicker(onPicked: (bytes: ByteArray, mimeType: S
 /**
  * Page-level drag-and-drop upload support for the photo dialog's "drop or click to upload" area.
  * While [enabled], dropping an image file anywhere on the page hands its bytes to [onDropped].
- * Only meaningful on web (DESIGN §12: web-first); a no-op on Android, where the system picker
- * opened by [rememberPhotoPicker] is the only way in.
+ * [onDragActiveChange] reports whether a file drag is currently over the page so the drop area
+ * can highlight. Only meaningful on web (DESIGN §12: web-first); a no-op on Android, where the
+ * system picker opened by [rememberPhotoPicker] is the only way in.
  */
 @Composable
-internal expect fun PhotoDropEffect(enabled: Boolean, onDropped: (bytes: ByteArray, mimeType: String) -> Unit)
+internal expect fun PhotoDropEffect(
+    enabled: Boolean,
+    onDropped: (bytes: ByteArray, mimeType: String) -> Unit,
+    onDragActiveChange: (Boolean) -> Unit = {},
+)

@@ -384,6 +384,7 @@ internal fun PhotoUploadDialog(
     var message by remember { mutableStateOf(currentPhoto?.message.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var dragActive by remember { mutableStateOf(false) }
 
     val onPicked: (ByteArray, String) -> Unit = { bytes, mimeType ->
         val preview = PhotoLoader.decode(bytes)
@@ -396,7 +397,11 @@ internal fun PhotoUploadDialog(
     }
     val launchPicker = rememberPhotoPicker(onPicked = onPicked)
     // On web, dropping an image anywhere on the page while this dialog is open counts as a pick.
-    PhotoDropEffect(enabled = !busy, onDropped = onPicked)
+    PhotoDropEffect(
+        enabled = !busy,
+        onDropped = onPicked,
+        onDragActiveChange = { dragActive = it },
+    )
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
@@ -404,20 +409,34 @@ internal fun PhotoUploadDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // The rounded-rectangle drop/click upload area. It shows the picked photo (or the
-                // current one) but can still be clicked to choose a different photo.
+                // current one) but can still be clicked to choose a different photo. While a file
+                // is dragged over the page the border/background highlight to show it's a target.
                 val areaShape = RoundedCornerShape(16.dp)
+                val areaBorder = if (dragActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                val areaBackground = if (dragActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
                         .clip(areaShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(2.dp, MaterialTheme.colorScheme.outline, areaShape)
+                        .background(areaBackground)
+                        .border(if (dragActive) 3.dp else 2.dp, areaBorder, areaShape)
                         .clickable(enabled = !busy) { launchPicker() },
                     contentAlignment = Alignment.Center,
                 ) {
                     val preview = picked?.preview
                     when {
+                        dragActive -> Text(
+                            "Drop photo to upload",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(16.dp),
+                        )
                         preview != null -> Image(
                             bitmap = preview,
                             contentDescription = null,

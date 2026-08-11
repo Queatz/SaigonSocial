@@ -661,7 +661,7 @@ private fun ServiceInclusionsSection(included: String, notIncluded: String) {
             Text("What's included", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             includedItems.forEach { item ->
                 Row(verticalAlignment = Alignment.Top) {
-                    Text("•", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+                    Text("✅", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
                     Text(item, fontSize = 14.sp)
                 }
             }

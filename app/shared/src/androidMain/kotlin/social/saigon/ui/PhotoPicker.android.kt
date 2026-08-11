@@ -24,7 +24,11 @@ internal actual fun rememberPhotoPicker(onPicked: (bytes: ByteArray, mimeType: S
 }
 
 @Composable
-internal actual fun PhotoDropEffect(enabled: Boolean, onDropped: (bytes: ByteArray, mimeType: String) -> Unit) {
+internal actual fun PhotoDropEffect(
+    enabled: Boolean,
+    onDropped: (bytes: ByteArray, mimeType: String) -> Unit,
+    onDragActiveChange: (Boolean) -> Unit,
+) {
     // Drag-and-drop is a web affordance (DESIGN §12: web-first); on Android the system picker
     // opened by [rememberPhotoPicker] is the only way in.
 }
