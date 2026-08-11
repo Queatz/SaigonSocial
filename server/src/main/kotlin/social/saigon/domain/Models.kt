@@ -299,6 +299,16 @@ data class Service(
      */
     val notIncluded: String = "",
     /**
+     * Semicolon-separated items guests should bring. Rendered as a bullet list on the service detail
+     * screen ("What to bring").
+     */
+    val toBring: String = "",
+    /**
+     * Semicolon-separated items guests should not bring. Rendered as a small box with comma-separated
+     * text on the service detail screen ("What not to bring").
+     */
+    val notToBring: String = "",
+    /**
      * Ordered itinerary stops ("Where you'll go"). Sequence is visit order (1, 2, 3…).
      */
     val destinations: List<ServiceDestination> = emptyList(),

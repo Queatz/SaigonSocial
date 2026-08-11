@@ -525,6 +525,10 @@ data class ServiceView(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */
@@ -566,6 +570,10 @@ data class ServiceCreate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */
@@ -586,6 +594,10 @@ data class ServiceUpdate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */

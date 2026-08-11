@@ -1487,6 +1487,8 @@ private fun CreateServiceDialog(
     var price by remember { mutableStateOf("") }
     var included by remember { mutableStateOf("") }
     var notIncluded by remember { mutableStateOf("") }
+    var toBring by remember { mutableStateOf("") }
+    var notToBring by remember { mutableStateOf("") }
     val destinations = remember { mutableStateListOf<ServiceDestination>() }
     val activities = remember { mutableStateListOf<ServiceActivity>() }
     var cancellationPolicy by remember { mutableStateOf(DEFAULT_CANCELLATION_POLICY) }
@@ -1554,6 +1556,24 @@ private fun CreateServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                OutlinedTextField(
+                    value = toBring,
+                    onValueChange = { toBring = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What to bring") },
+                    placeholder = { Text("item one; item two; item three") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = notToBring,
+                    onValueChange = { notToBring = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What not to bring") },
+                    placeholder = { Text("item one; item two") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 ServiceDestinationsEditor(
                     api = api,
                     destinations = destinations,
@@ -1591,6 +1611,8 @@ private fun CreateServiceDialog(
                                 price = price.toIntOrNull() ?: 0,
                                 included = included.trim(),
                                 notIncluded = notIncluded.trim(),
+                                toBring = toBring.trim(),
+                                notToBring = notToBring.trim(),
                                 destinations = destinations.toList(),
                                 activities = activities.toList(),
                                 cancellationPolicy = cancellationPolicy.trim()

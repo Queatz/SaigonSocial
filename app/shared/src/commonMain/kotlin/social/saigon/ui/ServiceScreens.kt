@@ -490,6 +490,11 @@ internal fun ServiceDetailScreen(
                         notIncluded = s.notIncluded,
                     )
 
+                    ServiceBringSection(
+                        toBring = s.toBring,
+                        notToBring = s.notToBring,
+                    )
+
                     WhereYoullGoSection(destinations = s.destinations)
 
                     WhatYoullDoSection(activities = s.activities)
@@ -705,6 +710,55 @@ private fun ServiceInclusionsSection(included: String, notIncluded: String) {
                     )
                     Text(
                         notIncludedItems.joinToString(", "),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * "What to bring" / "What not to bring" on the service detail screen. Same layout as inclusions:
+ * semicolon-split bring items as a bullet list; not-to-bring items in a small comma-separated box.
+ */
+@Composable
+private fun ServiceBringSection(toBring: String, notToBring: String) {
+    val toBringItems = remember(toBring) { splitSemicolonItems(toBring) }
+    val notToBringItems = remember(notToBring) { splitSemicolonItems(notToBring) }
+    if (toBringItems.isEmpty() && notToBringItems.isEmpty()) return
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (toBringItems.isNotEmpty()) {
+            Text("What to bring", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            toBringItems.forEach { item ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("🎒", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+                    Text(item, fontSize = 14.sp)
+                }
+            }
+        }
+        if (notToBringItems.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "What not to bring",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        notToBringItems.joinToString(", "),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1138,6 +1192,8 @@ private fun EditServiceDialog(
     var price by remember { mutableStateOf(if (service.price > 0) service.price.toString() else "") }
     var included by remember { mutableStateOf(service.included) }
     var notIncluded by remember { mutableStateOf(service.notIncluded) }
+    var toBring by remember { mutableStateOf(service.toBring) }
+    var notToBring by remember { mutableStateOf(service.notToBring) }
     val destinations = remember {
         mutableStateListOf<ServiceDestination>().also { it.addAll(service.destinations) }
     }
@@ -1211,6 +1267,24 @@ private fun EditServiceDialog(
                     shape = InputFieldShape,
                     enabled = !busy,
                 )
+                OutlinedTextField(
+                    value = toBring,
+                    onValueChange = { toBring = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What to bring") },
+                    placeholder = { Text("item one; item two; item three") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
+                OutlinedTextField(
+                    value = notToBring,
+                    onValueChange = { notToBring = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("What not to bring") },
+                    placeholder = { Text("item one; item two") },
+                    shape = InputFieldShape,
+                    enabled = !busy,
+                )
                 ServiceDestinationsEditor(
                     api = api,
                     destinations = destinations,
@@ -1248,6 +1322,8 @@ private fun EditServiceDialog(
                                 price = price.toIntOrNull() ?: 0,
                                 included = included.trim(),
                                 notIncluded = notIncluded.trim(),
+                                toBring = toBring.trim(),
+                                notToBring = notToBring.trim(),
                                 destinations = destinations.toList(),
                                 activities = activities.toList(),
                                 cancellationPolicy = cancellationPolicy.trim()

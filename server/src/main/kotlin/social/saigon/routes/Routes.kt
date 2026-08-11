@@ -142,6 +142,10 @@ data class ServiceCreate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */
@@ -162,6 +166,10 @@ data class ServiceUpdate(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */
@@ -209,6 +217,10 @@ data class ServiceView(
     val included: String = "",
     /** Semicolon-separated "What's not included" items. */
     val notIncluded: String = "",
+    /** Semicolon-separated "What to bring" items. */
+    val toBring: String = "",
+    /** Semicolon-separated "What not to bring" items. */
+    val notToBring: String = "",
     /** Ordered itinerary stops ("Where you'll go"). */
     val destinations: List<ServiceDestination> = emptyList(),
     /** Activities ("What you'll do"), Markdown body supported. */
@@ -1050,6 +1062,8 @@ fun Application.registerRoutes(
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
                         notIncluded = req.notIncluded.trim(),
+                        toBring = req.toBring.trim(),
+                        notToBring = req.notToBring.trim(),
                         destinations = sanitizeDestinations(req.destinations),
                         activities = sanitizeActivities(req.activities),
                         cancellationPolicy = req.cancellationPolicy.trim()
@@ -1092,6 +1106,8 @@ fun Application.registerRoutes(
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
                         notIncluded = req.notIncluded.trim(),
+                        toBring = req.toBring.trim(),
+                        notToBring = req.notToBring.trim(),
                         destinations = sanitizeDestinations(req.destinations),
                         activities = sanitizeActivities(req.activities),
                         cancellationPolicy = req.cancellationPolicy.trim()
@@ -1802,6 +1818,8 @@ private fun Service.toServiceView(repositories: Repositories): ServiceView {
         price = price,
         included = included,
         notIncluded = notIncluded,
+        toBring = toBring,
+        notToBring = notToBring,
         destinations = destinations,
         activities = activities,
         cancellationPolicy = cancellationPolicy,

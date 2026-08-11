@@ -128,13 +128,14 @@ class ServicesTest {
         val founderToken = ts.issueMemberToken("founder", Role.FOUNDER)
         application { module(repositories = repositories, authConfig = authConfig) }
 
-        // Create with a price and included/not-included lists (semicolon-separated free text).
+        // Create with a price and included/not-included + bring lists (semicolon-separated free text).
         val created = client.post("/rooms/r1/services") {
             header(HttpHeaders.Authorization, "Bearer $supToken")
             contentType(ContentType.Application.Json)
             setBody(
                 """{"roomId":"r1","emoji":"🎸","name":"Guitar lessons","price":50000,""" +
-                    """"included":"1-hour lesson; instrument provided","notIncluded":"sheet music; travel"}""",
+                    """"included":"1-hour lesson; instrument provided","notIncluded":"sheet music; travel",""" +
+                    """"toBring":"water bottle; notebook","notToBring":"food; pets"}""",
             )
         }
         assertEquals(HttpStatusCode.OK, created.status)
@@ -142,15 +143,18 @@ class ServicesTest {
         assertTrue(body.contains("\"price\":50000"))
         assertTrue(body.contains("\"included\":\"1-hour lesson; instrument provided\""))
         assertTrue(body.contains("\"notIncluded\":\"sheet music; travel\""))
+        assertTrue(body.contains("\"toBring\":\"water bottle; notebook\""))
+        assertTrue(body.contains("\"notToBring\":\"food; pets\""))
         val serviceId = extractId(body)
 
-        // Edit the price, name, and inclusion fields as the provider.
+        // Edit the price, name, inclusion, and bring fields as the provider.
         val edited = client.put("/services/$serviceId") {
             header(HttpHeaders.Authorization, "Bearer $supToken")
             contentType(ContentType.Application.Json)
             setBody(
                 """{"emoji":"🎸","name":"Guitar lessons","description":"","price":75000,""" +
-                    """"included":"2-hour lesson; picks","notIncluded":"amp"}""",
+                    """"included":"2-hour lesson; picks","notIncluded":"amp",""" +
+                    """"toBring":"picks; tuner","notToBring":"amp"}""",
             )
         }
         assertEquals(HttpStatusCode.OK, edited.status)
@@ -158,6 +162,8 @@ class ServicesTest {
         assertTrue(editedBody.contains("\"price\":75000"))
         assertTrue(editedBody.contains("\"included\":\"2-hour lesson; picks\""))
         assertTrue(editedBody.contains("\"notIncluded\":\"amp\""))
+        assertTrue(editedBody.contains("\"toBring\":\"picks; tuner\""))
+        assertTrue(editedBody.contains("\"notToBring\":\"amp\""))
 
         // Unlist: hidden from the public search but still returned in the provider's own list.
         client.post("/services/$serviceId/unlist") {
