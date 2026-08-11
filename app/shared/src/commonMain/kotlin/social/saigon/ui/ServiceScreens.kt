@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -407,195 +408,232 @@ internal fun ServiceDetailScreen(
             Text(error ?: "This adventure could not be found.", color = MaterialTheme.colorScheme.error)
         }
         else -> {
-            Column(
-                modifier = modifier.verticalScroll(rememberScrollState()),
-            ) {
-                // Large 16:9 landscape photo scroller across the top (swipe + arrows + dots).
-                if (s.photos.isNotEmpty()) {
-                    LandscapePhotoScroller(
-                        photos = s.photos,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .padding(top = 16.dp),
-                    )
-                }
+            // Sticky "Book this adventure" bar stays pinned while the detail body scrolls
+            // (same pattern as ProfileScreen's sticky Save bar).
+            val showContactBar = selfUserId != null && canContact && selfUserId != s.providerId
+            val showSignInBar = selfUserId == null
+            val showBookBar = showContactBar || showSignInBar
+            // Contact bar needs room for the title, message field, and send button; sign-in is a
+            // single full-width control like the profile Save bar.
+            val bookBarBottomPadding = when {
+                showContactBar -> 200.dp
+                showSignInBar -> 88.dp
+                else -> 0.dp
+            }
 
+            Box(modifier = modifier) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = bookBarBottomPadding)
+                        .verticalScroll(rememberScrollState()),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text(s.emoji.ifBlank { "🌟" }, fontSize = 36.sp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            // Price stays plain text; the community name is a link to Screen.Room.
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "${UiConstants.vnd(s.price)} • in ",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    "${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clip(MaterialTheme.shapes.extraSmall)
-                                        .clickable {
-                                            onOpenRoom(
-                                                RoomSummary(
-                                                    id = s.roomId,
-                                                    name = s.roomName,
-                                                    emoji = s.roomEmoji,
-                                                    atmosphere = "",
-                                                    occupants = 0,
-                                                ),
-                                            )
-                                        },
-                                )
-                            }
-                        }
-                        // Copy-link affordance, mirroring rooms and threads (top-right).
-                        ShareButton(isService = true, path = "/adventures/${s.id}")
-                    }
-                    if (!s.listed) {
-                        Text(
-                            "This adventure is unlisted — it won't show up in the public search.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (s.description.isNotBlank()) {
-                        Text(s.description, fontSize = 15.sp)
-                    }
-
-                    Text(
-                        text = "Hosted by ${nameWithBadge(s.providerName, s.providerRole)}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
-                            scope.launch {
-                                runCatching { api.occupant(s.roomId, s.providerId) }
-                                    .getOrNull()?.let { selectedOccupant = it }
-                            }
-                        },
-                    )
-                    // Disabled for now
-                    if (s.providerLanguages.isNotEmpty()) {
-                        Text(
-                            "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Large 16:9 landscape photo scroller across the top (swipe + arrows + dots).
+                    if (s.photos.isNotEmpty()) {
+                        LandscapePhotoScroller(
+                            photos = s.photos,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 16.dp),
                         )
                     }
 
-                    // Manage controls for the provider (or the Founder): edit, unlist/relist, delete.
-                    if (isFounder || selfUserId == s.providerId) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OutlinedButton(enabled = !managing, onClick = { editing = true }) { Text("Edit") }
-                            OutlinedButton(
-                                enabled = !managing,
-                                onClick = {
-                                    managing = true
-                                    scope.launch {
-                                        runCatching {
-                                            if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
-                                        }.onSuccess { service = it }
-                                        managing = false
-                                    }
-                                },
-                            ) { Text(if (s.listed) "Unlist" else "Relist") }
-                            TextButton(enabled = !managing, onClick = { confirmingDelete = true }) {
-                                Text("Delete", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-
-                    ServiceInclusionsSection(
-                        included = s.included,
-                        notIncluded = s.notIncluded,
-                    )
-
-                    ServiceBringSection(
-                        toBring = s.toBring,
-                        notToBring = s.notToBring,
-                    )
-
-                    WhereYoullGoSection(destinations = s.destinations)
-
-                    WhatYoullDoSection(activities = s.activities)
-
-                    CancellationPolicySection(policy = s.cancellationPolicy)
-
-                    // Service photos (issue: "upload adventure photos ... display the adventure photos on
-                    // the adventure page"): shown to everyone; the provider/Founder can add or delete them.
-                    ServicePhotoSection(
-                        api = api,
-                        service = s,
-                        canManage = isFounder || selfUserId == s.providerId,
-                        onUpdated = { service = it },
-                    )
-
-                    FeedbackSection(
-                        api = api,
-                        serviceId = serviceId,
-                        feedback = feedback,
-                        providerId = s.providerId,
-                        selfUserId = selfUserId,
-                        isFounder = isFounder,
-                        canLeaveFeedback = selfUserId != null,
-                        onChanged = { scope.launch { reloadFeedback() } },
-                    )
-
-                    if (selfUserId == null) {
-                        // Signed-out visitors can't message yet — invite them to sign in first.
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = onSignIn,
-                        ) { Text("Sign in to chat with ${s.providerName}") }
-                    } else if (canContact && selfUserId != s.providerId) {
-                        ContactProviderSection(
-                            api = api,
-                            serviceId = serviceId,
-                            providerName = s.providerName,
-                            onOpened = onOpenDirectChat,
-                        )
-                    }
-
-                    YouMightAlsoLikeSection(
-                        api = api,
-                        currentServiceId = serviceId,
-                        onOpenService = onOpenService,
-                    )
-
-                    AboutYourHostSection(
-                        host = host,
-                        fallbackName = s.providerName,
-                        fallbackRole = s.providerRole,
-                        fallbackLanguages = s.providerLanguages,
-                        fallbackInterests = s.providerInterests,
-                        onLearnMore = {
-                            val known = host
-                            if (known != null) {
-                                selectedOccupant = known
-                            } else {
-                                scope.launch {
-                                    runCatching { api.occupant(s.roomId, s.providerId) }
-                                        .getOrNull()?.let {
-                                            host = it
-                                            selectedOccupant = it
-                                        }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(s.emoji.ifBlank { "🌟" }, fontSize = 36.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(s.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                // Price stays plain text; the community name is a link to Screen.Room.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${UiConstants.vnd(s.price)} • in ",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "${s.roomEmoji.ifBlank { "🏠" }} ${s.roomName}",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(MaterialTheme.shapes.extraSmall)
+                                            .clickable {
+                                                onOpenRoom(
+                                                    RoomSummary(
+                                                        id = s.roomId,
+                                                        name = s.roomName,
+                                                        emoji = s.roomEmoji,
+                                                        atmosphere = "",
+                                                        occupants = 0,
+                                                    ),
+                                                )
+                                            },
+                                    )
                                 }
                             }
-                        },
-                    )
+                            // Copy-link affordance, mirroring rooms and threads (top-right).
+                            ShareButton(isService = true, path = "/adventures/${s.id}")
+                        }
+                        if (!s.listed) {
+                            Text(
+                                "This adventure is unlisted — it won't show up in the public search.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (s.description.isNotBlank()) {
+                            Text(s.description, fontSize = 15.sp)
+                        }
+
+                        Text(
+                            text = "Hosted by ${nameWithBadge(s.providerName, s.providerRole)}",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable {
+                                scope.launch {
+                                    runCatching { api.occupant(s.roomId, s.providerId) }
+                                        .getOrNull()?.let { selectedOccupant = it }
+                                }
+                            },
+                        )
+                        // Disabled for now
+                        if (s.providerLanguages.isNotEmpty()) {
+                            Text(
+                                "Speaks ${s.providerLanguages.joinToString(" · ") { UiConstants.languageLabel(it) }}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Manage controls for the provider (or the Founder): edit, unlist/relist, delete.
+                        if (isFounder || selfUserId == s.providerId) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                OutlinedButton(enabled = !managing, onClick = { editing = true }) { Text("Edit") }
+                                OutlinedButton(
+                                    enabled = !managing,
+                                    onClick = {
+                                        managing = true
+                                        scope.launch {
+                                            runCatching {
+                                                if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
+                                            }.onSuccess { service = it }
+                                            managing = false
+                                        }
+                                    },
+                                ) { Text(if (s.listed) "Unlist" else "Relist") }
+                                TextButton(enabled = !managing, onClick = { confirmingDelete = true }) {
+                                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+
+                        ServiceInclusionsSection(
+                            included = s.included,
+                            notIncluded = s.notIncluded,
+                        )
+
+                        ServiceBringSection(
+                            toBring = s.toBring,
+                            notToBring = s.notToBring,
+                        )
+
+                        WhereYoullGoSection(destinations = s.destinations)
+
+                        WhatYoullDoSection(activities = s.activities)
+
+                        CancellationPolicySection(policy = s.cancellationPolicy)
+
+                        // Service photos (issue: "upload adventure photos ... display the adventure photos on
+                        // the adventure page"): shown to everyone; the provider/Founder can add or delete them.
+                        ServicePhotoSection(
+                            api = api,
+                            service = s,
+                            canManage = isFounder || selfUserId == s.providerId,
+                            onUpdated = { service = it },
+                        )
+
+                        FeedbackSection(
+                            api = api,
+                            serviceId = serviceId,
+                            feedback = feedback,
+                            providerId = s.providerId,
+                            selfUserId = selfUserId,
+                            isFounder = isFounder,
+                            canLeaveFeedback = selfUserId != null,
+                            onChanged = { scope.launch { reloadFeedback() } },
+                        )
+
+                        YouMightAlsoLikeSection(
+                            api = api,
+                            currentServiceId = serviceId,
+                            onOpenService = onOpenService,
+                        )
+
+                        AboutYourHostSection(
+                            host = host,
+                            fallbackName = s.providerName,
+                            fallbackRole = s.providerRole,
+                            fallbackLanguages = s.providerLanguages,
+                            fallbackInterests = s.providerInterests,
+                            onLearnMore = {
+                                val known = host
+                                if (known != null) {
+                                    selectedOccupant = known
+                                } else {
+                                    scope.launch {
+                                        runCatching { api.occupant(s.roomId, s.providerId) }
+                                            .getOrNull()?.let {
+                                                host = it
+                                                selectedOccupant = it
+                                            }
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+
+                // Locked to the bottom of the adventure detail screen so booking stays reachable
+                // while scrolling long itineraries, photos, and host info.
+                if (showBookBar) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .softShadow(),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (showSignInBar) {
+                                // Signed-out visitors can't message yet — invite them to sign in first.
+                                Button(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = onSignIn,
+                                ) { Text("Sign in to chat with ${s.providerName}") }
+                            } else {
+                                ContactProviderSection(
+                                    api = api,
+                                    serviceId = serviceId,
+                                    providerName = s.providerName,
+                                    onOpened = onOpenDirectChat,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
