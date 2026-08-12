@@ -37,6 +37,8 @@ data class RoomSummary(
     val lastMessageAt: Long? = null,
     /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
+    /** Markdown-supported community description (issue: "Two room upgrades"). */
+    val description: String = "",
 )
 
 /**
@@ -111,6 +113,20 @@ data class OccupantView(
     val photoUrl: String = "",
     /** All profile photos (main first, then previous), for the room-profile sheet's photo cards. */
     val photos: List<ProfilePhoto> = emptyList(),
+    /**
+     * True when the person currently has a live WebSocket session in this room. Joined members who
+     * are offline still appear with [online] = false (issue: "Join / Leave a community").
+     */
+    val online: Boolean = true,
+    /** True when the person has durable membership in this community. */
+    val member: Boolean = false,
+)
+
+/** Whether the caller has joined a community (`GET/POST .../membership`, `.../join`, `.../leave`). */
+@Serializable
+data class MembershipResponse(
+    val joined: Boolean,
+    val joinedAt: Long? = null,
 )
 
 /** A public-chat message with its live reply-count (`GET /rooms/{id}/messages`, DESIGN §9). */
@@ -263,6 +279,8 @@ data class RoomCreate(
     val id: String? = null,
     /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
+    /** Markdown-supported community description (issue: "Two room upgrades"). */
+    val description: String = "",
 )
 
 /** Founder request to rename/edit a room (`PUT /rooms/{id}`, DESIGN §6). Null fields unchanged. */
@@ -272,6 +290,8 @@ data class RoomUpdate(
     val emoji: String? = null,
     val atmosphere: String? = null,
     val photos: List<ProfilePhoto>? = null,
+    /** Markdown-supported community description; null leaves the existing value unchanged. */
+    val description: String? = null,
 )
 
 /** Sign in with a previously-set password (`POST /auth/login`, PASSWORD_AUTH.md §2C). */

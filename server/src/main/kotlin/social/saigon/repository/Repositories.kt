@@ -14,6 +14,7 @@ import social.saigon.domain.PrivateMessage
 import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
+import social.saigon.domain.RoomMembership
 import social.saigon.domain.RoomSearch
 import social.saigon.domain.Service
 import social.saigon.domain.ServiceSearch
@@ -41,12 +42,14 @@ object ArangoSchema {
     const val SERVICES = "Services"
     const val FEEDBACK = "Feedback"
     const val INVITE_REQUESTS = "InviteRequests"
+    /** Durable community memberships (issue: "Join / Leave a community"). */
+    const val ROOM_MEMBERSHIPS = "RoomMemberships"
 
     /** Document collections provisioned on startup. */
     val documentCollections: List<String> =
         listOf(
             USERS, ROOMS, MESSAGES, THREADS, EMOJIS, METRICS, ROOM_SEARCHES,
-            SERVICE_SEARCHES, SERVICES, FEEDBACK, INVITE_REQUESTS,
+            SERVICE_SEARCHES, SERVICES, FEEDBACK, INVITE_REQUESTS, ROOM_MEMBERSHIPS,
         )
 }
 
@@ -67,6 +70,20 @@ interface RoomRepository {
     fun all(): List<Room>
     /** Delete a room by id. Idempotent. */
     fun delete(id: String)
+}
+
+/**
+ * Durable community memberships (issue: "Join / Leave a community"). A joined member remains in the
+ * room's occupant list even while offline; live presence is tracked separately by the chat hub.
+ */
+interface RoomMembershipRepository {
+    fun put(membership: RoomMembership): RoomMembership
+    fun get(userId: String, roomId: String): RoomMembership?
+    fun delete(userId: String, roomId: String)
+    /** Every membership for a room. */
+    fun byRoom(roomId: String): List<RoomMembership>
+    /** Every room the user has joined. */
+    fun byUser(userId: String): List<RoomMembership>
 }
 
 /**
@@ -313,6 +330,19 @@ class InMemoryRoomRepository : RoomRepository {
     override fun delete(id: String) { store.remove(id) }
 }
 
+class InMemoryRoomMembershipRepository : RoomMembershipRepository {
+    private val store = ConcurrentHashMap<String, RoomMembership>()
+    private fun key(userId: String, roomId: String) = RoomMembership.key(userId, roomId)
+    override fun put(membership: RoomMembership): RoomMembership =
+        membership.also { store[key(it.userId, it.roomId)] = it }
+    override fun get(userId: String, roomId: String): RoomMembership? = store[key(userId, roomId)]
+    override fun delete(userId: String, roomId: String) { store.remove(key(userId, roomId)) }
+    override fun byRoom(roomId: String): List<RoomMembership> =
+        store.values.filter { it.roomId == roomId }
+    override fun byUser(userId: String): List<RoomMembership> =
+        store.values.filter { it.userId == userId }
+}
+
 class InMemoryInviteCodeRepository : InviteCodeRepository {
     private val store = ConcurrentHashMap<String, InviteCode>()
     private fun key(code: String) = code.uppercase()
@@ -509,4 +539,5 @@ class Repositories(
     val services: ServiceRepository = InMemoryServiceRepository(),
     val feedback: FeedbackRepository = InMemoryFeedbackRepository(),
     val inviteRequests: InviteRequestRepository = InMemoryInviteRequestRepository(),
+    val memberships: RoomMembershipRepository = InMemoryRoomMembershipRepository(),
 )

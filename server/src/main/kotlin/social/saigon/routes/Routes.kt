@@ -44,6 +44,7 @@ import social.saigon.domain.ReportTarget
 import social.saigon.domain.Role
 import social.saigon.domain.RoomCreate
 import social.saigon.domain.RoomIdentityUpdate
+import social.saigon.domain.RoomMembership
 import social.saigon.domain.RoomUpdate
 import social.saigon.domain.Service
 import social.saigon.domain.ServiceActivity
@@ -452,6 +453,7 @@ fun Application.registerRoutes(
                     },
                     lastMessageAt = last?.createdAt,
                     photos = room.photos,
+                    description = room.description,
                 )
             }
             call.respond(rooms)
@@ -510,38 +512,27 @@ fun Application.registerRoutes(
             call.respond(replies)
         }
 
-        // Who's in the room, with their intents + languages and room-scoped identity (DESIGN §6).
+        // Who's in the room: live online sessions plus durable joined members (issue: "Join / Leave
+        // a community"). Joined members stay listed even while offline; online presence is still
+        // tracked separately so the UI can mark who is currently present.
         get("/rooms/{roomId}/occupants") {
             val roomId = call.requireRoomId()
-            val occupants = chatHub.sessionsIn(roomId)
+            val onlineIds = chatHub.sessionsIn(roomId)
                 .mapNotNull { it.userId }
                 .distinct()
-                .mapNotNull { userId ->
-                    val user = repositories.users.get(userId) ?: return@mapNotNull null
-                    val identity = identities.getOrCreate(userId, roomId)
-                    OccupantView(
-                        userId = userId,
-                        // An empty room identity falls back to the member's main profile name (DESIGN §4, §5).
-                        name = identity.name.ifBlank { user.displayName },
-                        displayName = user.displayName,
-                        avatarUrl = identity.avatarUrl,
-                        role = user.role,
-                        // Per-room overrides win over the main profile; a null override inherits (DESIGN §5).
-                        intents = identity.intents ?: user.intents,
-                        languages = identity.languages ?: user.languages,
-                        interests = identity.interests ?: user.interests,
-                        introduction = identity.introduction ?: user.introduction,
-                        skills = identity.skills ?: user.skills,
-                        offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
-                        // "Available for chat" indicator for active Supporters (DESIGN §7).
-                        available = privateChatService.isAvailable(userId),
-                        // The main profile photo drives the avatar. The sheet's photo cards list
-                        // this room's photos first (issue: "Community profile photos"), then the full
-                        // main-profile set (main + previous).
-                        photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
-                        photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
-                        )
-                    }
+                .toSet()
+            val memberIds = repositories.memberships.byRoom(roomId).map { it.userId }.toSet()
+            val occupants = (onlineIds + memberIds).mapNotNull { userId ->
+                toOccupantView(
+                    userId = userId,
+                    roomId = roomId,
+                    repositories = repositories,
+                    identities = identities,
+                    privateChatService = privateChatService,
+                    online = userId in onlineIds,
+                    member = userId in memberIds,
+                )
+            }
             call.respond(occupants)
         }
 
@@ -553,35 +544,22 @@ fun Application.registerRoutes(
             val roomId = call.requireRoomId()
             val userId = call.parameters["userId"].orEmpty()
             require(userId.isNotBlank()) { "userId required" }
-            val user = repositories.users.get(userId)
-            if (user == null) {
+            if (repositories.users.get(userId) == null) {
                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such member"))
                 return@get
             }
-            val identity = identities.getOrCreate(userId, roomId)
+            val online = chatHub.sessionsIn(roomId).any { it.userId == userId }
+            val member = repositories.memberships.get(userId, roomId) != null
             call.respond(
-                OccupantView(
+                toOccupantView(
                     userId = userId,
-                    // An empty room identity falls back to the member's main profile name (DESIGN §4, §5).
-                    name = identity.name.ifBlank { user.displayName },
-                    displayName = user.displayName,
-                    avatarUrl = identity.avatarUrl,
-                    role = user.role,
-                    // Per-room overrides win over the main profile; a null override inherits (DESIGN §5).
-                    intents = identity.intents ?: user.intents,
-                    languages = identity.languages ?: user.languages,
-                    interests = identity.interests ?: user.interests,
-                    introduction = identity.introduction ?: user.introduction,
-                    skills = identity.skills ?: user.skills,
-                    offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
-                    // "Available for chat" indicator for active Supporters (DESIGN §7).
-                    available = privateChatService.isAvailable(userId),
-                    // The main profile photo drives the avatar. The sheet's photo cards list this
-                    // room's photos first (issue: "Community profile photos"), then the full
-                    // main-profile set (main + previous).
-                    photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
-                    photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
-                ),
+                    roomId = roomId,
+                    repositories = repositories,
+                    identities = identities,
+                    privateChatService = privateChatService,
+                    online = online,
+                    member = member,
+                )!!,
             )
         }
 
@@ -852,6 +830,47 @@ fun Application.registerRoutes(
                 val roomId = call.requireRoomId()
                 roomService.delete(roomId)
                 call.respond(mapOf("deleted" to roomId))
+            }
+
+            // Join a community (issue: "Join / Leave a community"). Members stay listed in the
+            // occupant list even while offline. Idempotent: joining twice is a no-op.
+            post("/rooms/{roomId}/join") {
+                val userId = requireMember(call.caller())
+                val roomId = call.requireRoomId()
+                repositories.rooms.get(roomId)
+                    ?: throw IllegalArgumentException("That community does not exist.")
+                val existing = repositories.memberships.get(userId, roomId)
+                val membership = existing ?: repositories.memberships.put(
+                    RoomMembership(
+                        userId = userId,
+                        roomId = roomId,
+                        joinedAt = System.currentTimeMillis(),
+                    ),
+                )
+                call.respond(MembershipResponse(joined = true, joinedAt = membership.joinedAt))
+            }
+
+            // Leave a community (issue: "Join / Leave a community"). Idempotent.
+            post("/rooms/{roomId}/leave") {
+                val userId = requireMember(call.caller())
+                val roomId = call.requireRoomId()
+                repositories.rooms.get(roomId)
+                    ?: throw IllegalArgumentException("That community does not exist.")
+                repositories.memberships.delete(userId, roomId)
+                call.respond(MembershipResponse(joined = false, joinedAt = null))
+            }
+
+            // Whether the caller has joined this community (for the Join/Leave button state).
+            get("/rooms/{roomId}/membership") {
+                val userId = requireMember(call.caller())
+                val roomId = call.requireRoomId()
+                val membership = repositories.memberships.get(userId, roomId)
+                call.respond(
+                    MembershipResponse(
+                        joined = membership != null,
+                        joinedAt = membership?.joinedAt,
+                    ),
+                )
             }
 
             // Recall a public-chat message (DESIGN §6, §9): clear its text and flag it as recalled so
@@ -1539,6 +1558,8 @@ data class RoomSummary(
     val lastMessageAt: Long? = null,
     /** Room photos (issue: "Community photos will show up visibly in the community lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
+    /** Markdown-supported community description (issue: "Two room upgrades"). */
+    val description: String = "",
 )
 
 /** A person currently in a room, with intents + languages shown next to them (DESIGN §6). */
@@ -1567,6 +1588,20 @@ data class OccupantView(
     val photoUrl: String = "",
     /** All profile photos (main first, then previous), for the room-profile sheet's photo cards. */
     val photos: List<ProfilePhoto> = emptyList(),
+    /**
+     * True when the person currently has a live WebSocket session in this room. Joined members who
+     * are offline still appear in the list with [online] = false (issue: "Join / Leave a community").
+     */
+    val online: Boolean = true,
+    /** True when the person has durable membership in this community. */
+    val member: Boolean = false,
+)
+
+/** Whether the caller has joined a community (`GET/POST .../membership`, `.../join`, `.../leave`). */
+@Serializable
+data class MembershipResponse(
+    val joined: Boolean,
+    val joinedAt: Long? = null,
 )
 
 /** Public-facing view of a user's own persistent profile (DESIGN §4). */
@@ -1878,6 +1913,46 @@ private fun Feedback.toFeedbackView(repositories: Repositories): FeedbackView {
         emoji = emoji,
         message = message,
         createdAt = createdAt,
+    )
+}
+
+/**
+ * Build a room occupant view for [userId], combining the room identity with main-profile facets and
+ * the caller's live/membership flags (issue: "Join / Leave a community").
+ */
+private suspend fun toOccupantView(
+    userId: String,
+    roomId: String,
+    repositories: Repositories,
+    identities: IdentityService,
+    privateChatService: PrivateChatService,
+    online: Boolean,
+    member: Boolean,
+): OccupantView? {
+    val user = repositories.users.get(userId) ?: return null
+    val identity = identities.getOrCreate(userId, roomId)
+    return OccupantView(
+        userId = userId,
+        // An empty room identity falls back to the member's main profile name (DESIGN §4, §5).
+        name = identity.name.ifBlank { user.displayName },
+        displayName = user.displayName,
+        avatarUrl = identity.avatarUrl,
+        role = user.role,
+        // Per-room overrides win over the main profile; a null override inherits (DESIGN §5).
+        intents = identity.intents ?: user.intents,
+        languages = identity.languages ?: user.languages,
+        interests = identity.interests ?: user.interests,
+        introduction = identity.introduction ?: user.introduction,
+        skills = identity.skills ?: user.skills,
+        offlineSchedule = identity.offlineSchedule ?: user.offlineSchedule,
+        // "Available for chat" indicator for active Supporters (DESIGN §7).
+        available = privateChatService.isAvailable(userId),
+        // The main profile photo drives the avatar. The sheet's photo cards list this room's photos
+        // first (issue: "Community profile photos"), then the full main-profile set (main + previous).
+        photoUrl = roomPhotoUrl(userId, roomId, repositories, identities),
+        photos = identity.photos + listOfNotNull(user.photo) + user.previousPhotos,
+        online = online,
+        member = member,
     )
 }
 

@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
@@ -491,11 +492,13 @@ internal fun RoomListScreen(
                 showCreate = false
                 createError = null
             },
-            onConfirm = { name, emoji, atmosphere, id, photos ->
+            onConfirm = { name, emoji, atmosphere, id, photos, description ->
                 createError = null
                 creatingRoom = true
                 scope.launch {
-                    val result = runCatching { api.createRoom(name, emoji, atmosphere, id, photos) }
+                    val result = runCatching {
+                        api.createRoom(name, emoji, atmosphere, id, photos, description)
+                    }
                     creatingRoom = false
                     result.fold(
                         onSuccess = {
@@ -518,10 +521,12 @@ internal fun RoomListScreen(
             title = "Edit community",
             initial = room,
             onDismiss = { editing = null },
-            onConfirm = { name, emoji, atmosphere, _, photos ->
+            onConfirm = { name, emoji, atmosphere, _, photos, description ->
                 editing = null
                 scope.launch {
-                    runCatching { api.updateRoom(room.id, name, emoji, atmosphere, photos) }
+                    runCatching {
+                        api.updateRoom(room.id, name, emoji, atmosphere, photos, description)
+                    }
                     reload()
                 }
             },
@@ -547,14 +552,21 @@ internal fun RoomListScreen(
     }
 }
 
-/** Dialog for creating or renaming a room: name, emoji, and atmosphere fields (DESIGN §6). */
+/** Dialog for creating or renaming a room: name, emoji, atmosphere, description (DESIGN §6). */
 @Composable
 private fun RoomFormDialog(
     api: SaigonApi,
     title: String,
     initial: RoomSummary?,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, emoji: String, atmosphere: String, id: String, photos: List<ProfilePhoto>) -> Unit,
+    onConfirm: (
+        name: String,
+        emoji: String,
+        atmosphere: String,
+        id: String,
+        photos: List<ProfilePhoto>,
+        description: String,
+    ) -> Unit,
     /** A server-side error (e.g. the chosen room URL is already taken) shown inside the dialog. */
     error: String? = null,
     /** True while a create request is in flight, so the Save button is disabled to avoid retries. */
@@ -563,6 +575,7 @@ private fun RoomFormDialog(
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var emoji by remember { mutableStateOf(initial?.emoji ?: "") }
     var atmosphere by remember { mutableStateOf(initial?.atmosphere ?: "") }
+    var description by remember { mutableStateOf(initial?.description ?: "") }
     // The room URL (id) can only be chosen at creation time; existing rooms keep their id.
     var id by remember { mutableStateOf("") }
     var photos by remember { mutableStateOf(initial?.photos ?: emptyList()) }
@@ -573,6 +586,7 @@ private fun RoomFormDialog(
     val nameFocus = remember { FocusRequester() }
     val emojiFocus = remember { FocusRequester() }
     val atmosphereFocus = remember { FocusRequester() }
+    val descriptionFocus = remember { FocusRequester() }
     val idFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -610,12 +624,24 @@ private fun RoomFormDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(atmosphereFocus)
-                        .focusProperties {
-                            previous = emojiFocus
-                            next = if (isCreate) idFocus else nameFocus
-                        },
+                        .focusProperties { previous = emojiFocus; next = descriptionFocus },
                     label = { Text("Atmosphere (optional)") },
                     singleLine = true,
+                    shape = InputFieldShape,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 96.dp)
+                        .focusRequester(descriptionFocus)
+                        .focusProperties {
+                            previous = atmosphereFocus
+                            next = if (isCreate) idFocus else nameFocus
+                        },
+                    label = { Text("Description (Markdown, optional)") },
+                    placeholder = { Text("**Welcome** — who this community is for…") },
                     shape = InputFieldShape,
                 )
                 if (isCreate) {
@@ -625,7 +651,7 @@ private fun RoomFormDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(idFocus)
-                            .focusProperties { previous = atmosphereFocus; next = nameFocus },
+                            .focusProperties { previous = descriptionFocus; next = nameFocus },
                         label = { Text("URL (optional)") },
                         singleLine = true,
                         shape = InputFieldShape,
@@ -670,7 +696,16 @@ private fun RoomFormDialog(
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && emoji.isNotBlank() && !submitting,
-                onClick = { onConfirm(name.trim(), emoji.trim(), atmosphere.trim(), id.trim(), photos) },
+                onClick = {
+                    onConfirm(
+                        name.trim(),
+                        emoji.trim(),
+                        atmosphere.trim(),
+                        id.trim(),
+                        photos,
+                        description.trim(),
+                    )
+                },
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -770,6 +805,12 @@ internal fun RoomChatScreen(
     // Services offered in this room: shown as a horizontal strip along the top of the chat area,
     // and also backing the "N hosted adventures" button under "In the community".
     val roomServices = remember(room.id) { mutableStateListOf<ServiceView>() }
+    // Durable community membership for the signed-in user (issue: "Join / Leave a community").
+    var joined by remember(room.id) { mutableStateOf(false) }
+    var membershipBusy by remember(room.id) { mutableStateOf(false) }
+    // Description can be missing when the room was opened from a partial summary (e.g. thread
+    // replies); refresh it from the room list so the about panel stays accurate.
+    var description by remember(room.id) { mutableStateOf(room.description) }
 
     LaunchedEffect(room.id) {
         loading = true
@@ -782,6 +823,9 @@ internal fun RoomChatScreen(
             // connections at once (the room socket plus the private-chat socket, or a reconnect
             // that raced the old socket's close), and we must never show one person twice (DESIGN §6).
             occupants.clear(); occupants.addAll(api.occupants(room.id).distinctBy { it.userId })
+            runCatching { api.rooms() }.getOrNull()?.firstOrNull { it.id == room.id }?.let {
+                description = it.description
+            }
         } catch (e: Throwable) {
             error = e.message ?: "Could not load this community"
         }
@@ -793,6 +837,15 @@ internal fun RoomChatScreen(
         runCatching { api.services(roomId = room.id) }.getOrNull()?.let {
             roomServices.clear(); roomServices.addAll(it)
         }
+    }
+
+    // Membership is member-only; anonymous viewers always see Join (which routes to sign-in).
+    LaunchedEffect(room.id, hasToken, selfUserId) {
+        if (!hasToken || selfUserId == null) {
+            joined = false
+            return@LaunchedEffect
+        }
+        joined = runCatching { api.roomMembership(room.id).joined }.getOrDefault(false)
     }
 
     suspend fun loadOlder() {
@@ -926,6 +979,25 @@ internal fun RoomChatScreen(
             }
         }
     }
+
+    val onToggleMembership: () -> Unit = {
+        if (!hasToken) {
+            onSignIn()
+        } else if (!membershipBusy) {
+            membershipBusy = true
+            scope.launch {
+                runCatching {
+                    if (joined) api.leaveRoom(room.id) else api.joinRoom(room.id)
+                }.onSuccess { result ->
+                    joined = result.joined
+                    runCatching { api.occupants(room.id) }.getOrNull()?.let {
+                        occupants.clear(); occupants.addAll(it.distinctBy { o -> o.userId })
+                    }
+                }
+                membershipBusy = false
+            }
+        }
+    }
     // Refresh the caller's room-scoped identity (a fresh anonymous name) and reload the occupant
     // list so the user's own entry in "In the community" picks up the new name (DESIGN §5). Surfaced from
     // the member-detail sheet on the user's own card, replacing the standalone identity bar.
@@ -961,6 +1033,14 @@ internal fun RoomChatScreen(
                     )
                 ) {
                     if (!wide) {
+                        RoomAboutPanel(
+                            description = description,
+                            hasToken = hasToken,
+                            joined = joined,
+                            busy = membershipBusy,
+                            onToggleMembership = onToggleMembership,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        )
                         OccupantScroller(
                             occupants = occupants,
                             loading = loading,
@@ -1068,6 +1148,11 @@ internal fun RoomChatScreen(
 
                 if (wide) {
                     OccupantList(
+                        description = description,
+                        hasToken = hasToken,
+                        joined = joined,
+                        membershipBusy = membershipBusy,
+                        onToggleMembership = onToggleMembership,
                         occupants = occupants,
                         selfUserId = selfUserId,
                         canStartPrivate = canStartPrivate,
@@ -2152,9 +2237,136 @@ internal fun IncomingChatBanner(chat: DirectChat, onOpen: () -> Unit, onDismiss:
     }
 }
 
+/**
+ * Room description (Markdown) + Join/Leave button shown above "In the community"
+ * (issue: "Two room upgrades"). Long descriptions are ellipsized to two lines; tapping the
+ * description opens a scrollable dialog with the full Markdown body.
+ */
+@Composable
+private fun RoomAboutPanel(
+    description: String,
+    hasToken: Boolean,
+    joined: Boolean,
+    busy: Boolean,
+    onToggleMembership: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showDescriptionDialog by remember { mutableStateOf(false) }
+    val shape = MaterialTheme.shapes.medium
+    Column(
+        modifier = modifier
+            .background(inputFieldBackgroundColor(), shape)
+            .clip(shape)
+            .softBorder(shape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (description.isNotBlank()) {
+            // Two-line ellipsis keeps a long description from dominating the room panel; the full
+            // Markdown body is available in the dialog opened by tapping this container.
+            Text(
+                text = plainDescriptionPreview(description),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .fillMaxWidth()
+                    .clickable { showDescriptionDialog = true },
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                "This community has no description.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (joined) {
+            OutlinedButton(
+                onClick = onToggleMembership,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "Leaving…" else "Leave") }
+        } else {
+            Button(
+                onClick = onToggleMembership,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    when {
+                        busy -> "Joining…"
+                        !hasToken -> "Sign in to join"
+                        else -> "Join"
+                    },
+                )
+            }
+        }
+    }
+    if (showDescriptionDialog) {
+        RoomDescriptionDialog(
+            description = description,
+            onDismiss = { showDescriptionDialog = false },
+        )
+    }
+}
+
+/** Scrollable full-room-description dialog opened from the two-line preview in [RoomAboutPanel]. */
+@Composable
+private fun RoomDescriptionDialog(
+    description: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("About this community") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Markdown(
+                    content = description,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+/**
+ * Lightweight plain-text preview of a Markdown room description for the two-line ellipsis line.
+ * Strips common markers so the collapsed panel doesn't show raw `**` / `#` syntax; the dialog keeps
+ * the full rendered Markdown.
+ */
+private fun plainDescriptionPreview(markdown: String): String =
+    markdown
+        .trim()
+        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("`([^`]*)`"), "$1")
+        .replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), " ")
+        .replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "$1")
+        .replace(Regex("^#{1,6}\\s*", RegexOption.MULTILINE), "")
+        .replace(Regex("(\\*\\*|__)(.+?)\\1"), "$2")
+        .replace(Regex("(\\*|_)(.+?)\\1"), "$2")
+        .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OccupantList(
+    description: String,
+    hasToken: Boolean,
+    joined: Boolean,
+    membershipBusy: Boolean,
+    onToggleMembership: () -> Unit,
     occupants: List<OccupantView>,
     selfUserId: String?,
     canStartPrivate: Boolean,
@@ -2180,8 +2392,13 @@ private fun OccupantList(
         // Final dedup at the render boundary: a LazyColumn key must be unique, so guarantee one
         // card per persistent user id here regardless of how the list was assembled — a member can
         // briefly hold several live connections during join/leave churn (DESIGN §6). The current
-        // user is always pinned to the top of the list (DESIGN §6).
-        val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
+        // user is always pinned to the top of the list (DESIGN §6). Online people sort above offline
+        // joined members so the list still reads as "who's here" first.
+        val people = occupants.distinctBy { it.userId }
+            .sortedWith(
+                compareByDescending<OccupantView> { selfUserId != null && it.userId == selfUserId }
+                    .thenByDescending { it.online },
+            )
         // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
         var selected by remember { mutableStateOf<OccupantView?>(null) }
         Column(
@@ -2189,6 +2406,15 @@ private fun OccupantList(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            RoomAboutPanel(
+                description = description,
+                hasToken = hasToken,
+                joined = joined,
+                busy = membershipBusy,
+                onToggleMembership = onToggleMembership,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("In the community", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 ShareButton()
@@ -2232,11 +2458,19 @@ private fun OccupantList(
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f),
                                     )
+                                    // Online green for presence; available-for-chat also uses green for
+                                    // Supporters — prefer the chat-available cue when both apply.
                                     if (!isSelf && person.available) {
                                         Text(
                                             "\uD83D\uDFE2",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    } else if (!person.online) {
+                                        Text(
+                                            "offline",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
@@ -2489,8 +2723,12 @@ private fun OccupantScroller(
 ) {
     // Final dedup at the render boundary: guarantee one card per persistent user id regardless of
     // how the list was assembled — a member can briefly hold several live connections during
-    // join/leave churn (DESIGN §6). The current user is always pinned first (DESIGN §6).
-    val people = occupants.distinctBy { it.userId }.selfFirst(selfUserId)
+    // join/leave churn (DESIGN §6). Self first, then online over offline joined members.
+    val people = occupants.distinctBy { it.userId }
+        .sortedWith(
+            compareByDescending<OccupantView> { selfUserId != null && it.userId == selfUserId }
+                .thenByDescending { it.online },
+        )
     // Tapping anyone opens a detail sheet (DESIGN §5–§7); null means no sheet is shown.
     var selected by remember { mutableStateOf<OccupantView?>(null) }
     // The self quick-action on each card opens the "Edit your community profile" dialog for
@@ -2603,6 +2841,12 @@ private fun OccupantScroller(
                                                 "\uD83D\uDFE2",
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else if (!person.online) {
+                                            Text(
+                                                "offline",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                     }

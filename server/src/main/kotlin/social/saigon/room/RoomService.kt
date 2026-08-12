@@ -36,6 +36,7 @@ class RoomService(private val rooms: RoomRepository) {
                 createdBy = founderId,
                 createdAt = System.currentTimeMillis(),
                 photos = request.photos,
+                description = request.description.trim(),
             ),
         )
     }
@@ -72,12 +73,14 @@ class RoomService(private val rooms: RoomRepository) {
         } ?: room.emoji
         val atmosphere = request.atmosphere?.trim() ?: room.atmosphere
         val photos = request.photos ?: room.photos
+        val description = request.description?.trim() ?: room.description
         return rooms.create(
             room.copy(
                 name = name,
                 emoji = emoji,
                 atmosphere = atmosphere,
-                photos = photos
+                photos = photos,
+                description = description,
             )
         )
     }

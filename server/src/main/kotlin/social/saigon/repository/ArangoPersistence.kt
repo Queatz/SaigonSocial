@@ -21,6 +21,7 @@ import social.saigon.domain.Payment
 import social.saigon.domain.Report
 import social.saigon.domain.Room
 import social.saigon.domain.RoomIdentity
+import social.saigon.domain.RoomMembership
 import social.saigon.domain.RoomSearch
 import social.saigon.domain.ServiceSearch
 import social.saigon.domain.Service
@@ -196,6 +197,7 @@ fun arangoRepositories(db: ArangoDatabase): Repositories = Repositories(
     services = ArangoServiceRepository(db),
     feedback = ArangoFeedbackRepository(db),
     inviteRequests = ArangoInviteRequestRepository(db),
+    memberships = ArangoRoomMembershipRepository(db),
 )
 
 /**
@@ -259,6 +261,27 @@ internal class ArangoRoomRepository(db: ArangoDatabase) : RoomRepository {
     override fun get(id: String): Room? = store.get(id)
     override fun all(): List<Room> = store.all()
     override fun delete(id: String) = store.delete(id)
+}
+
+internal class ArangoRoomMembershipRepository(db: ArangoDatabase) : RoomMembershipRepository {
+    private val store = ArangoStore(db, ArangoSchema.ROOM_MEMBERSHIPS, RoomMembership.serializer()) {
+        RoomMembership.key(it.userId, it.roomId)
+    }
+    override fun put(membership: RoomMembership): RoomMembership = store.put(membership)
+    override fun get(userId: String, roomId: String): RoomMembership? =
+        store.get(RoomMembership.key(userId, roomId))
+    override fun delete(userId: String, roomId: String) =
+        store.delete(RoomMembership.key(userId, roomId))
+    override fun byRoom(roomId: String): List<RoomMembership> =
+        store.query(
+            "FOR d IN ${ArangoSchema.ROOM_MEMBERSHIPS} FILTER d.roomId == @roomId RETURN d",
+            mapOf("roomId" to roomId),
+        )
+    override fun byUser(userId: String): List<RoomMembership> =
+        store.query(
+            "FOR d IN ${ArangoSchema.ROOM_MEMBERSHIPS} FILTER d.userId == @userId RETURN d",
+            mapOf("userId" to userId),
+        )
 }
 
 internal class ArangoRoomIdentityRepository(db: ArangoDatabase) : RoomIdentityRepository {

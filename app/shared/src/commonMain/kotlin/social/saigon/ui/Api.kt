@@ -114,11 +114,18 @@ class SaigonApi(
      * Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. An optional
      * [id] sets the room's URL; when blank the server assigns one.
      */
-    suspend fun createRoom(name: String, emoji: String, atmosphere: String, id: String? = null, photos: List<ProfilePhoto> = emptyList()) {
+    suspend fun createRoom(
+        name: String,
+        emoji: String,
+        atmosphere: String,
+        id: String? = null,
+        photos: List<ProfilePhoto> = emptyList(),
+        description: String = "",
+    ) {
         val response = client.post("$baseUrl/rooms") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }, photos))
+            setBody(RoomCreate(name, emoji, atmosphere, id?.takeIf { it.isNotBlank() }, photos, description))
         }
         // Surface the server's validation message (e.g. a taken room URL) so the UI can show it
         // rather than silently dropping the failure.
@@ -131,18 +138,45 @@ class SaigonApi(
     }
 
     /** Founder-only: rename/edit a room (DESIGN §6). */
-    suspend fun updateRoom(roomId: String, name: String, emoji: String, atmosphere: String, photos: List<ProfilePhoto>? = null): Unit =
+    suspend fun updateRoom(
+        roomId: String,
+        name: String,
+        emoji: String,
+        atmosphere: String,
+        photos: List<ProfilePhoto>? = null,
+        description: String? = null,
+    ): Unit =
         client.put("$baseUrl/rooms/$roomId") {
             HttpRequestAuth(this)
             contentType(ContentType.Application.Json)
-            setBody(RoomUpdate(name, emoji, atmosphere, photos))
+            setBody(RoomUpdate(name, emoji, atmosphere, photos, description))
         }.let { }
 
     /** Founder-only: delete a room (DESIGN §6). */
     suspend fun deleteRoom(roomId: String): Unit =
         client.delete("$baseUrl/rooms/$roomId") { HttpRequestAuth(this) }.let { }
 
-    /** Who is currently in a room, with intents + languages (DESIGN §6). */
+    /**
+     * Join a community (issue: "Join / Leave a community"). The caller stays listed in the occupant
+     * list even while offline. Requires a member token.
+     */
+    suspend fun joinRoom(roomId: String): MembershipResponse =
+        client.post("$baseUrl/rooms/$roomId/join") { HttpRequestAuth(this) }.decodeMember()
+
+    /**
+     * Leave a community (issue: "Join / Leave a community"). Requires a member token.
+     */
+    suspend fun leaveRoom(roomId: String): MembershipResponse =
+        client.post("$baseUrl/rooms/$roomId/leave") { HttpRequestAuth(this) }.decodeMember()
+
+    /** Whether the caller has joined [roomId] (for the Join/Leave button). Requires a member token. */
+    suspend fun roomMembership(roomId: String): MembershipResponse =
+        client.get("$baseUrl/rooms/$roomId/membership") { HttpRequestAuth(this) }.decodeMember()
+
+    /**
+     * Who is in a room: live online sessions plus durable joined members (issue: "Join / Leave a
+     * community"), with intents + languages (DESIGN §6).
+     */
     suspend fun occupants(roomId: String): List<OccupantView> =
         client.get("$baseUrl/rooms/$roomId/occupants") { HttpRequestAuth(this) }.body()
 

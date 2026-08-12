@@ -22,6 +22,8 @@ data class RoomCreate(
     val id: String? = null,
     /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
+    /** Markdown-supported community description (issue: "Two room upgrades"). */
+    val description: String = "",
 )
 
 /**
@@ -34,6 +36,8 @@ data class RoomUpdate(
     val emoji: String? = null,
     val atmosphere: String? = null,
     val photos: List<ProfilePhoto>? = null,
+    /** Markdown-supported community description; null leaves the existing value unchanged. */
+    val description: String? = null,
 )
 
 /**

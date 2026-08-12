@@ -168,7 +168,29 @@ data class Room(
     val createdAt: Long = 0L,
     /** Room photos (issue: "Room photos will show up visibly in the room lists..."). */
     val photos: List<ProfilePhoto> = emptyList(),
+    /**
+     * Markdown-supported community description shown in the room panel above "In the community"
+     * (issue: "Two room upgrades" — room descriptions).
+     */
+    val description: String = "",
 )
+
+/**
+ * A durable membership of a user in a community/room (issue: "Join / Leave a community").
+ * Distinct from live WebSocket presence: joined members stay in the occupant list even while offline.
+ */
+@Serializable
+data class RoomMembership(
+    val userId: String,
+    val roomId: String,
+    /** Unix epoch millis the member joined. */
+    val joinedAt: Long = 0L,
+) {
+    companion object {
+        /** Stable document key for (user, room) membership rows. */
+        fun key(userId: String, roomId: String): String = "$userId@$roomId"
+    }
+}
 
 /**
  * A recorded room search (DESIGN §6). Persisted whenever a member or visitor searches the room
