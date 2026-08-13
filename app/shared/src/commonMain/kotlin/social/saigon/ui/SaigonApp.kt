@@ -99,12 +99,18 @@ private sealed interface Screen {
     /** The `/adventures` search screen (issue §5). */
     data object Services : Screen
 
-    /** A single service's detail screen (issue §6), deep-linkable as "/adventures/{id}".
-     *  [serviceName]/[serviceEmoji] fill in once the detail loads so the top bar can show them. */
+    /**
+     * A single service's detail screen (issue §6), deep-linkable as "/adventures/{id}".
+     * [serviceId] is whatever path segment opened the screen (pretty urlId or durable UUID) and is
+     * used to load the service. [pathId] is the preferred browser segment once known (urlId when
+     * present) so the address bar can show a pretty URL without remounting the detail fetch.
+     * [serviceName]/[serviceEmoji] fill in once the detail loads so the top bar can show them.
+     */
     data class ServiceDetail(
         val serviceId: String,
         val serviceName: String? = null,
         val serviceEmoji: String = "",
+        val pathId: String = serviceId,
     ) : Screen
 }
 
@@ -134,7 +140,8 @@ private fun screenToPath(screen: Screen): String? = when (screen) {
     Screen.ServiceSearches -> null
     Screen.MyServices -> null
     Screen.Services -> "/adventures"
-    is Screen.ServiceDetail -> "/adventures/${screen.serviceId}"
+    // Prefer the pretty pathId (urlId) when known; serviceId still works for UUID deep links.
+    is Screen.ServiceDetail -> "/adventures/${screen.pathId.ifBlank { screen.serviceId }}"
 }
 
 @Composable
@@ -614,14 +621,24 @@ fun SaigonApp(
                                 onOpenService = { screen = Screen.ServiceDetail(it) },
                                 onOpenRoom = { screen = Screen.Room(it) },
                                 // Mirror Private's onPeerName: once the detail loads (or is edited),
-                                // lift the name into Screen so the top bar title stays in sync.
-                                onServiceTitle = { name, emoji ->
+                                // lift the name + preferred path segment into Screen so the top bar
+                                // title and browser path stay in sync (pretty urlId when present)
+                                // without changing serviceId (which would remount the detail fetch).
+                                onServiceTitle = { name, emoji, routeId ->
                                     val current = screen
                                     if (
                                         current is Screen.ServiceDetail &&
-                                        (current.serviceName != name || current.serviceEmoji != emoji)
+                                        (
+                                            current.serviceName != name ||
+                                                current.serviceEmoji != emoji ||
+                                                (routeId.isNotBlank() && current.pathId != routeId)
+                                            )
                                     ) {
-                                        screen = current.copy(serviceName = name, serviceEmoji = emoji)
+                                        screen = current.copy(
+                                            serviceName = name,
+                                            serviceEmoji = emoji,
+                                            pathId = routeId.ifBlank { current.pathId },
+                                        )
                                     }
                                 },
                             )

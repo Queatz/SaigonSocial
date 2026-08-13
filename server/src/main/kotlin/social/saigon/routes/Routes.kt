@@ -202,6 +202,11 @@ data class UpdatePhotoRequest(
 @Serializable
 data class ServiceView(
     val id: String,
+    /**
+     * URL-safe slug for pretty adventure URLs (`/adventures/{urlId}`). Prefer this over [id] in the
+     * client router when non-blank; the durable [id] still works as a fallback path segment.
+     */
+    val urlId: String = "",
     val emoji: String,
     val name: String,
     val description: String,
@@ -597,10 +602,11 @@ fun Application.registerRoutes(
             call.respond(services)
         }
 
-        // Public: a single service's full detail.
+        // Public: a single service's full detail. Path accepts the pretty [Service.urlId] or the
+        // durable UUID so `/adventures/{urlId}` and `/adventures/{id}` both resolve.
         get("/services/{id}") {
             val id = call.parameters["id"].orEmpty()
-            val service = repositories.services.get(id)
+            val service = resolveService(repositories, id)
                 ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such adventure")); return@get }
             call.respond(service.toServiceView(repositories))
         }
@@ -608,7 +614,9 @@ fun Application.registerRoutes(
         // Public: feedback for a service (aggregated client-side by emoji).
         get("/services/{id}/feedback") {
             val id = call.parameters["id"].orEmpty()
-            val feedback = repositories.feedback.byService(id).map { it.toFeedbackView(repositories) }
+            val service = resolveService(repositories, id)
+                ?: run { call.respond(emptyList<FeedbackView>()); return@get }
+            val feedback = repositories.feedback.byService(service.id).map { it.toFeedbackView(repositories) }
             call.respond(feedback)
         }
 
@@ -1077,13 +1085,16 @@ fun Application.registerRoutes(
                 val req = call.receive<ServiceCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
                 require(req.name.isNotBlank()) { "An adventure name is required." }
+                val name = req.name.trim()
                 val service = repositories.services.create(
                     Service(
                         id = UUID.randomUUID().toString(),
+                        // Pretty URL slug from the name (unique across services).
+                        urlId = uniqueServiceUrlId(repositories, name),
                         providerId = userId,
                         roomId = room.id,
                         emoji = req.emoji.trim(),
-                        name = req.name.trim(),
+                        name = name,
                         description = req.description.trim(),
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
@@ -1115,8 +1126,7 @@ fun Application.registerRoutes(
             put("/services/{id}") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
                     "You cannot edit this adventure."
@@ -1124,10 +1134,16 @@ fun Application.registerRoutes(
                 val req = call.receive<ServiceUpdate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
                 require(req.name.isNotBlank()) { "An adventure name is required." }
+                val name = req.name.trim()
+                // Backfill a pretty URL slug when a legacy row still has a blank urlId.
+                val urlId = service.urlId.ifBlank {
+                    uniqueServiceUrlId(repositories, name, excludeServiceId = service.id)
+                }
                 val updated = repositories.services.update(
                     service.copy(
+                        urlId = urlId,
                         emoji = req.emoji.trim(),
-                        name = req.name.trim(),
+                        name = name,
                         description = req.description.trim(),
                         price = req.price.coerceAtLeast(0),
                         included = req.included.trim(),
@@ -1158,19 +1174,18 @@ fun Application.registerRoutes(
             delete("/services/{id}") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
                     "You cannot delete this adventure."
                 }
-                repositories.services.delete(serviceId)
+                repositories.services.delete(service.id)
                 repositories.users.get(service.providerId)?.let { provider ->
                     repositories.users.update(
-                        provider.copy(services = provider.services.filterNot { it == serviceId }),
+                        provider.copy(services = provider.services.filterNot { it == service.id }),
                     )
                 }
-                call.respond(mapOf("deleted" to serviceId))
+                call.respond(mapOf("deleted" to service.id))
             }
 
             // Add a photo to a service (issue: "upload adventure photos"). Allowed for the provider
@@ -1178,8 +1193,7 @@ fun Application.registerRoutes(
             post("/services/{id}/photos") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
                     "You cannot add photos to this adventure."
@@ -1203,8 +1217,7 @@ fun Application.registerRoutes(
             put("/services/{id}/photos") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
                     "You cannot edit photos on this adventure."
@@ -1228,8 +1241,7 @@ fun Application.registerRoutes(
             delete("/services/{id}/photos") {
                 val caller = call.caller()
                 val userId = requireMember(caller)
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
                     "You cannot delete photos from this adventure."
@@ -1245,15 +1257,14 @@ fun Application.registerRoutes(
             // Add public feedback to a service. Any member may leave feedback.
             post("/services/{id}/feedback") {
                 val userId = requireMember(call.caller())
-                val serviceId = call.parameters["id"].orEmpty()
-                repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 val req = call.receive<FeedbackCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
                 val feedback = repositories.feedback.create(
                     Feedback(
                         id = UUID.randomUUID().toString(),
-                        serviceId = serviceId,
+                        serviceId = service.id,
                         userId = userId,
                         emoji = req.emoji.trim(),
                         message = req.message.trim(),
@@ -1287,8 +1298,7 @@ fun Application.registerRoutes(
             // client can navigate straight to the conversation (DESIGN §7).
             post("/services/{id}/contact") {
                 val userId = requireMember(call.caller())
-                val serviceId = call.parameters["id"].orEmpty()
-                val service = repositories.services.get(serviceId)
+                val service = resolveService(repositories, call.parameters["id"].orEmpty())
                     ?: throw IllegalArgumentException("That adventure does not exist.")
                 val req = call.receive<ContactProviderRequest>()
                 val message = req.message.trim()
@@ -1844,8 +1854,7 @@ private fun User.toProfileResponse(): ProfileResponse = ProfileResponse(
 private suspend fun ApplicationCall.setServiceListed(repositories: Repositories, listed: Boolean) {
     val caller = caller()
     val userId = requireMember(caller)
-    val serviceId = parameters["id"].orEmpty()
-    val service = repositories.services.get(serviceId)
+    val service = resolveService(repositories, parameters["id"].orEmpty())
         ?: throw IllegalArgumentException("That adventure does not exist.")
     require(service.providerId == userId || caller.role.isAdmin) {
         "You cannot change this adventure."
@@ -1854,12 +1863,53 @@ private suspend fun ApplicationCall.setServiceListed(repositories: Repositories,
     respond(updated.toServiceView(repositories))
 }
 
+/**
+ * Resolve a service path segment: prefer the pretty [Service.urlId], then fall back to the durable
+ * UUID [Service.id]. Blank keys never match.
+ */
+private fun resolveService(repositories: Repositories, idOrUrlId: String): Service? {
+    val key = idOrUrlId.trim()
+    if (key.isEmpty()) return null
+    return repositories.services.byUrlId(key) ?: repositories.services.get(key)
+}
+
+/**
+ * Derive a unique URL-safe adventure slug from [name] (lowercase letters, digits, hyphens).
+ * When [excludeServiceId] is set, that service may already own the candidate (used on update
+ * backfill). Mirrors handle slugification used at onboard.
+ */
+private fun uniqueServiceUrlId(
+    repositories: Repositories,
+    name: String,
+    excludeServiceId: String? = null,
+): String {
+    val base = name.lowercase()
+        .map { if (it in 'a'..'z' || it in '0'..'9') it else ' ' }
+        .joinToString("")
+        .trim()
+        .replace(Regex("\\s+"), "-")
+        .replace(Regex("-+"), "-")
+        .trim('-')
+        .ifBlank { "adventure" }
+
+    fun taken(candidate: String): Boolean {
+        val existing = repositories.services.byUrlId(candidate) ?: return false
+        return excludeServiceId == null || existing.id != excludeServiceId
+    }
+
+    if (!taken(base)) return base
+    var suffix = 2
+    while (taken("$base-$suffix")) suffix++
+    return "$base-$suffix"
+}
+
 /** Enrich a [Service] with its room name and provider details for the client (search + detail). */
 private fun Service.toServiceView(repositories: Repositories): ServiceView {
     val room = repositories.rooms.get(roomId)
     val provider = repositories.users.get(providerId)
     return ServiceView(
         id = id,
+        urlId = urlId,
         emoji = emoji,
         name = name,
         description = description,

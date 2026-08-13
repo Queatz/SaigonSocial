@@ -582,6 +582,11 @@ const val DEFAULT_CANCELLATION_POLICY =
 @Serializable
 data class ServiceView(
     val id: String,
+    /**
+     * URL-safe slug for pretty adventure URLs (`/adventures/{urlId}`). Prefer this over [id] in the
+     * client router when non-blank; the durable [id] still works as a fallback path segment.
+     */
+    val urlId: String = "",
     val emoji: String,
     val name: String,
     val description: String = "",
@@ -616,7 +621,13 @@ data class ServiceView(
     /** The service's uploaded photos (newest first), shown on the detail screen + as card backgrounds. */
     val photos: List<ProfilePhoto> = emptyList(),
     val createdAt: Long = 0L,
-)
+) {
+    /**
+     * Path segment for the client-side router: the pretty [urlId] when present, otherwise the
+     * durable [id]. Both resolve on the server.
+     */
+    val routeId: String get() = urlId.ifBlank { id }
+}
 
 /** Add a photo to a service (`POST /services/{id}/photos`). */
 @Serializable

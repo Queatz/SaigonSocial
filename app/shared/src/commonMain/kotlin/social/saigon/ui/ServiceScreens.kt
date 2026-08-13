@@ -49,6 +49,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -143,7 +145,7 @@ internal fun ServiceSearchScreen(
                     modifier = Modifier.padding(top = 16.dp)
                 )
                 results.forEach { service ->
-                    ServiceCard(service = service, onClick = { onOpenService(service.id) })
+                    ServiceCard(service = service, onClick = { onOpenService(service.routeId) })
                 }
             }
         }
@@ -324,7 +326,7 @@ internal fun MyServicesScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 results.forEach { service ->
-                    ServiceCard(service = service, onClick = { onOpenService(service.id) })
+                    ServiceCard(service = service, onClick = { onOpenService(service.routeId) })
                 }
             }
         }
@@ -492,8 +494,11 @@ internal fun ServiceDetailScreen(
     /** Opens the community this adventure belongs to ([Screen.Room] via [RoomSummary]). */
     onOpenRoom: (RoomSummary) -> Unit = {},
     onOccupantSelected: (OccupantView) -> Unit = {},
-    /** Called whenever the loaded service's display title (name + emoji) is known or changes. */
-    onServiceTitle: (name: String, emoji: String) -> Unit = { _, _ -> },
+    /**
+     * Called whenever the loaded service's display title (name + emoji) and preferred route id
+     * (pretty [ServiceView.urlId] when set, else durable id) are known or change.
+     */
+    onServiceTitle: (name: String, emoji: String, routeId: String) -> Unit = { _, _, _ -> },
     // Default fills the dedicated route page; the sheet passes a width-only modifier so short
     // content can hug height (same idea as ThreadSheet) instead of leaving empty bottom space.
     modifier: Modifier = Modifier.fillMaxSize(),
@@ -517,10 +522,11 @@ internal fun ServiceDetailScreen(
         }
     }
 
-    // Keep the app top bar in sync with the loaded/edited service title.
-    LaunchedEffect(service?.name, service?.emoji) {
+    // Keep the app top bar (and browser path) in sync with the loaded/edited service title +
+    // pretty route id. Prefer urlId when present so `/adventures/{uuid}` upgrades to the slug.
+    LaunchedEffect(service?.name, service?.emoji, service?.urlId, service?.id) {
         val loadedService = service ?: return@LaunchedEffect
-        onServiceTitle(loadedService.name, loadedService.emoji)
+        onServiceTitle(loadedService.name, loadedService.emoji, loadedService.routeId)
     }
 
     suspend fun reloadFeedback() {
@@ -566,14 +572,11 @@ internal fun ServiceDetailScreen(
             // (same pattern as ProfileScreen's sticky Save bar).
             val showContactBar = selfUserId != null && canContact && selfUserId != s.providerId
             val showSignInBar = selfUserId == null
-            val showBookBar = showContactBar || showSignInBar
-            // Contact bar needs room for the title, message field, and send button; sign-in is a
-            // single full-width control like the profile Save bar.
-            val bookBarBottomPadding = when {
-                showContactBar -> 200.dp
-                showSignInBar -> 88.dp
-                else -> 0.dp
-            }
+            val enableBookBar = showContactBar || showSignInBar
+            // Reserve scroll room from the sticky bar's measured height so content isn't hidden
+            // under contact vs sign-in layouts of different sizes.
+            val density = LocalDensity.current
+            var bookBarBottomPadding by remember { mutableStateOf(0.dp) }
 
             Box(modifier = modifier) {
                 Column(
@@ -631,7 +634,8 @@ internal fun ServiceDetailScreen(
                                 }
                             }
                             // Copy-link affordance, mirroring rooms and threads (top-right).
-                            ShareButton(isService = true, path = "/adventures/${s.id}")
+                            // Prefer the pretty urlId so shared links stay human-readable.
+                            ShareButton(isService = true, path = "/adventures/${s.routeId}")
                         }
                         if (!s.listed) {
                             Text(
@@ -728,7 +732,8 @@ internal fun ServiceDetailScreen(
 
                         YouMightAlsoLikeSection(
                             api = api,
-                            currentServiceId = serviceId,
+                            // Durable id so a pretty urlId path segment still excludes this adventure.
+                            currentServiceId = s.id,
                             onOpenService = onOpenService,
                         )
 
@@ -758,34 +763,37 @@ internal fun ServiceDetailScreen(
 
                 // Locked to the bottom of the adventure detail screen so booking stays reachable
                 // while scrolling long itineraries, photos, and host info.
-                if (showBookBar) {
-                    Surface(
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .softShadow()
+                        .onSizeChanged { size ->
+                            bookBarBottomPadding = with(density) { size.height.toDp() }
+                        },
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                ) {
+                    Column(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .softShadow(),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            if (showSignInBar) {
-                                // Signed-out visitors can't message yet — invite them to sign in first.
-                                Button(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onClick = onSignIn,
-                                ) { Text("Sign in to chat with ${s.providerName}") }
-                            } else {
-                                ContactProviderSection(
-                                    api = api,
-                                    serviceId = serviceId,
-                                    providerName = s.providerName,
-                                    onOpened = onOpenDirectChat,
-                                )
-                            }
+                        if (showSignInBar) {
+                            // Signed-out visitors can't message yet — invite them to sign in first.
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onSignIn,
+                                enabled = enableBookBar
+                            ) { Text("Sign in to chat with ${s.providerName}") }
+                        } else {
+                            ContactProviderSection(
+                                api = api,
+                                serviceId = serviceId,
+                                providerName = s.providerName,
+                                onOpened = onOpenDirectChat,
+                                enabled = enableBookBar
+                            )
                         }
                     }
                 }
@@ -1187,7 +1195,7 @@ private fun YouMightAlsoLikeSection(
     ) {
         Text("You might also like", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         suggestions.forEach { service ->
-            ServiceCard(service = service, onClick = { onOpenService(service.id) })
+            ServiceCard(service = service, onClick = { onOpenService(service.routeId) })
         }
     }
 }
@@ -1925,6 +1933,7 @@ private fun ContactProviderSection(
     serviceId: String,
     providerName: String,
     onOpened: (ContactProviderResponse) -> Unit,
+    enabled: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf("") }
@@ -1938,12 +1947,12 @@ private fun ContactProviderSection(
         modifier = Modifier.fillMaxWidth(),
         label = { Text("Your message") },
         shape = InputFieldShape,
-        enabled = !busy,
+        enabled = !busy && enabled,
     )
     error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
     Button(
         modifier = Modifier.fillMaxWidth(),
-        enabled = !busy && message.isNotBlank(),
+        enabled = !busy && message.isNotBlank() && enabled,
         onClick = {
             error = null
             busy = true

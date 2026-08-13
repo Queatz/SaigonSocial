@@ -235,6 +235,8 @@ interface ThreadRepository {
 interface ServiceRepository {
     fun create(service: Service): Service
     fun get(id: String): Service?
+    /** Look up a service by its pretty URL slug ([Service.urlId]), or null when none matches. */
+    fun byUrlId(urlId: String): Service?
     /** Persist an edited service (name/description/price/listed), replacing the stored row. */
     fun update(service: Service): Service
     fun all(): List<Service>
@@ -279,6 +281,11 @@ class InMemoryServiceRepository : ServiceRepository {
     private val store = ConcurrentHashMap<String, Service>()
     override fun create(service: Service): Service = service.also { store[it.id] = it }
     override fun get(id: String): Service? = store[id]
+    override fun byUrlId(urlId: String): Service? {
+        val key = urlId.trim()
+        if (key.isEmpty()) return null
+        return store.values.firstOrNull { it.urlId == key }
+    }
     override fun update(service: Service): Service = service.also { store[it.id] = it }
     override fun all(): List<Service> = store.values.toList()
     override fun byProvider(providerId: String): List<Service> =

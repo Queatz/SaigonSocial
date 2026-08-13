@@ -424,7 +424,7 @@ internal fun RoomListScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     list.forEach { service ->
-                                        ServicePortraitCard(service = service, onClick = { onOpenService(service.id) })
+                                        ServicePortraitCard(service = service, onClick = { onOpenService(service.routeId) })
                                     }
                                 }
                             }
@@ -1078,9 +1078,9 @@ internal fun RoomChatScreen(
                             roomServices.forEach { service ->
                                 Box(modifier = Modifier.width(280.dp)) {
                                     ServiceCard(
-                                        service = service,
-                                        onClick = { selectedServiceId = service.id },
-                                    )
+                                         service = service,
+                                         onClick = { selectedServiceId = service.routeId },
+                                     )
                                 }
                             }
                         }
@@ -1514,7 +1514,7 @@ private fun ServiceItemRow(service: ServiceView, onOpenService: (String) -> Unit
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Button(onClick = { onOpenService(service.id) }) { Text("Details") }
+        Button(onClick = { onOpenService(service.routeId) }) { Text("Details") }
     }
 }
 
@@ -1580,7 +1580,7 @@ private fun RoomServicesSheet(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     services.forEach { service ->
-                        ServiceCard(service = service, onClick = { onOpenService(service.id) })
+                        ServiceCard(service = service, onClick = { onOpenService(service.routeId) })
                     }
                 }
             }

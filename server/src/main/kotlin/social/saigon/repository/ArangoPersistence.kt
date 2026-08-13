@@ -522,6 +522,14 @@ internal class ArangoServiceRepository(db: ArangoDatabase) : ServiceRepository {
     private val store = ArangoStore(db, ArangoSchema.SERVICES, Service.serializer()) { it.id }
     override fun create(service: Service): Service = store.put(service)
     override fun get(id: String): Service? = store.get(id)
+    override fun byUrlId(urlId: String): Service? {
+        val key = urlId.trim()
+        if (key.isEmpty()) return null
+        return store.query(
+            "FOR d IN ${ArangoSchema.SERVICES} FILTER d.urlId == @u LIMIT 1 RETURN d",
+            mapOf("u" to key),
+        ).firstOrNull()
+    }
     override fun update(service: Service): Service = store.put(service)
     override fun all(): List<Service> = store.all()
     override fun byProvider(providerId: String): List<Service> =
