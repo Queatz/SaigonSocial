@@ -593,6 +593,7 @@ fun SaigonApp(
                             ServiceSearchScreen(
                                 api = api,
                                 onOpenService = { screen = Screen.ServiceDetail(it) },
+                                canCreateServices = canCreateRooms,
                             )
                         }
 

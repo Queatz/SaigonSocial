@@ -139,6 +139,24 @@ class RoomUpgradesTest {
     }
 
     @Test
+    fun roomListPeopleCountIncludesOfflineJoinedMembers() = testApplication {
+        val repositories = Repositories()
+        repositories.users.create(User(id = "member", role = Role.SHARER, displayName = "Member"))
+        repositories.users.create(User(id = "other", role = Role.SHARER, displayName = "Other"))
+        repositories.rooms.create(Room(id = "r1", name = "Room", emoji = "🏠", createdBy = "f1"))
+        // Two durable memberships, nobody currently connected via WebSocket.
+        repositories.memberships.put(RoomMembership(userId = "member", roomId = "r1", joinedAt = 1_000L))
+        repositories.memberships.put(RoomMembership(userId = "other", roomId = "r1", joinedAt = 2_000L))
+        val authConfig = AuthConfig(secret = "test-secret")
+        application { module(repositories = repositories, authConfig = authConfig) }
+
+        val body = client.get("/rooms").bodyAsText()
+        // Room card total people must count joined members even while offline.
+        assertTrue(body.contains("\"id\":\"r1\""))
+        assertTrue(body.contains("\"occupants\":2"), "expected occupants:2 in $body")
+    }
+
+    @Test
     fun anonymousCannotJoin() = testApplication {
         val repositories = Repositories()
         repositories.rooms.create(Room(id = "r1", name = "Room", emoji = "🏠", createdBy = "f1"))

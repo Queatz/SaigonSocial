@@ -28,6 +28,10 @@ data class RoomSummary(
     val name: String,
     val emoji: String,
     val atmosphere: String,
+    /**
+     * Total people for the room card: durable joined members ∪ currently visiting/online users
+     * (issue: room card total people).
+     */
     val occupants: Int,
     /** Text of the room's most recent message, loaded with the list; null if the room has none. */
     val lastMessageText: String? = null,

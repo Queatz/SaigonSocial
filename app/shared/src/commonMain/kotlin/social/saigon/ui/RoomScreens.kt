@@ -92,9 +92,10 @@ internal fun peopleCount(count: Int): String = when (count) {
 
 /**
  * A single room entry shown in the rooms list and in the desktop nav panel (DESIGN §6): emoji,
- * name, atmosphere, latest-message preview, and a trailing time/people count. The current room is
- * highlighted and not clickable. Edit/Delete management actions are only rendered when
- * [canManageRooms] is true, so the same card can be reused where those actions don't belong.
+ * name, atmosphere, latest-message preview, and a trailing total-people count (joined ∪ visiting),
+ * with last-message "time ago" under it when present. The current room is highlighted and not
+ * clickable. Edit/Delete management actions are only rendered when [canManageRooms] is true, so the
+ * same card can be reused where those actions don't belong.
  */
 @Composable
 private fun RoomCardItem(
@@ -186,14 +187,23 @@ private fun RoomCardItem(
                                 }
                             }
                         }
-                        // Time since the last message, or the people count when the room
-                        // has no message yet.
-                        Text(
-                            room.lastMessageAt?.let { timeAgo(it) } ?: peopleCount(room.occupants),
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.secondary,
-                            fontWeight = FontWeight.Medium,
-                        )
+                        // Total people in the community (joined ∪ currently visiting). When the room
+                        // also has a recent message, show "time ago" under the people count.
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                peopleCount(room.occupants),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            room.lastMessageAt?.let { at ->
+                                Text(
+                                    timeAgo(at),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -207,7 +217,6 @@ private fun RoomCardItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RoomListScreen(
     api: SaigonApi,
@@ -1591,7 +1600,7 @@ private fun RoomServicesSheet(
  * `/services` search.
  */
 @Composable
-private fun CreateServiceDialog(
+internal fun CreateServiceDialog(
     api: SaigonApi,
     roomId: String,
     onDismiss: () -> Unit,

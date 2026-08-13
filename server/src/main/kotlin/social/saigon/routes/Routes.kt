@@ -416,7 +416,7 @@ fun Application.registerRoutes(
             call.respond(LaunchConfig.guarantees())
         }
 
-        // Public room list with live occupant counts (DESIGN §6). Open to all roles for viewing.
+        // Public room list with people counts (DESIGN §6). Open to all roles for viewing.
         // An optional `q` filters rooms by name/atmosphere on the backend; each non-blank query is
         // recorded so the founder can understand what kinds of rooms people are looking for (§6).
         get("/rooms") {
@@ -438,7 +438,8 @@ fun Application.registerRoutes(
             // Newest rooms first (sorted by creation time, descending), so a freshly created room
             // shows at the top of the list rather than the bottom. The latest message (if any) is
             // loaded together with each room so the home list can show "time ago" + a preview line
-            // without a second round-trip.
+            // without a second round-trip. People count is joined members ∪ currently visiting
+            // (online) users, matching the occupants list (issue: room card total people).
             val rooms = matches.sortedByDescending { it.createdAt }.map { room ->
                 val last = repositories.messages.page(room.id, null, 1).firstOrNull()
                 RoomSummary(
@@ -446,7 +447,7 @@ fun Application.registerRoutes(
                     name = room.name,
                     emoji = room.emoji,
                     atmosphere = room.atmosphere,
-                    occupants = chatHub.occupants(room.id),
+                    occupants = roomPeopleCount(room.id, chatHub, repositories),
                     lastMessageText = last?.text,
                     lastMessageSender = last?.let {
                         it.authorName.ifBlank { authorName(it.authorId, room.id, repositories, identities) }
@@ -1549,6 +1550,10 @@ data class RoomSummary(
     val name: String,
     val emoji: String,
     val atmosphere: String,
+    /**
+     * Total people for the room card: durable joined members ∪ currently visiting/online users
+     * (issue: room card total people).
+     */
     val occupants: Int,
     /** Text of the room's most recent message, loaded with the list; null if the room has none. */
     val lastMessageText: String? = null,
@@ -1914,6 +1919,19 @@ private fun Feedback.toFeedbackView(repositories: Repositories): FeedbackView {
         message = message,
         createdAt = createdAt,
     )
+}
+
+/**
+ * Total people associated with a room for list cards: durable joined members plus anyone currently
+ * visiting (online), de-duplicated by user id. Anonymous live viewers (no user id) each count once,
+ * matching [ChatHub.occupants] for that case.
+ */
+private fun roomPeopleCount(roomId: String, chatHub: ChatHub, repositories: Repositories): Int {
+    val sessions = chatHub.sessionsIn(roomId)
+    val onlineUserIds = sessions.mapNotNull { it.userId }.toSet()
+    val anonymousOnline = sessions.count { it.userId == null }
+    val memberIds = repositories.memberships.byRoom(roomId).map { it.userId }.toSet()
+    return (onlineUserIds + memberIds).size + anonymousOnline
 }
 
 /**

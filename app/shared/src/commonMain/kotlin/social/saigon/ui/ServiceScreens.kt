@@ -28,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.m3.Markdown
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -60,17 +62,27 @@ import kotlinx.coroutines.launch
  * partial match, done server-side), and each result card shows the emoji, name, a truncated
  * description, the room the service lives in, and the provider (with their role badge + a couple of
  * readily-available profile facets). Tapping a card opens the service detail screen.
+ *
+ * When [canCreateServices] is true (Supporter/Founder), a ➕ beside the search bar lets the caller
+ * pick a community and host a new adventure there via [CreateServiceDialog].
  */
 @Composable
-internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit) {
-    val scope = rememberCoroutineScope()
+internal fun ServiceSearchScreen(
+    api: SaigonApi,
+    onOpenService: (String) -> Unit,
+    canCreateServices: Boolean = false,
+) {
     var query by remember { mutableStateOf("") }
     val results = remember { mutableStateListOf<ServiceView>() }
     var loaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Bumped after a successful create so the search list refreshes even if the query is unchanged.
+    var reloadToken by remember { mutableStateOf(0) }
+    var selectingCommunity by remember { mutableStateOf(false) }
+    var createInRoomId by remember { mutableStateOf<String?>(null) }
 
     // Reload whenever the query changes (debounce-free; the list is small and the filter is cheap).
-    LaunchedEffect(query) {
+    LaunchedEffect(query, reloadToken) {
         error = null
         try {
             val list = api.services(query)
@@ -87,14 +99,29 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
+        // Search row mirrors the community list: text field + optional ➕ to create.
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Search adventures") },
-            singleLine = true,
-            shape = InputFieldShape,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Search adventures") },
+                singleLine = true,
+                shape = InputFieldShape,
+            )
+            if (canCreateServices) {
+                IconButton(
+                    onClick = { selectingCommunity = true },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text("➕")
+                }
+            }
+        }
 
         error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
 
@@ -121,6 +148,133 @@ internal fun ServiceSearchScreen(api: SaigonApi, onOpenService: (String) -> Unit
             }
         }
     }
+
+    if (selectingCommunity) {
+        SelectCommunityDialog(
+            api = api,
+            onDismiss = { selectingCommunity = false },
+            onSelected = { room ->
+                selectingCommunity = false
+                createInRoomId = room.id
+            },
+        )
+    }
+
+    createInRoomId?.let { roomId ->
+        CreateServiceDialog(
+            api = api,
+            roomId = roomId,
+            onDismiss = { createInRoomId = null },
+            onCreated = {
+                createInRoomId = null
+                reloadToken++
+            },
+        )
+    }
+}
+
+/**
+ * Picker shown before hosting an adventure from the search screen: loads communities and lets the
+ * caller choose which one the new adventure belongs to. Includes a search field (debounced like the
+ * home community list) so the list stays usable as communities grow.
+ */
+@Composable
+private fun SelectCommunityDialog(
+    api: SaigonApi,
+    onDismiss: () -> Unit,
+    onSelected: (RoomSummary) -> Unit,
+) {
+    var search by remember { mutableStateOf("") }
+    var rooms by remember { mutableStateOf<List<RoomSummary>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // Same debounce as the home "Search communities" field so we don't hit the API per keystroke.
+    LaunchedEffect(search) {
+        val query = search.trim()
+        if (query.isNotEmpty()) delay(500)
+        error = null
+        try {
+            rooms = api.rooms(query.ifBlank { null })
+        } catch (e: Throwable) {
+            error = e.message ?: "Could not load communities"
+        }
+    }
+
+    val searching = search.trim().isNotEmpty()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose a community") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Which community should this adventure belong to?",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Search communities") },
+                    singleLine = true,
+                    shape = InputFieldShape,
+                )
+                error?.let {
+                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+                when {
+                    rooms == null && error == null -> LoadingSpinner()
+                    rooms.isNullOrEmpty() -> Text(
+                        text = if (searching) {
+                            "No communities found."
+                        } else {
+                            "No communities yet. Create one from the home screen first."
+                        },
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    else -> rooms!!.forEach { room ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.medium)
+                                .clickable { onSelected(room) },
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(room.emoji.ifBlank { "🏠" }, fontSize = 22.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(room.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    if (room.atmosphere.isNotBlank()) {
+                                        Text(
+                                            room.atmosphere,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 /**
@@ -487,7 +641,7 @@ internal fun ServiceDetailScreen(
                             )
                         }
                         if (s.description.isNotBlank()) {
-                            Text(s.description, fontSize = 15.sp)
+                            Markdown(s.description)
                         }
 
                         Text(
