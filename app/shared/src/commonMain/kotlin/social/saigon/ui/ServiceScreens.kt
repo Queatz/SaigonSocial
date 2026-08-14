@@ -371,7 +371,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                         }
                         if (service.description.isNotBlank()) {
                             Text(
-                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
+                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description.stripMarkdown()}",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -1939,33 +1939,44 @@ private fun ContactProviderSection(
     var message by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var isBooking by remember { mutableStateOf(false) }
 
-    Text("Book this adventure with your host $providerName", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    OutlinedTextField(
-        value = message,
-        onValueChange = { message = it; error = null },
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("Your message") },
-        shape = InputFieldShape,
-        enabled = !busy && enabled,
-    )
-    error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
-    Button(
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !busy && message.isNotBlank() && enabled,
-        onClick = {
-            error = null
-            busy = true
-            scope.launch {
-                try {
-                    val res = api.contactProvider(serviceId, message.trim())
-                    onOpened(res)
-                } catch (e: Throwable) {
-                    error = e.message ?: "Could not send your message."
-                } finally {
-                    busy = false
-                }
+    if (!isBooking) {
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                isBooking = true
             }
-        },
-    ) { Text("Send message") }
+        ) {
+            Text("Book this adventure with $providerName")
+        }
+    } else {
+        OutlinedTextField(
+            value = message,
+            onValueChange = { message = it; error = null },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Your message") },
+            shape = InputFieldShape,
+            enabled = !busy && enabled,
+        )
+        error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !busy && message.isNotBlank() && enabled,
+            onClick = {
+                error = null
+                busy = true
+                scope.launch {
+                    try {
+                        val res = api.contactProvider(serviceId, message.trim())
+                        onOpened(res)
+                    } catch (e: Throwable) {
+                        error = e.message ?: "Could not send your message."
+                    } finally {
+                        busy = false
+                    }
+                }
+            },
+        ) { Text("Send booking request") }
+    }
 }

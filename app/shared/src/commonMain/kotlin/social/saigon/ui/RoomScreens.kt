@@ -32,12 +32,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CardDefaults.cardColors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItemDefaults.verticalAlignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -59,7 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -2274,7 +2270,7 @@ private fun RoomAboutPanel(
             // Two-line ellipsis keeps a long description from dominating the room panel; the full
             // Markdown body is available in the dialog opened by tapping this container.
             Text(
-                text = plainDescriptionPreview(description),
+                text = description.stripMarkdown(),
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .fillMaxWidth()
@@ -2354,8 +2350,8 @@ private fun RoomDescriptionDialog(
  * Strips common markers so the collapsed panel doesn't show raw `**` / `#` syntax; the dialog keeps
  * the full rendered Markdown.
  */
-private fun plainDescriptionPreview(markdown: String): String =
-    markdown
+fun String.stripMarkdown(): String =
+    this
         .trim()
         .replace(Regex("```[\\s\\S]*?```"), " ")
         .replace(Regex("`([^`]*)`"), "$1")
