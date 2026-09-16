@@ -49,9 +49,12 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -791,6 +794,7 @@ internal fun ServiceDetailScreen(
                                 api = api,
                                 serviceId = serviceId,
                                 providerName = s.providerName,
+                                price = s.price,
                                 onOpened = onOpenDirectChat,
                                 enabled = enableBookBar
                             )
@@ -1932,6 +1936,7 @@ private fun ContactProviderSection(
     api: SaigonApi,
     serviceId: String,
     providerName: String,
+    price: Int,
     onOpened: (ContactProviderResponse) -> Unit,
     enabled: Boolean,
 ) {
@@ -1948,13 +1953,19 @@ private fun ContactProviderSection(
                 isBooking = true
             }
         ) {
-            Text("Book this adventure with $providerName")
+            Text("Book this adventure with $providerName • ${UiConstants.vnd(price)}", textAlign = TextAlign.Center)
         }
     } else {
+        val focuser = remember { FocusRequester() }
+
+        LaunchedEffect(Unit) {
+            focuser.requestFocus()
+        }
+
         OutlinedTextField(
             value = message,
             onValueChange = { message = it; error = null },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRequester(focuser),
             label = { Text("Your message") },
             shape = InputFieldShape,
             enabled = !busy && enabled,

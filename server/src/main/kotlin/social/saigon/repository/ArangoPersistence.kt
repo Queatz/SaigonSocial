@@ -342,6 +342,11 @@ internal class ArangoMessageRepository(db: ArangoDatabase) : MessageRepository {
         }
         return store.query(aql, bindVars)
     }
+    override fun latest(limit: Int): List<Message> =
+        store.query(
+            "FOR d IN ${ArangoSchema.MESSAGES} SORT d.createdAt DESC LIMIT @limit RETURN d",
+            mapOf("limit" to limit),
+        )
 }
 
 internal class ArangoThreadRepository(db: ArangoDatabase) : ThreadRepository {

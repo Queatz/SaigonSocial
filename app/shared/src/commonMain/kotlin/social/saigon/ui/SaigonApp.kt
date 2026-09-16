@@ -363,6 +363,28 @@ fun SaigonApp(
             }
         }
 
+        // Keep the browser tab title identical to the in-app top bar (room + service detail especially).
+        val topBarTitle = when (val s = screen) {
+            Screen.RoomList -> "Saigon.Social"
+            is Screen.Invite -> "Complete your account"
+            is Screen.Room -> roomTopBarTitle(s.room.emoji, s.room.name)
+            is Screen.Private -> "Chat with ${s.peerName}"
+            Screen.DirectChats -> "Direct chats"
+            Screen.ThreadReplies -> "Thread replies"
+            Screen.Profile -> if (token != null) "Your profile" else "Sign in"
+            Screen.Members -> "Members"
+            Screen.RoomSearches -> "Community searches"
+            Screen.ServiceSearches -> "Adventure searches"
+            Screen.MyServices -> "Adventures hosted by you"
+            Screen.Services -> "Adventures"
+            // Prefer the loaded service name (with emoji, matching rooms); fall back
+            // to the generic list title until the detail fetch completes.
+            is Screen.ServiceDetail -> serviceTopBarTitle(s.serviceName, s.serviceEmoji)
+        }
+        LaunchedEffect(topBarTitle) {
+            setDocumentTitle(documentTitle(topBarTitle))
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -375,30 +397,11 @@ fun SaigonApp(
             // with a faint film-grain texture so the background reads as soft and tactile.
             Column(modifier = Modifier.fillMaxSize().background(appBackgroundBrush())) {
                 TopBar(
-                    title = when (val s = screen) {
-                        Screen.RoomList -> "Saigon.Social"
-                        is Screen.Invite -> "Complete your account"
-                        is Screen.Room -> "${s.room.emoji} ${s.room.name}"
-                        is Screen.Private -> "Chat with ${s.peerName}"
-                        Screen.DirectChats -> "Direct chats"
-                        Screen.ThreadReplies -> "Thread replies"
-                        Screen.Profile -> if (token != null) "Your profile" else "Sign in"
-                        Screen.Members -> "Members"
-                        Screen.RoomSearches -> "Community searches"
-                        Screen.ServiceSearches -> "Adventure searches"
-                        Screen.MyServices -> "Adventures hosted by you"
-                        Screen.Services -> "Adventures"
-                        // Prefer the loaded service name (with emoji, matching rooms); fall back
-                        // to the generic list title until the detail fetch completes.
-                        is Screen.ServiceDetail -> s.serviceName?.let { name ->
-                            val emoji = s.serviceEmoji.trim()
-                            if (emoji.isNotEmpty()) "$emoji $name" else name
-                        } ?: "Adventures"
-                    },
+                    title = topBarTitle,
                     // On the room screen, show the room's atmosphere as a second title line under
                     // the room name (when the founder set one); other screens have no subtitle.
                     subtitle = when (val s = screen) {
-                        is Screen.RoomList -> "Saigon's Social Educational Adventures!"
+                        is Screen.RoomList -> "Saigon's Social Talk Hub!"
                         is Screen.Room -> s.room.atmosphere.takeIf { it.isNotBlank() }
                         else -> null
                     },
@@ -469,6 +472,9 @@ fun SaigonApp(
                                 onOpenThreadReplies = { screen = Screen.ThreadReplies },
                                 onOpenServices = { screen = Screen.Services },
                                 onOpenService = { screen = Screen.ServiceDetail(it) },
+                                onOpenThread = { room, threadId ->
+                                    screen = Screen.Room(room, threadId)
+                                },
                                 signedIn = token != null,
                                 userDisplayName = profile?.displayName,
                             )
@@ -740,6 +746,7 @@ private fun TopBar(
                     color = if (primaryText) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
+                    maxLines = 2,
                 )
                 // Second description line under the title (e.g. the room's atmosphere).
                 subtitle?.let {
@@ -747,6 +754,7 @@ private fun TopBar(
                         text = it,
                         color = if (primaryText) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                         fontSize = 13.sp,
+                        maxLines = 2,
                     )
                 }
             }

@@ -134,6 +134,12 @@ interface MessageRepository {
      * and the limit are applied by the data store itself, not in application code.
      */
     fun page(roomId: String, before: Long?, limit: Int): List<Message>
+
+    /**
+     * The newest [limit] public-chat messages across every room, ordered newest→oldest. Powers the
+     * home screen's "Latest threads" section.
+     */
+    fun latest(limit: Int): List<Message>
 }
 
 /**
@@ -402,6 +408,8 @@ class InMemoryMessageRepository : MessageRepository {
         val older = if (before == null) all else all.filter { it.createdAt < before }
         return older.take(limit)
     }
+    override fun latest(limit: Int): List<Message> =
+        byId.values.sortedByDescending { it.createdAt }.take(limit)
 }
 
 class InMemoryPrivateChatRepository : PrivateChatRepository {

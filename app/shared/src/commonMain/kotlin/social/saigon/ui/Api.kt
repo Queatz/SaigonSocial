@@ -111,6 +111,16 @@ class SaigonApi(
         }.body<List<FeedMessage>>().reversed()
 
     /**
+     * The newest public-chat messages across every community (`GET /threads/latest`), newest first.
+     * Used by the home screen's "Latest threads" section.
+     */
+    suspend fun latestThreads(limit: Int = 5): List<FeedMessage> =
+        client.get("$baseUrl/threads/latest") {
+            HttpRequestAuth(this)
+            url.parameters.append("limit", limit.toString())
+        }.body()
+
+    /**
      * Create a new room (Supporters + Founder; DESIGN §6). Requires a member token. An optional
      * [id] sets the room's URL; when blank the server assigns one.
      */

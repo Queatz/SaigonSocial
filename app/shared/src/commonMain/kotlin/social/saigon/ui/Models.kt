@@ -148,6 +148,10 @@ data class FeedMessage(
     val recalled: Boolean = false,
     /** The author's main profile photo URL (empty when they have none), for their avatar. */
     val authorPhotoUrl: String = "",
+    /** Community name, set on the home-screen latest-threads list so the bubble can show "in …". */
+    val roomName: String = "",
+    /** Community emoji, set on the home-screen latest-threads list. */
+    val roomEmoji: String = "",
 ) {
     /** The name to render in the feed — the room-scoped name when present, else the raw id. */
     val displayAuthor: String get() = authorName.ifBlank { authorId }

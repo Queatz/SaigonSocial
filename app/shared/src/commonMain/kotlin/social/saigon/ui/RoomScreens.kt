@@ -225,6 +225,7 @@ internal fun RoomListScreen(
     onOpenThreadReplies: () -> Unit = {},
     onOpenServices: () -> Unit = {},
     onOpenService: (String) -> Unit = {},
+    onOpenThread: (RoomSummary, String) -> Unit = { room, _ -> onOpen(room) },
     signedIn: Boolean = false,
     userDisplayName: String? = null,
 ) {
@@ -240,14 +241,21 @@ internal fun RoomListScreen(
     var editing by remember { mutableStateOf<RoomSummary?>(null) }
     var deleting by remember { mutableStateOf<RoomSummary?>(null) }
     var services by remember { mutableStateOf<List<ServiceView>?>(null) }
+    var latestThreads by remember { mutableStateOf<List<FeedMessage>?>(null) }
 
     LaunchedEffect(Unit) {
         runCatching { api.services("") }.onSuccess { services = it }
+        runCatching { api.latestThreads() }
+            .onSuccess { latestThreads = it }
+            .onFailure { latestThreads = emptyList() }
     }
 
     suspend fun reload() {
         runCatching { api.rooms(search.trim().ifBlank { null }) }.onSuccess { rooms = it }
         runCatching { api.services("") }.onSuccess { services = it }
+        runCatching { api.latestThreads() }
+            .onSuccess { latestThreads = it }
+            .onFailure { latestThreads = emptyList() }
     }
 
     // Search the rooms on the backend, debounced by 500ms so we don't fire a request per keystroke
@@ -296,7 +304,7 @@ internal fun RoomListScreen(
                                 )
                                 Text(
                                     text = "Welcome to Saigon.Social. " +
-                                            "Let's get taking! ",
+                                            "Let's get talking! ",
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     textAlign = TextAlign.Center
@@ -426,6 +434,57 @@ internal fun RoomListScreen(
                             }
                         }
                     }
+                    val searching = search.trim().isNotEmpty()
+                    if (!searching) {
+                        item {
+                            Text(
+                                text = "Latest threads",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                modifier = Modifier.padding(top = 16.dp)
+                            )
+                        }
+                        val threads = latestThreads
+                        if (threads == null) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    LoadingSpinner()
+                                }
+                            }
+                        } else if (threads.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No threads yet.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                        } else {
+                            items(threads, key = { it.id }) { thread ->
+                                MessageRow(
+                                    msg = thread,
+                                    onOpenThread = {
+                                        onOpenThread(
+                                            RoomSummary(
+                                                id = thread.roomId,
+                                                name = thread.roomName.ifBlank { thread.roomId },
+                                                emoji = thread.roomEmoji,
+                                                atmosphere = "",
+                                                occupants = 0,
+                                            ),
+                                            thread.id,
+                                        )
+                                    },
+                                    onOpenProfile = null,
+                                    inCommunity = thread.roomName.takeIf { it.isNotBlank() },
+                                )
+                            }
+                        }
+                    }
                     item {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Row(
@@ -452,7 +511,6 @@ internal fun RoomListScreen(
                             }
                         }
                     }
-                    val searching = search.trim().isNotEmpty()
                     item {
                         Text(
                             text = if (searching) "Results" else "Popular communities",
@@ -2191,7 +2249,12 @@ private fun RoomFacetHeader(title: String, customized: Boolean, onReset: () -> U
 }
 
 @Composable
-private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile: () -> Unit) {
+private fun MessageRow(
+    msg: FeedMessage,
+    onOpenThread: () -> Unit,
+    onOpenProfile: (() -> Unit)? = null,
+    inCommunity: String? = null,
+) {
     ChatMessage(
         authorName = msg.displayAuthor,
         text = msg.text,
@@ -2201,6 +2264,7 @@ private fun MessageRow(msg: FeedMessage, onOpenThread: () -> Unit, onOpenProfile
         recalled = msg.recalled,
         onClick = onOpenThread,
         onAvatarClick = onOpenProfile,
+        inCommunity = inCommunity,
         footer = if (msg.replyCount > 0) {
             {
                 Spacer(Modifier.height(4.dp))

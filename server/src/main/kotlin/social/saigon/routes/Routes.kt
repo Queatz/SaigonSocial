@@ -518,6 +518,32 @@ fun Application.registerRoutes(
             call.respond(replies)
         }
 
+        // Public: the newest parent messages across every community, for the home-screen
+        // "Latest threads" section. Each item is a feed message plus its community name so the
+        // client can render it as a ChatMessage with "in <community>" and open the thread route.
+        get("/threads/latest") {
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
+            val threads = repositories.messages.latest(limit).mapNotNull { message ->
+                val room = repositories.rooms.get(message.roomId) ?: return@mapNotNull null
+                FeedMessage(
+                    id = message.id,
+                    roomId = message.roomId,
+                    authorId = message.authorId,
+                    authorName = message.authorName.ifBlank {
+                        authorName(message.authorId, message.roomId, repositories, identities)
+                    },
+                    authorPhotoUrl = roomPhotoUrl(message.authorId, message.roomId, repositories, identities),
+                    text = message.text,
+                    createdAt = message.createdAt,
+                    replyCount = threadService.replyCount(message.id),
+                    recalled = message.recalled,
+                    roomName = room.name,
+                    roomEmoji = room.emoji,
+                )
+            }
+            call.respond(threads)
+        }
+
         // Who's in the room: live online sessions plus durable joined members (issue: "Join / Leave
         // a community"). Joined members stay listed even while offline; online presence is still
         // tracked separately so the UI can mark who is currently present.
@@ -1663,6 +1689,10 @@ data class FeedMessage(
     val recalled: Boolean = false,
     /** The author's main profile photo URL (empty when they have none), for their avatar. */
     val authorPhotoUrl: String = "",
+    /** Community name, set on the home-screen latest-threads list so the bubble can show "in …". */
+    val roomName: String = "",
+    /** Community emoji, set on the home-screen latest-threads list. */
+    val roomEmoji: String = "",
 )
 
 /** A thread reply enriched with the author's room-scoped display name (DESIGN §5, §9). */

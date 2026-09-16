@@ -135,6 +135,8 @@ internal fun ChatMessage(
     recalled: Boolean = false,
     onClick: (() -> Unit)? = null,
     onAvatarClick: (() -> Unit)? = null,
+    /** When set, shown in the header as "in <community name>" (home-screen latest threads). */
+    inCommunity: String? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -167,16 +169,24 @@ internal fun ChatMessage(
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 val ago = timestamp?.let { timeAgo(it) }.orEmpty()
-                if (showAuthor || ago.isNotEmpty()) {
+                val community = inCommunity?.trim().orEmpty()
+                if (showAuthor || ago.isNotEmpty() || community.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (showAuthor) {
                             Text(authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         if (ago.isNotEmpty()) {
                             Text(ago, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (community.isNotEmpty()) {
+                            Text(
+                                "in $community",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
