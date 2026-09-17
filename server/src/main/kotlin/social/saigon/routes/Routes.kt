@@ -633,7 +633,7 @@ fun Application.registerRoutes(
         get("/services/{id}") {
             val id = call.parameters["id"].orEmpty()
             val service = resolveService(repositories, id)
-                ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such adventure")); return@get }
+                ?: run { call.respond(HttpStatusCode.NotFound, mapOf("error" to "No such meet")); return@get }
             call.respond(service.toServiceView(repositories))
         }
 
@@ -1106,11 +1106,11 @@ fun Application.registerRoutes(
                 val user = repositories.users.get(userId)
                     ?: throw IllegalArgumentException("Unknown user")
                 require(user.role == Role.SUPPORTER || user.role == Role.FOUNDER) {
-                    "Only Supporters can host adventures."
+                    "Only Supporters can host meets."
                 }
                 val req = call.receive<ServiceCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
-                require(req.name.isNotBlank()) { "An adventure name is required." }
+                require(req.name.isNotBlank()) { "A meet name is required." }
                 val name = req.name.trim()
                 val service = repositories.services.create(
                     Service(
@@ -1153,13 +1153,13 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot edit this adventure."
+                    "You cannot edit this meet."
                 }
                 val req = call.receive<ServiceUpdate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
-                require(req.name.isNotBlank()) { "An adventure name is required." }
+                require(req.name.isNotBlank()) { "A meet name is required." }
                 val name = req.name.trim()
                 // Backfill a pretty URL slug when a legacy row still has a blank urlId.
                 val urlId = service.urlId.ifBlank {
@@ -1201,9 +1201,9 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot delete this adventure."
+                    "You cannot delete this meet."
                 }
                 repositories.services.delete(service.id)
                 repositories.users.get(service.providerId)?.let { provider ->
@@ -1220,9 +1220,9 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot add photos to this adventure."
+                    "You cannot add photos to this meet."
                 }
                 val req = call.receive<AddServicePhotoRequest>()
                 val photoUrl = req.url.trim()
@@ -1244,9 +1244,9 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot edit photos on this adventure."
+                    "You cannot edit photos on this meet."
                 }
                 val req = call.receive<UpdatePhotoRequest>()
                 val oldUrl = req.originalUrl.trim()
@@ -1268,9 +1268,9 @@ fun Application.registerRoutes(
                 val caller = call.caller()
                 val userId = requireMember(caller)
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 require(service.providerId == userId || caller.role.isAdmin) {
-                    "You cannot delete photos from this adventure."
+                    "You cannot delete photos from this meet."
                 }
                 val url = call.request.queryParameters["url"].orEmpty()
                 require(url.isNotBlank()) { "url required" }
@@ -1284,7 +1284,7 @@ fun Application.registerRoutes(
             post("/services/{id}/feedback") {
                 val userId = requireMember(call.caller())
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 val req = call.receive<FeedbackCreate>()
                 require(req.emoji.isNotBlank()) { "An emoji is required." }
                 val feedback = repositories.feedback.create(
@@ -1325,7 +1325,7 @@ fun Application.registerRoutes(
             post("/services/{id}/contact") {
                 val userId = requireMember(call.caller())
                 val service = resolveService(repositories, call.parameters["id"].orEmpty())
-                    ?: throw IllegalArgumentException("That adventure does not exist.")
+                    ?: throw IllegalArgumentException("That meet does not exist.")
                 val req = call.receive<ContactProviderRequest>()
                 val message = req.message.trim()
                 require(message.isNotBlank()) { "A message is required." }
@@ -1885,9 +1885,9 @@ private suspend fun ApplicationCall.setServiceListed(repositories: Repositories,
     val caller = caller()
     val userId = requireMember(caller)
     val service = resolveService(repositories, parameters["id"].orEmpty())
-        ?: throw IllegalArgumentException("That adventure does not exist.")
+        ?: throw IllegalArgumentException("That meet does not exist.")
     require(service.providerId == userId || caller.role.isAdmin) {
-        "You cannot change this adventure."
+        "You cannot change this meet."
     }
     val updated = repositories.services.update(service.copy(listed = listed))
     respond(updated.toServiceView(repositories))

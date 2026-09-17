@@ -423,7 +423,7 @@ data class Service(
 ) {
     companion object {
         /** Prefill for new adventures when the provider does not supply a custom policy. */
-        const val DEFAULT_CANCELLATION_POLICY = "Cancellation is free 24 hours before the adventure begins."
+        const val DEFAULT_CANCELLATION_POLICY = "Cancellation is free 24 hours before the meet begins."
     }
 }
 

@@ -84,7 +84,7 @@ internal fun ServiceSearchScreen(
     // Bumped after a successful create so the search list refreshes even if the query is unchanged.
     var reloadToken by remember { mutableStateOf(0) }
     var selectingCommunity by remember { mutableStateOf(false) }
-    var createInRoomId by remember { mutableStateOf<String?>(null) }
+    var createInRoom by remember { mutableStateOf<RoomSummary?>(null) }
 
     // Reload whenever the query changes (debounce-free; the list is small and the filter is cheap).
     LaunchedEffect(query, reloadToken) {
@@ -94,7 +94,7 @@ internal fun ServiceSearchScreen(
             results.clear()
             results.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load adventures"
+            error = e.message ?: "Could not load meets"
         } finally {
             loaded = true
         }
@@ -114,7 +114,7 @@ internal fun ServiceSearchScreen(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.weight(1f),
-                label = { Text("Search adventures") },
+                label = { Text("Search meets") },
                 singleLine = true,
                 shape = InputFieldShape,
             )
@@ -133,16 +133,17 @@ internal fun ServiceSearchScreen(
         when {
             !loaded -> LoadingSpinner()
             results.isEmpty() -> Text(
-                if (query.isBlank()) "No adventures yet." else "No adventures match \"$query\".",
+                if (query.isBlank()) "No meets yet." else "No meets match \"$query\".",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
             else -> Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Popular adventures",
+                    text = "Popular meets",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     modifier = Modifier.padding(top = 16.dp)
@@ -160,18 +161,19 @@ internal fun ServiceSearchScreen(
             onDismiss = { selectingCommunity = false },
             onSelected = { room ->
                 selectingCommunity = false
-                createInRoomId = room.id
+                createInRoom = room
             },
         )
     }
 
-    createInRoomId?.let { roomId ->
+    createInRoom?.let { room ->
         CreateServiceDialog(
             api = api,
-            roomId = roomId,
-            onDismiss = { createInRoomId = null },
+            roomId = room.id,
+            roomName = room.name,
+            onDismiss = { createInRoom = null },
             onCreated = {
-                createInRoomId = null
+                createInRoom = null
                 reloadToken++
             },
         )
@@ -219,7 +221,7 @@ private fun SelectCommunityDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    "Which community should this adventure belong to?",
+                    "Which community should this meet belong to?",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -245,6 +247,7 @@ private fun SelectCommunityDialog(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
                     else -> rooms!!.forEach { room ->
                         Card(
                             modifier = Modifier
@@ -298,7 +301,9 @@ internal fun MyServicesScreen(
     var error by remember(selfUserId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(selfUserId) {
-        if (selfUserId == null) { loaded = true; return@LaunchedEffect }
+        if (selfUserId == null) {
+            loaded = true; return@LaunchedEffect
+        }
         error = null
         try {
             // The caller's own list includes unlisted services so they can relist/manage them.
@@ -306,7 +311,7 @@ internal fun MyServicesScreen(
             results.clear()
             results.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load your adventures"
+            error = e.message ?: "Could not load your meets"
         } finally {
             loaded = true
         }
@@ -320,10 +325,11 @@ internal fun MyServicesScreen(
         when {
             !loaded -> LoadingSpinner()
             results.isEmpty() -> Text(
-                "You haven't offered any adventures yet. Open a community and offer one from your community profile.",
+                "You haven't offered any meets yet. Open a community and offer one from your community profile.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
             else -> Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -362,7 +368,12 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            Text(
+                                service.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.weight(1f)
+                            )
                             Text(UiConstants.vnd(service.price), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         if (!service.listed) {
@@ -374,7 +385,12 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                         }
                         if (service.description.isNotBlank()) {
                             Text(
-                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description.stripMarkdown()}",
+                                "by ${
+                                    nameWithBadge(
+                                        service.providerName,
+                                        service.providerRole
+                                    )
+                                } • ${service.description.stripMarkdown()}",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -394,65 +410,112 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
     }
 }
 
+/** Diff of service photos between the persisted list and the dialog's local draft. */
+internal data class ServicePhotoChanges(
+    val toAdd: List<ProfilePhoto>,
+    val toDeleteUrls: List<String>,
+    val toUpdate: List<ProfilePhoto>,
+)
+
+/** Compute add/delete/caption-update operations to turn [original] into [current]. */
+internal fun servicePhotoChanges(
+    original: List<ProfilePhoto>,
+    current: List<ProfilePhoto>,
+): ServicePhotoChanges {
+    val originalByUrl = original.associateBy { it.url }
+    val currentUrls = current.map { it.url }.toSet()
+    return ServicePhotoChanges(
+        toAdd = current.filter { it.url !in originalByUrl },
+        toDeleteUrls = original.map { it.url }.filter { it !in currentUrls },
+        toUpdate = current.filter { photo ->
+            originalByUrl[photo.url]?.let { it.message != photo.message } == true
+        },
+    )
+}
+
+/** Persist [servicePhotoChanges] against an existing service. */
+internal suspend fun applyServicePhotoChanges(
+    api: SaigonApi,
+    serviceId: String,
+    original: List<ProfilePhoto>,
+    current: List<ProfilePhoto>,
+) {
+    val changes = servicePhotoChanges(original, current)
+    changes.toDeleteUrls.forEach { api.deleteServicePhoto(serviceId, it) }
+    changes.toAdd.forEach { api.addServicePhoto(serviceId, it.url, it.message) }
+    changes.toUpdate.forEach { api.updateServicePhoto(serviceId, it.url, it.url, it.message) }
+}
+
+/** Hide cancellation copy on free meets and when the provider left the policy blank. */
+internal fun shouldShowCancellationPolicy(price: Int, policy: String): Boolean =
+    price > 0 && policy.isNotBlank()
+
 /**
- * The service-photo area on the service detail screen (issue: "upload adventure photos ... display
- * the adventure photos on the adventure page"). Photos are shown to everyone as vertical cards in a
- * wrapping flex row; tapping a card opens a read-only display. When [canManage] is true (the
- * provider or a Founder) an "Add a photo" button opens [PhotoUploadDialog], and tapping a card opens
- * the "Edit this photo" dialog to replace, recaption, or delete it. Mirrors `ProfilePhotoSection`.
+ * Compact photo manager for the create/edit service dialogs. Uploads go to the content server
+ * immediately; attaching them to the service happens when the dialog saves.
  */
 @Composable
-private fun ServicePhotoSection(
+internal fun ServicePhotosEditor(
     api: SaigonApi,
-    service: ServiceView,
-    canManage: Boolean,
-    onUpdated: (ServiceView) -> Unit,
+    photos: SnapshotStateList<ProfilePhoto>,
+    enabled: Boolean,
 ) {
-    var showUpload by remember(service.id) { mutableStateOf(false) }
-    var editingPhoto by remember(service.id) { mutableStateOf<ProfilePhoto?>(null) }
+    var showUpload by remember { mutableStateOf(false) }
+    var editingPhoto by remember { mutableStateOf<ProfilePhoto?>(null) }
 
-    // Nothing to show for a visitor when there are no photos yet.
-    if (service.photos.isEmpty() && !canManage) return
-
-    Text("Photos", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    if (canManage) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Photos", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Text(
-            "Add photos of your adventure. Click a photo to edit it.",
+            "Add photos of your meet. Click a photo to edit it.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-
-    if (service.photos.isNotEmpty()) {
-        PhotoCardsRow(
-            title = service.name,
-            photos = service.photos,
-            // Managers edit on tap; everyone else just opens the read-only display.
-            onPhotoClick = if (canManage) ({ editingPhoto = it }) else null,
-        )
-    } else {
-        Text(
-            "No photos yet.",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    if (canManage) {
-        OutlinedButton(onClick = { showUpload = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("Add a photo")
+        if (photos.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                photos.forEach { photo ->
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = enabled) { editingPhoto = photo },
+                    ) {
+                        UrlImage(
+                            url = photo.url,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+            Text(
+                "Tap a photo to edit it.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "No photos yet.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+        OutlinedButton(
+            enabled = enabled,
+            onClick = { showUpload = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Add a photo") }
     }
 
     if (showUpload) {
         PhotoUploadDialog(
             api = api,
-            title = "Add an adventure photo",
-            // Always adding a fresh photo, so there is no current photo to pre-fill.
+            title = "Add a meet photo",
             currentPhoto = null,
             onDismiss = { showUpload = false },
             onSaved = { photo ->
-                onUpdated(api.addServicePhoto(service.id, photo.url, photo.message))
+                photos.add(photo)
                 showUpload = false
             },
             confirmLabel = "Add photo",
@@ -466,11 +529,12 @@ private fun ServicePhotoSection(
             currentPhoto = photo,
             onDismiss = { editingPhoto = null },
             onSaved = { updated ->
-                onUpdated(api.updateServicePhoto(service.id, photo.url, updated.url, updated.message))
+                val index = photos.indexOfFirst { it.url == photo.url }
+                if (index >= 0) photos[index] = updated else photos.add(updated)
                 editingPhoto = null
             },
             onDelete = {
-                onUpdated(api.deleteServicePhoto(service.id, photo.url))
+                photos.removeAll { it.url == photo.url }
                 editingPhoto = null
             },
         )
@@ -555,7 +619,7 @@ internal fun ServiceDetailScreen(
             reloadFeedback()
             service?.let { reloadHost(it.roomId, it.providerId) }
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load this adventure"
+            error = e.message ?: "Could not load this meet"
         } finally {
             loaded = true
         }
@@ -563,13 +627,17 @@ internal fun ServiceDetailScreen(
 
     val s = service
     when {
-        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) { LoadingSpinner(
-            modifier = Modifier.padding(24.dp),
-            useDelay = false // useful to give the sheet some initial height
-        ) }
-        s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(error ?: "This adventure could not be found.", color = MaterialTheme.colorScheme.error)
+        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            LoadingSpinner(
+                modifier = Modifier.padding(24.dp),
+                useDelay = false // useful to give the sheet some initial height
+            )
         }
+
+        s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(error ?: "This meet could not be found.", color = MaterialTheme.colorScheme.error)
+        }
+
         else -> {
             // Sticky "Book this adventure" bar stays pinned while the detail body scrolls
             // (same pattern as ProfileScreen's sticky Save bar).
@@ -642,7 +710,7 @@ internal fun ServiceDetailScreen(
                         }
                         if (!s.listed) {
                             Text(
-                                "This adventure is unlisted — it won't show up in the public search.",
+                                "This meet is unlisted — it won't show up in the public search.",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -685,7 +753,9 @@ internal fun ServiceDetailScreen(
                                         managing = true
                                         scope.launch {
                                             runCatching {
-                                                if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
+                                                if (s.listed) api.unlistService(serviceId) else api.relistService(
+                                                    serviceId
+                                                )
                                             }.onSuccess { service = it }
                                             managing = false
                                         }
@@ -711,16 +781,7 @@ internal fun ServiceDetailScreen(
 
                         WhatYoullDoSection(activities = s.activities)
 
-                        CancellationPolicySection(policy = s.cancellationPolicy)
-
-                        // Service photos (issue: "upload adventure photos ... display the adventure photos on
-                        // the adventure page"): shown to everyone; the provider/Founder can add or delete them.
-                        ServicePhotoSection(
-                            api = api,
-                            service = s,
-                            canManage = isFounder || selfUserId == s.providerId,
-                            onUpdated = { service = it },
-                        )
+                        CancellationPolicySection(policy = s.cancellationPolicy, price = s.price)
 
                         FeedbackSection(
                             api = api,
@@ -814,7 +875,7 @@ internal fun ServiceDetailScreen(
             if (confirmingDelete) {
                 AlertDialog(
                     onDismissRequest = { confirmingDelete = false },
-                    title = { Text("Delete this adventure?") },
+                    title = { Text("Delete this meet?") },
                     text = { Text("This can't be undone.") },
                     confirmButton = {
                         TextButton(onClick = {
@@ -836,6 +897,7 @@ internal fun ServiceDetailScreen(
                     canStartPrivate = canContact,
                     api = api,
                     roomId = s.roomId,
+                    roomName = s.roomName,
                     onStartChat = {
                         selectedOccupant = null
                         onOpenDirectChat(
@@ -1048,7 +1110,7 @@ private fun WhereYoullGoSection(destinations: List<ServiceDestination>) {
     if (destinations.isEmpty()) return
     val lineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text("Where you'll go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text("Where you'll meet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(12.dp))
         destinations.forEachIndexed { index, dest ->
             val isLast = index == destinations.lastIndex
@@ -1153,10 +1215,10 @@ private fun WhatYoullDoSection(activities: List<ServiceActivity>) {
     }
 }
 
-/** Plain-text cancellation policy block on the adventure detail screen. */
+/** Plain-text cancellation policy block on the meet detail screen. Hidden for free meets. */
 @Composable
-private fun CancellationPolicySection(policy: String) {
-    if (policy.isBlank()) return
+private fun CancellationPolicySection(policy: String, price: Int) {
+    if (!shouldShowCancellationPolicy(price, policy)) return
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1470,6 +1532,9 @@ private fun EditServiceDialog(
     val activities = remember {
         mutableStateListOf<ServiceActivity>().also { it.addAll(service.activities) }
     }
+    val photos = remember {
+        mutableStateListOf<ProfilePhoto>().also { it.addAll(service.photos) }
+    }
     var cancellationPolicy by remember {
         mutableStateOf(service.cancellationPolicy.ifBlank { DEFAULT_CANCELLATION_POLICY })
     }
@@ -1478,12 +1543,17 @@ private fun EditServiceDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Edit adventure") },
+        title = { Text("Edit meet") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                ServicePhotosEditor(
+                    api = api,
+                    photos = photos,
+                    enabled = !busy,
+                )
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it; error = null },
@@ -1497,7 +1567,7 @@ private fun EditServiceDialog(
                     value = name,
                     onValueChange = { name = it; error = null },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Adventure name") },
+                    label = { Text("Meet name") },
                     singleLine = true,
                     shape = InputFieldShape,
                     enabled = !busy,
@@ -1598,6 +1668,12 @@ private fun EditServiceDialog(
                                 activities = activities.toList(),
                                 cancellationPolicy = cancellationPolicy.trim()
                                     .ifBlank { DEFAULT_CANCELLATION_POLICY },
+                            )
+                            applyServicePhotoChanges(
+                                api = api,
+                                serviceId = service.id,
+                                original = service.photos,
+                                current = photos.toList(),
                             )
                             onSaved()
                         } catch (e: Throwable) {
@@ -1724,7 +1800,11 @@ private fun FeedbackReviewsDialog(
                 reviews.forEach { review ->
                     val canDelete = isFounder || selfUserId == review.userId || selfUserId == providerId
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(nameWithBadge(review.authorName, review.authorRole), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            nameWithBadge(review.authorName, review.authorRole),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
                         if (review.message.isNotBlank()) {
                             Text(review.message, fontSize = 14.sp)
                         }
@@ -1953,7 +2033,7 @@ private fun ContactProviderSection(
                 isBooking = true
             }
         ) {
-            Text("Book this adventure with $providerName • ${UiConstants.vnd(price)}", textAlign = TextAlign.Center)
+            Text("Book this meet with $providerName • ${UiConstants.vnd(price)}", textAlign = TextAlign.Center)
         }
     } else {
         val focuser = remember { FocusRequester() }

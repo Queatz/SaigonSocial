@@ -30,4 +30,4 @@ internal fun serviceTopBarTitle(serviceName: String?, serviceEmoji: String = "")
     serviceName?.let { name ->
         val emoji = serviceEmoji.trim()
         if (emoji.isNotEmpty()) "$emoji $name" else name
-    } ?: "Adventures"
+    } ?: "Meets"

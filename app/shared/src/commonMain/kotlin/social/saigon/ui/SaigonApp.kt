@@ -374,9 +374,9 @@ fun SaigonApp(
             Screen.Profile -> if (token != null) "Your profile" else "Sign in"
             Screen.Members -> "Members"
             Screen.RoomSearches -> "Community searches"
-            Screen.ServiceSearches -> "Adventure searches"
-            Screen.MyServices -> "Adventures hosted by you"
-            Screen.Services -> "Adventures"
+            Screen.ServiceSearches -> "Meet searches"
+            Screen.MyServices -> "Meets hosted by you"
+            Screen.Services -> "Meets"
             // Prefer the loaded service name (with emoji, matching rooms); fall back
             // to the generic list title until the detail fetch completes.
             is Screen.ServiceDetail -> serviceTopBarTitle(s.serviceName, s.serviceEmoji)

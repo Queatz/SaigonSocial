@@ -580,7 +580,7 @@ data class ServiceActivity(
 
 /** Prefill for new adventures when the provider does not supply a custom cancellation policy. */
 const val DEFAULT_CANCELLATION_POLICY =
-    "Cancellation is free 24 hours before the adventure begins."
+    "Cancellation is free 24 hours before the meet begins."
 
 /** A service as shown in the `/services` search and detail screens (`GET /services`). */
 @Serializable

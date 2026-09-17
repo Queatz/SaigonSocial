@@ -299,7 +299,7 @@ internal fun ProfileScreen(
 
                 if (isSupporter) {
                     OutlinedButton(onClick = onViewMyServices, modifier = Modifier.fillMaxWidth()) {
-                        Text("Adventures hosted by you")
+                        Text("Meets hosted by you")
                     }
                 }
 
@@ -331,7 +331,7 @@ internal fun ProfileScreen(
                         Text("Community searches")
                     }
                     OutlinedButton(onClick = onViewServiceSearches, modifier = Modifier.fillMaxWidth()) {
-                        Text("Adventure searches")
+                        Text("Meet searches")
                     }
                 }
 
@@ -655,7 +655,7 @@ private fun BecomeSupporterBubble() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
-                    "🤝 Host your adventures on your profile",
+                    "🤝 Host your meets on your profile",
                     "🎯 Tailor your profile in each community",
                     "🏠 Create your own communities",
                     "💬 Accept direct chats from people",

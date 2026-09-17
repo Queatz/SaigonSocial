@@ -304,16 +304,16 @@ internal fun FounderServiceSearchesSection(api: SaigonApi) {
             searches.clear()
             searches.addAll(list)
         } catch (e: Throwable) {
-            error = e.message ?: "Could not load adventure searches"
+            error = e.message ?: "Could not load meet searches"
         } finally {
             loaded = true
         }
     }
 
-    Text("Adventure searches", fontWeight = FontWeight.Bold)
+    Text("Meet searches", fontWeight = FontWeight.Bold)
     Text(
-        "The latest searches people ran against the adventure list, newest first. Use them to " +
-            "understand what kinds of adventures people are looking for.",
+        "The latest searches people ran against the meet list, newest first. Use them to " +
+            "understand what kinds of meets people are looking for.",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -323,7 +323,7 @@ internal fun FounderServiceSearchesSection(api: SaigonApi) {
     when {
         !loaded -> LoadingSpinner()
         searches.isEmpty() -> Text(
-            "No adventure searches yet.",
+            "No meet searches yet.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -13,7 +13,7 @@ class DocumentTitleTest {
     @Test
     fun documentTitleAppendsBrandSuffixElsewhere() {
         assertEquals("🏠 Coffee Chat • Saigon.Social", documentTitle("🏠 Coffee Chat"))
-        assertEquals("Adventures • Saigon.Social", documentTitle("Adventures"))
+        assertEquals("Meets • Saigon.Social", documentTitle("Meets"))
         assertEquals("Your profile • Saigon.Social", documentTitle("Your profile"))
     }
 
@@ -30,8 +30,8 @@ class DocumentTitleTest {
 
     @Test
     fun serviceTitleFallsBackUntilNameLoads() {
-        assertEquals("Adventures", serviceTopBarTitle(null))
-        assertEquals("Adventures", serviceTopBarTitle(null, "🌟"))
+        assertEquals("Meets", serviceTopBarTitle(null))
+        assertEquals("Meets", serviceTopBarTitle(null, "🌟"))
     }
 
     @Test
