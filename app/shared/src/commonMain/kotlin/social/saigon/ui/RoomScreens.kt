@@ -480,6 +480,7 @@ internal fun RoomListScreen(
                                         )
                                     },
                                     onOpenProfile = null,
+                                    fill = true,
                                     inCommunity = thread.roomName.takeIf { it.isNotBlank() },
                                 )
                             }
@@ -2254,6 +2255,7 @@ private fun MessageRow(
     onOpenThread: () -> Unit,
     onOpenProfile: (() -> Unit)? = null,
     inCommunity: String? = null,
+    fill: Boolean = false,
 ) {
     ChatMessage(
         authorName = msg.displayAuthor,
@@ -2265,6 +2267,7 @@ private fun MessageRow(
         onClick = onOpenThread,
         onAvatarClick = onOpenProfile,
         inCommunity = inCommunity,
+        fill = fill,
         footer = if (msg.replyCount > 0) {
             {
                 Spacer(Modifier.height(4.dp))

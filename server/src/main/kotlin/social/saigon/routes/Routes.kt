@@ -1331,7 +1331,7 @@ fun Application.registerRoutes(
                 require(message.isNotBlank()) { "A message is required." }
                 val chat = privateChatService.openOrStart(userId, service.providerId, service.roomId)
                 // Append a hint so the provider knows which service prompted the message.
-                privateChatService.post(chat.id, userId, "$message — Sent from ${service.name}")
+                privateChatService.post(chat.id, userId, "$message\n\n— Sent from ${service.name}")
                 val providerName = authorName(service.providerId, service.roomId, repositories, identities)
                 call.respond(
                     ContactProviderResponse(

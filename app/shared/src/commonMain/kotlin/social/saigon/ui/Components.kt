@@ -2,6 +2,7 @@ package social.saigon.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.background
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -137,6 +137,7 @@ internal fun ChatMessage(
     onAvatarClick: (() -> Unit)? = null,
     /** When set, shown in the header as "in <community name>" (home-screen latest threads). */
     inCommunity: String? = null,
+    fill: Boolean = false,
     footer: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -160,7 +161,7 @@ internal fun ChatMessage(
             modifier = Modifier
                 // Take only the width left over after the fixed-size avatar + spacer, so a long
                 // message shrinks its own bubble instead of squishing the profile icon beside it.
-                .weight(1f, fill = false)
+                .weight(1f, fill = fill)
                 .widthIn(max = 480.dp)
                 .softShadow(bubbleShape)
                 .then(
