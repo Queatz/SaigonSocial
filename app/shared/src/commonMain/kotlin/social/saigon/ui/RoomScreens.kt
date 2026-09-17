@@ -124,17 +124,11 @@ private fun RoomCardItem(
                         modifier = Modifier
                             .fillMaxWidth()
                             .innerGlow()
-                            .then(
-                                if (current) {
-                                    Modifier.border(
-                                        3.dp,
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.shapes.medium
-                                    )
-                                } else {
-                                    Modifier
-                                }
-                            )
+                            .then(if (current) {
+                                Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+                            } else {
+                                Modifier
+                            })
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -339,27 +333,27 @@ internal fun RoomListScreen(
                                 Box(modifier = Modifier.fillMaxWidth()) {
                                     Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .innerGlow()
-                                            .padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text("\uD83D\uDCAC", fontSize = 24.sp)
-                                        Spacer(Modifier.width(12.dp))
-                                        Text(
-                                            text = "Direct chats",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        Text(
-                                            "$directChatCount open",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            fontWeight = FontWeight.Medium,
-                                        )
-                                    }
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .innerGlow()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("\uD83D\uDCAC", fontSize = 24.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = "Direct chats",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        "$directChatCount open",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
                                 }
                             }
                         }
@@ -441,9 +435,7 @@ internal fun RoomListScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     list.forEach { service ->
-                                        ServicePortraitCard(
-                                            service = service,
-                                            onClick = { onOpenService(service.routeId) })
+                                        ServicePortraitCard(service = service, onClick = { onOpenService(service.routeId) })
                                     }
                                 }
                             }
@@ -1149,9 +1141,9 @@ internal fun RoomChatScreen(
                             roomServices.forEach { service ->
                                 Box(modifier = Modifier.width(280.dp)) {
                                     ServiceCard(
-                                        service = service,
-                                        onClick = { selectedServiceId = service.routeId },
-                                    )
+                                         service = service,
+                                         onClick = { selectedServiceId = service.routeId },
+                                     )
                                 }
                             }
                         }
@@ -2557,57 +2549,54 @@ private fun OccupantList(
                         Box(modifier = Modifier.fillMaxWidth()) {
                             Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .innerGlow()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val name = nameWithBadge(person.name, person.role)
-                                ProfileIcon(name = name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
-                                Spacer(Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .innerGlow()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val name = nameWithBadge(person.name, person.role)
+                            ProfileIcon(name = name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        if (isSelf) "You are $name" else name,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    // Online green for presence; available-for-chat also uses green for
+                                    // Supporters — prefer the chat-available cue when both apply.
+                                    if (!isSelf && person.available) {
                                         Text(
-                                            if (isSelf) "You are $name" else name,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.weight(1f),
+                                            "\uD83D\uDFE2",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.primary,
                                         )
-                                        // Online green for presence; available-for-chat also uses green for
-                                        // Supporters — prefer the chat-available cue when both apply.
-                                        if (!isSelf && person.available) {
-                                            Text(
-                                                "\uD83D\uDFE2",
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        } else if (!person.online) {
-                                            Text(
-                                                "offline",
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                    } else if (!person.online) {
+                                        Text(
+                                            "offline",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     }
-                                    OccupantEmojiLine(person)
-                                    OccupantInterestsLine(person)
                                 }
-                                if (isSelf) {
-                                    // Supporters/Founders tailor their room profile (✏️); Sharers
-                                    // only refresh their anonymous name (🔄) (DESIGN §4, §5).
-                                    val canEditRoomProfile =
-                                        person.role == Role.SUPPORTER || person.role == Role.FOUNDER
+                                OccupantEmojiLine(person)
+                                OccupantInterestsLine(person)
+                            }
+                            if (isSelf) {
+                                // Supporters/Founders tailor their room profile (✏️); Sharers
+                                // only refresh their anonymous name (🔄) (DESIGN §4, §5).
+                                val canEditRoomProfile =
+                                    person.role == Role.SUPPORTER || person.role == Role.FOUNDER
 
-                                    IconButton(onClick = {
-                                        if (canEditRoomProfile) editingSelf = true else onRefreshSelf()
-                                    }, modifier = Modifier.size(28.dp)) {
-                                        Text(
-                                            if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04",
-                                            fontSize = 16.sp
-                                        )
-                                    }
+                                IconButton(onClick = {
+                                    if (canEditRoomProfile) editingSelf = true else onRefreshSelf()
+                                }, modifier = Modifier.size(28.dp)) {
+                                    Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 16.sp)
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -2930,60 +2919,60 @@ private fun OccupantScroller(
 
                             Box(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
                                 Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
-                                // Not vertically centered because the containers are equal height.
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .innerGlow()
-                                        .padding(12.dp),
-                                ) {
-                                    ProfileIcon(name = name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
-                                    Spacer(Modifier.width(6.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                if (isSelf) "You are $name" else name,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.weight(1f),
-                                                fontSize = 14.sp
-                                            )
-                                            if (isSelf) {
-                                                // Supporters/Founders tailor their room profile (✏️); Sharers
-                                                // only refresh their anonymous name (🔄) (DESIGN §4, §5).
-                                                val canEditRoomProfile =
-                                                    person.role == Role.SUPPORTER || person.role == Role.FOUNDER
-                                                IconButton(
-                                                    onClick = {
-                                                        if (canEditRoomProfile) editingSelf = true else onRefreshSelf()
-                                                    },
-                                                    modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
-                                                ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        Text(
-                                                            if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04",
-                                                            fontSize = 14.sp
-                                                        )
-                                                    }
+                            // Not vertically centered because the containers are equal height.
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .innerGlow()
+                                    .padding(12.dp),
+                            ) {
+                                ProfileIcon(name = name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
+                                Spacer(Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            if (isSelf) "You are $name" else name,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 14.sp
+                                        )
+                                        if (isSelf) {
+                                            // Supporters/Founders tailor their room profile (✏️); Sharers
+                                            // only refresh their anonymous name (🔄) (DESIGN §4, §5).
+                                            val canEditRoomProfile =
+                                                person.role == Role.SUPPORTER || person.role == Role.FOUNDER
+                                            IconButton(
+                                                onClick = {
+                                                    if (canEditRoomProfile) editingSelf = true else onRefreshSelf()
+                                                },
+                                                modifier = Modifier.size(24.dp).align(Alignment.CenterVertically),
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04",
+                                                        fontSize = 14.sp
+                                                    )
                                                 }
-                                            } else if (person.available) {
-                                                Text(
-                                                    "\uD83D\uDFE2",
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                )
-                                            } else if (!person.online) {
-                                                Text(
-                                                    "offline",
-                                                    fontSize = 10.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
                                             }
+                                        } else if (person.available) {
+                                            Text(
+                                                "\uD83D\uDFE2",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else if (!person.online) {
+                                            Text(
+                                                "offline",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
                                         }
-
-                                        OccupantEmojiLine(person)
-                                        OccupantInterestsLine(person)
                                     }
+
+                                    OccupantEmojiLine(person)
+                                    OccupantInterestsLine(person)
                                 }
+                            }
                             }
                         }
                     }
@@ -3356,51 +3345,51 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .innerGlow()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ProfileIcon(name = chat.peerName, size = 36.dp, photoUrl = chat.peerPhotoUrl)
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            // The latest message preview, "Sender: text" (mirroring the room list's
-                            // preview), shown above the origin room line so the chat's own last
-                            // message reads first.
-                            chat.lastMessageText?.let { text ->
-                                Text(
-                                    text = buildAnnotatedString {
-                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                            append(if (chat.lastMessageMine) "You: " else "${chat.peerName}: ")
-                                        }
-                                        append(text)
-                                    },
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            roomsById[chat.roomId]?.let { room ->
-                                Text(
-                                    "in ${room.emoji} ${room.name}",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        // Time since the last message, mirroring the room list's trailing time.
-                        chat.lastMessageAt?.let { at ->
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .innerGlow()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ProfileIcon(name = chat.peerName, size = 36.dp, photoUrl = chat.peerPhotoUrl)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(chat.peerName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        // The latest message preview, "Sender: text" (mirroring the room list's
+                        // preview), shown above the origin room line so the chat's own last
+                        // message reads first.
+                        chat.lastMessageText?.let { text ->
                             Text(
-                                timeAgo(at),
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                        append(if (chat.lastMessageMine) "You: " else "${chat.peerName}: ")
+                                    }
+                                    append(text)
+                                },
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        roomsById[chat.roomId]?.let { room ->
+                            Text(
+                                "in ${room.emoji} ${room.name}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
+                    // Time since the last message, mirroring the room list's trailing time.
+                    chat.lastMessageAt?.let { at ->
+                        Text(
+                            timeAgo(at),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
                 }
             }
         }
@@ -3539,12 +3528,7 @@ internal fun ServicePortraitCard(service: ServiceView, onClick: () -> Unit) {
                         }
                         if (service.description.isNotBlank()) {
                             Text(
-                                "by ${
-                                    nameWithBadge(
-                                        service.providerName,
-                                        service.providerRole
-                                    )
-                                } • ${service.description}",
+                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description}",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 3,

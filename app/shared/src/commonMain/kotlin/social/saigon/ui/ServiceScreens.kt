@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -137,7 +138,6 @@ internal fun ServiceSearchScreen(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
             else -> Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -247,7 +247,6 @@ private fun SelectCommunityDialog(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-
                     else -> rooms!!.forEach { room ->
                         Card(
                             modifier = Modifier
@@ -301,9 +300,7 @@ internal fun MyServicesScreen(
     var error by remember(selfUserId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(selfUserId) {
-        if (selfUserId == null) {
-            loaded = true; return@LaunchedEffect
-        }
+        if (selfUserId == null) { loaded = true; return@LaunchedEffect }
         error = null
         try {
             // The caller's own list includes unlisted services so they can relist/manage them.
@@ -329,7 +326,6 @@ internal fun MyServicesScreen(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
             else -> Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -368,12 +364,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                service.name,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Text(service.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
                             Text(UiConstants.vnd(service.price), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         if (!service.listed) {
@@ -385,12 +376,7 @@ internal fun ServiceCard(service: ServiceView, onClick: () -> Unit) {
                         }
                         if (service.description.isNotBlank()) {
                             Text(
-                                "by ${
-                                    nameWithBadge(
-                                        service.providerName,
-                                        service.providerRole
-                                    )
-                                } • ${service.description.stripMarkdown()}",
+                                "by ${nameWithBadge(service.providerName, service.providerRole)} • ${service.description.stripMarkdown()}",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -627,17 +613,13 @@ internal fun ServiceDetailScreen(
 
     val s = service
     when {
-        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            LoadingSpinner(
-                modifier = Modifier.padding(24.dp),
-                useDelay = false // useful to give the sheet some initial height
-            )
-        }
-
+        !loaded -> Box(modifier = modifier, contentAlignment = Alignment.Center) { LoadingSpinner(
+            modifier = Modifier.padding(24.dp),
+            useDelay = false // useful to give the sheet some initial height
+        ) }
         s == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(error ?: "This meet could not be found.", color = MaterialTheme.colorScheme.error)
         }
-
         else -> {
             // Sticky "Book this adventure" bar stays pinned while the detail body scrolls
             // (same pattern as ProfileScreen's sticky Save bar).
@@ -753,9 +735,7 @@ internal fun ServiceDetailScreen(
                                         managing = true
                                         scope.launch {
                                             runCatching {
-                                                if (s.listed) api.unlistService(serviceId) else api.relistService(
-                                                    serviceId
-                                                )
+                                                if (s.listed) api.unlistService(serviceId) else api.relistService(serviceId)
                                             }.onSuccess { service = it }
                                             managing = false
                                         }
@@ -1289,17 +1269,80 @@ private fun SequenceBadge(number: Int) {
 private fun splitSemicolonItems(raw: String): List<String> =
     raw.split(';').map { it.trim() }.filter { it.isNotEmpty() }
 
+/** Identity of a stop for de-duplicating recent locations (photos do not count). */
+internal data class LocationKey(val name: String, val address: String, val url: String)
+
+internal fun ServiceDestination.locationKey(): LocationKey =
+    LocationKey(name.trim(), address.trim(), url.trim())
+
+internal fun ServiceDestination.isBlankLocation(): Boolean =
+    name.isBlank() && address.isBlank() && url.isBlank() && photos.isEmpty()
+
+internal fun ServiceDestination.hasLocationInfo(): Boolean =
+    name.isNotBlank() || address.isNotBlank() || url.isNotBlank()
+
+/**
+ * Unique recent itinerary stops from [services], newest meets first. [excludeServiceId] skips the
+ * meet currently being edited so we only suggest locations from *other* meets.
+ */
+internal fun recentLocationsFromServices(
+    services: List<ServiceView>,
+    excludeServiceId: String? = null,
+    limit: Int = 12,
+): List<ServiceDestination> {
+    val seen = linkedSetOf<LocationKey>()
+    val result = mutableListOf<ServiceDestination>()
+    services
+        .sortedByDescending { it.createdAt }
+        .asSequence()
+        .filter { it.id != excludeServiceId }
+        .flatMap { it.destinations.asSequence() }
+        .filter { it.hasLocationInfo() }
+        .forEach { dest ->
+            if (seen.add(dest.locationKey())) {
+                result += dest
+            }
+        }
+    return result.take(limit)
+}
+
+/** Fill the first empty stop with [location], or append a new stop when every slot is in use. */
+internal fun applyRecentLocation(
+    destinations: MutableList<ServiceDestination>,
+    location: ServiceDestination,
+) {
+    val emptyIndex = destinations.indexOfFirst { it.isBlankLocation() }
+    val copy = location.copy(photos = location.photos.toList())
+    if (emptyIndex >= 0) {
+        destinations[emptyIndex] = copy
+    } else {
+        destinations.add(copy)
+    }
+}
+
 /**
  * Shared create/edit editors for the ordered "Where you'll go" list. Each stop is a compact card
  * with name/address/URL fields, inline photo chips, and remove/add controls — keeps the dialog tidy
  * without nested dialogs for every field.
+ *
+ * Recent locations from other listed meets sit above the stop cards so a host can 1-click fill
+ * name/address/directions/photos instead of retyping them.
  */
 @Composable
 internal fun ServiceDestinationsEditor(
     api: SaigonApi,
     destinations: SnapshotStateList<ServiceDestination>,
     enabled: Boolean,
+    excludeServiceId: String? = null,
 ) {
+    var recent by remember { mutableStateOf<List<ServiceDestination>>(emptyList()) }
+    LaunchedEffect(excludeServiceId) {
+        runCatching { api.services() }
+            .onSuccess { recent = recentLocationsFromServices(it, excludeServiceId) }
+    }
+    val usedKeys = destinations.map { it.locationKey() }.toSet()
+    val suggestions = recent.filter { it.locationKey() !in usedKeys }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Where you'll go", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Text(
@@ -1307,6 +1350,13 @@ internal fun ServiceDestinationsEditor(
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (suggestions.isNotEmpty()) {
+            RecentLocationsRow(
+                locations = suggestions,
+                enabled = enabled,
+                onSelect = { applyRecentLocation(destinations, it) },
+            )
+        }
         destinations.forEachIndexed { index, dest ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -1364,6 +1414,90 @@ internal fun ServiceDestinationsEditor(
             onClick = { destinations.add(ServiceDestination()) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Add a stop") }
+    }
+}
+
+/** Horizontal chips of unique locations from other meets; tapping one fills a stop. */
+@Composable
+private fun RecentLocationsRow(
+    locations: List<ServiceDestination>,
+    enabled: Boolean,
+    onSelect: (ServiceDestination) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Recent locations", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Text(
+            "From other meets — tap one to fill in a stop.",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            locations.forEach { location ->
+                RecentLocationChip(
+                    location = location,
+                    enabled = enabled,
+                    onClick = { onSelect(location) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentLocationChip(
+    location: ServiceDestination,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val title = location.name.ifBlank { location.address.ifBlank { "Saved location" } }
+    val subtitle = when {
+        location.name.isNotBlank() && location.address.isNotBlank() -> location.address
+        location.url.isNotBlank() -> location.url
+        else -> ""
+    }
+    Surface(
+        modifier = Modifier
+            .widthIn(max = 220.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            location.photos.firstOrNull()?.let { photo ->
+                UrlImage(
+                    url = photo.url,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
+            Column(modifier = Modifier.widthIn(max = 160.dp)) {
+                Text(
+                    title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1629,6 +1763,7 @@ private fun EditServiceDialog(
                     api = api,
                     destinations = destinations,
                     enabled = !busy,
+                    excludeServiceId = service.id,
                 )
                 ServiceActivitiesEditor(
                     api = api,
@@ -1800,11 +1935,7 @@ private fun FeedbackReviewsDialog(
                 reviews.forEach { review ->
                     val canDelete = isFounder || selfUserId == review.userId || selfUserId == providerId
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            nameWithBadge(review.authorName, review.authorRole),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
+                        Text(nameWithBadge(review.authorName, review.authorRole), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         if (review.message.isNotBlank()) {
                             Text(review.message, fontSize = 14.sp)
                         }
