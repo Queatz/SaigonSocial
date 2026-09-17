@@ -325,12 +325,18 @@ internal fun RoomListScreen(
                     // user can see their open conversations and find chats others started with them.
                     if (directChatCount > 0) {
                         item {
+                            val scrimColor = MaterialTheme.colorScheme.surface
                             Card(
                                 onClick = onOpenDirectChats,
                                 modifier = Modifier.fillMaxWidth().softShadow()
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+                                    Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .innerGlow()
+                                        .padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text("\uD83D\uDCAC", fontSize = 24.sp)
@@ -347,6 +353,7 @@ internal fun RoomListScreen(
                                         color = MaterialTheme.colorScheme.secondary,
                                         fontWeight = FontWeight.Medium,
                                     )
+                                }
                                 }
                             }
                         }
@@ -388,7 +395,7 @@ internal fun RoomListScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Popular adventures",
+                                    text = "Latest adventures",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp
                                 )
@@ -514,7 +521,7 @@ internal fun RoomListScreen(
                     }
                     item {
                         Text(
-                            text = if (searching) "Results" else "Popular communities",
+                            text = if (searching) "Results" else "Latest communities",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(top = 16.dp)
@@ -2512,12 +2519,18 @@ private fun OccupantList(
                     // Identify yourself by your persistent user id, not your room-scoped name
                     // (names can collide and change). Any tap opens the detail sheet.
                     val isSelf = selfUserId != null && person.userId == selfUserId
+                    val scrimColor = MaterialTheme.colorScheme.surface
                     Card(
                         onClick = { selected = person },
                         modifier = Modifier.fillMaxWidth().softShadow(),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+                            Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .innerGlow()
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             val name = nameWithBadge(person.name, person.role)
@@ -2561,6 +2574,7 @@ private fun OccupantList(
                                     Text(if (canEditRoomProfile) "\u270F\uFE0F" else "\uD83D\uDD04", fontSize = 16.sp)
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -2719,7 +2733,7 @@ private fun RoomNavPanel(
             .fillMaxHeight()
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Popular communities", fontWeight = FontWeight.Bold)
+            Text("Latest communities", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
@@ -2872,14 +2886,22 @@ private fun OccupantScroller(
                     people.forEach { person ->
                         // Identify yourself by your persistent user id; any tap opens the detail sheet.
                         val isSelf = selfUserId != null && person.userId == selfUserId
+                        val scrimColor = MaterialTheme.colorScheme.surface
                         Card(
                             onClick = { selected = person },
                             modifier = Modifier.width(180.dp).fillMaxHeight().softShadow(),
                         ) {
                             val name = nameWithBadge(person.name, person.role)
 
+                            Box(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+                                Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
                             // Not vertically centered because the containers are equal height.
-                            Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .innerGlow()
+                                    .padding(12.dp),
+                            ) {
                                 ProfileIcon(name = name, size = 48.dp, photoUrl = person.photoUrl.ifBlank { null })
                                 Spacer(Modifier.width(6.dp))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -2926,6 +2948,7 @@ private fun OccupantScroller(
                                     OccupantEmojiLine(person)
                                     OccupantInterestsLine(person)
                                 }
+                            }
                             }
                         }
                     }
@@ -3267,7 +3290,6 @@ private fun ThreadSheet(
  * that others have started with them this session. Tapping one re-opens it. Private chats are
  * ephemeral, so this list resets when the app restarts.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: (DirectChat) -> Unit) {
     if (chats.isEmpty()) {
@@ -3293,9 +3315,15 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(chats, key = { it.targetUserId + it.roomId }) { chat ->
-            Card(onClick = { onOpen(chat) }, modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+            val scrimColor = MaterialTheme.colorScheme.surface
+            Card(onClick = { onOpen(chat) }, modifier = Modifier.fillMaxWidth().softShadow()) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.matchParentSize().background(servicePhotoScrim(scrimColor)))
+                    Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .innerGlow()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ProfileIcon(name = chat.peerName, size = 36.dp, photoUrl = chat.peerPhotoUrl)
@@ -3337,12 +3365,12 @@ internal fun DirectChatsScreen(api: SaigonApi, chats: List<DirectChat>, onOpen: 
                         )
                     }
                 }
+                }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ThreadRepliesScreen(
     threads: List<ThreadSummary>,

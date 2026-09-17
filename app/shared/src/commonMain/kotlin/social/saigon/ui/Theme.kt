@@ -51,8 +51,8 @@ private val SaigonLightColors = lightColorScheme(
 
     background = Color(0xFFfcfcfa),         // warm off-white for professional contrast
     onBackground = Color(0xFF1C1B17),
-    // Cards / surfaces use clean neutrals for separation and readability.
-    surface = Color(0xFFFCFBF7),
+    // Cards / surfaces sit closer to white so they separate from the canvas.
+    surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF1C1B17),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFFAF7F1),
